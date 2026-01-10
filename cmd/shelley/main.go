@@ -12,7 +12,10 @@ import (
 	"strings"
 
 	"shelley.exe.dev/claudetool"
+	"shelley.exe.dev/cli"
 	"shelley.exe.dev/db"
+	"shelley.exe.dev/llm"
+	"shelley.exe.dev/loop"
 	"shelley.exe.dev/models"
 	"shelley.exe.dev/server"
 	"shelley.exe.dev/templates"
@@ -46,6 +49,7 @@ func main() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Global flags:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(flag.CommandLine.Output(), "\nCommands:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  chat [flags]                  Start interactive CLI chat mode\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  serve [flags]                 Start the web server\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  unpack-template <name> <dir>  Unpack a project template to a directory\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  version                       Print version information as JSON\n")
@@ -70,6 +74,8 @@ func main() {
 
 	command := args[0]
 	switch command {
+	case "chat":
+		runChat(global, args[1:])
 	case "serve":
 		runServe(global, args[1:])
 	case "unpack-template":
@@ -80,6 +86,152 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		flag.Usage()
 		os.Exit(1)
+	}
+}
+
+func runChat(global GlobalConfig, args []string) {
+	fs := flag.NewFlagSet("chat", flag.ExitOnError)
+	prompt := fs.String("prompt", "", "Initial prompt to send (optional, for non-interactive mode)")
+	fs.Parse(args)
+
+	logger := setupLogging(global.Debug)
+
+	// Build LLM configuration
+	llmConfig := buildLLMConfig(logger, global.ConfigPath, global.TerminalURL, global.DefaultModel)
+
+	// Create LLM service
+	modelConfig := &models.Config{
+		AnthropicAPIKey: llmConfig.AnthropicAPIKey,
+		OpenAIAPIKey:    llmConfig.OpenAIAPIKey,
+		GeminiAPIKey:    llmConfig.GeminiAPIKey,
+		FireworksAPIKey: llmConfig.FireworksAPIKey,
+		Gateway:         llmConfig.Gateway,
+		Logger:          logger,
+	}
+
+	manager, err := models.NewManager(modelConfig, nil)
+	if err != nil {
+		logger.Error("Failed to create models manager", "error", err)
+		os.Exit(1)
+	}
+
+	// Determine which model to use
+	modelID := global.Model
+	if modelID == "" {
+		modelID = models.Default().ID
+	}
+
+	llmService, err := manager.GetService(modelID)
+	if err != nil {
+		logger.Error("Failed to get LLM service", "model", modelID, "error", err)
+		fmt.Fprintf(os.Stderr, "Failed to get LLM service for model %s: %v\n", modelID, err)
+		fmt.Fprintf(os.Stderr, "Available models: %s\n", strings.Join(manager.GetAvailableModels(), ", "))
+		os.Exit(1)
+	}
+
+	// Get working directory
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "/"
+	}
+
+	// Generate system prompt
+	systemPrompt, err := server.GenerateSystemPrompt(wd)
+	if err != nil {
+		logger.Warn("Failed to generate system prompt", "error", err)
+		systemPrompt = ""
+	}
+
+	var system []llm.SystemContent
+	if systemPrompt != "" {
+		system = []llm.SystemContent{{Type: "text", Text: systemPrompt}}
+	}
+
+	// Non-interactive mode with prompt
+	if *prompt != "" {
+		runNonInteractiveChat(llmService, modelID, wd, system, *prompt, logger)
+		return
+	}
+
+	// Interactive CLI mode
+	cliConfig := cli.Config{
+		Model:      modelID,
+		WorkingDir: wd,
+		LLMService: llmService,
+		Logger:     logger,
+		System:     system,
+	}
+
+	if err := cli.Run(cliConfig); err != nil {
+		logger.Error("CLI failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, system []llm.SystemContent, prompt string, logger *slog.Logger) {
+	ctx := context.Background()
+
+	// Create toolset
+	toolSetConfig := claudetool.ToolSetConfig{
+		WorkingDir: workingDir,
+		ModelID:    modelID,
+	}
+	toolSet := claudetool.NewToolSet(ctx, toolSetConfig)
+	defer toolSet.Cleanup()
+
+	// Create message recorder that prints to stdout
+	recordMessage := func(ctx context.Context, message llm.Message, usage llm.Usage) error {
+		for _, content := range message.Content {
+			switch content.Type {
+			case llm.ContentTypeText:
+				if message.Role == llm.MessageRoleAssistant && content.Text != "" {
+					fmt.Println(content.Text)
+				}
+			case llm.ContentTypeToolUse:
+				fmt.Printf("[Tool: %s]\n", content.ToolName)
+			case llm.ContentTypeToolResult:
+				if content.ToolError {
+					fmt.Printf("[Tool Error]\n")
+				}
+			}
+		}
+		return nil
+	}
+
+	// Create and run loop
+	loop := loop.NewLoop(loop.Config{
+		LLM:           llmService,
+		History:       []llm.Message{},
+		Tools:         toolSet.Tools(),
+		RecordMessage: recordMessage,
+		Logger:        logger,
+		System:        system,
+		WorkingDir:    workingDir,
+		GetWorkingDir: toolSet.WorkingDir().Get,
+	})
+
+	// Queue the prompt
+	userMsg := llm.Message{
+		Role:    llm.MessageRoleUser,
+		Content: []llm.Content{{Type: llm.ContentTypeText, Text: prompt}},
+	}
+	loop.QueueUserMessage(userMsg)
+
+	// Process turns until done
+	for {
+		if err := loop.ProcessOneTurn(ctx); err != nil {
+			logger.Error("Failed to process turn", "error", err)
+			os.Exit(1)
+		}
+
+		// Check if we're done (by checking if the last response ended the turn)
+		history := loop.GetHistory()
+		if len(history) > 0 {
+			lastMsg := history[len(history)-1]
+			if lastMsg.Role == llm.MessageRoleAssistant && lastMsg.EndOfTurn {
+				break
+			}
+		}
 	}
 }
 
