@@ -136,3 +136,28 @@ Use `/theme dark` or `/theme light` to switch. The default is dark.
 
 By default, mouse mode is off to allow text selection in your terminal.
 Use `/mouse` to toggle mouse scrolling (disables text selection).
+
+## Background
+
+This CLI was built by someone who isn't a software engineer by trade, with significant help from AI coding assistants (including Shelley itself). It started as an experiment to see if a terminal interface could be added to the existing [Shelley](https://github.com/boldsoftware/shelley) codebase.
+
+The process involved:
+
+1. **Forking Shelley** - Starting with the existing web-based agent architecture
+2. **Learning the codebase** - Understanding how the `loop/`, `llm/`, and `db/` packages work together
+3. **Building with AI assistance** - Using Claude and Shelley to help write the CLI, debug edge cases, and refactor code
+4. **Iterating on UX** - Adding features like streaming responses, image drag-drop, and conversation sync based on actual usage
+
+The CLI is marked as "unofficial" because it's a community contribution, not part of the official Shelley project. The code has been refactored to minimize merge conflicts with upstream, so it should be possible to pull in future Shelley updates.
+
+If you're interested in contributing or have questions about how something works, feel free to explore the code. The main files are:
+
+- `cli.go` - Core TUI (Bubble Tea model, init, update, view)
+- `commands.go` - Slash command handling
+- `models.go` - Model switching, context, usage tracking
+- `conversations.go` - Database conversation management
+- `sessions.go` - Legacy JSON session save/load
+- `message.go` - Message rendering with glamour
+- `styles.go` - Theme definitions
+
+Built for the [exe.dev](https://exe.dev) community. 🚀
