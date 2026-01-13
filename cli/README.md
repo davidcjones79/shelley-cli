@@ -39,6 +39,7 @@ Type `/help` in the CLI to see all commands. Here are the highlights:
 | `/help` | Show all commands |
 | `/clear` | Clear conversation display |
 | `/stop` | Cancel current operation (or press Escape) |
+| `/quit` | Exit the CLI (also `/exit`, `/q`) |
 | `/verbose` | Toggle tool detail visibility |
 | `/status` | Show session status |
 
