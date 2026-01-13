@@ -4,8 +4,17 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Theme represents a color theme
+type Theme string
+
+const (
+	ThemeDark  Theme = "dark"
+	ThemeLight Theme = "light"
+)
+
 // Styles defines the visual styling for the CLI interface
 type Styles struct {
+	theme Theme
 	// Message styles
 	UserMessage      lipgloss.Style
 	AssistantMessage lipgloss.Style
@@ -43,9 +52,16 @@ type Styles struct {
 	BorderColor lipgloss.Color
 }
 
-// DefaultStyles returns the default color scheme
+// DefaultStyles returns the default (dark) color scheme
 func DefaultStyles() *Styles {
+	return DarkStyles()
+}
+
+// DarkStyles returns the dark color scheme
+func DarkStyles() *Styles {
 	return &Styles{
+		theme: ThemeDark,
+
 		UserMessage: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("14")). // Cyan
 			Bold(true),
@@ -123,6 +139,95 @@ func DefaultStyles() *Styles {
 
 		BorderColor: lipgloss.Color("8"), // Gray
 	}
+}
+
+// LightStyles returns the light color scheme
+func LightStyles() *Styles {
+	return &Styles{
+		theme: ThemeLight,
+
+		UserMessage: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("27")). // Blue
+			Bold(true),
+
+		AssistantMessage: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("22")). // Dark green
+			Bold(true),
+
+		SystemMessage: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")). // Dark gray
+			Italic(true),
+
+		ErrorMessage: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("160")). // Dark red
+			Bold(true),
+
+		ToolName: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("27")). // Blue
+			Bold(true),
+
+		ToolInput: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")), // Dark gray
+
+		ToolOutput: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("22")), // Dark green
+
+		ToolError: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("160")), // Dark red
+
+		ToolRunning: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("136")). // Dark yellow/orange
+			Italic(true),
+
+		ToolSuccess: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("22")). // Dark green
+			Bold(true),
+
+		Prompt: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("127")). // Purple
+			Bold(true),
+
+		InputCursor: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")), // Black
+
+		Header: lipgloss.NewStyle().
+			Bold(true),
+
+		HeaderTitle: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("127")). // Purple
+			Bold(true),
+
+		StatusBar: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("252")).
+			Padding(0, 1),
+
+		Spinner: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("27")),
+
+		TokenCount: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("136")), // Dark yellow/orange
+
+		ModelName: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("127")), // Purple
+
+		WorkingDir: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("27")), // Blue
+
+		Thinking: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")). // Dark gray
+			Italic(true),
+
+		Divider: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("250")), // Light gray
+
+		BorderColor: lipgloss.Color("250"), // Light gray
+	}
+}
+
+// Theme returns the current theme
+func (s *Styles) Theme() Theme {
+	return s.theme
 }
 
 // RolePrefix returns a styled prefix for a message role

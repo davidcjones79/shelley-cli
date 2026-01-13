@@ -57,3 +57,11 @@ func TestFormatTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestOsc8Link(t *testing.T) {
+	result := osc8Link("file:///tmp/test.txt", "/tmp/test.txt")
+	expected := "\033]8;;file:///tmp/test.txt\033\\/tmp/test.txt\033]8;;\033\\"
+	if result != expected {
+		t.Errorf("osc8Link() = %q, want %q", result, expected)
+	}
+}
