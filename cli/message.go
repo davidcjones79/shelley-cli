@@ -226,9 +226,9 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 		}
 	}
 
-	// In non-verbose mode, just show status (no output text)
+	// In non-verbose mode, show compact status
 	if !verbose {
-		// But always show errors
+		// Always show errors (truncated)
 		if content.ToolError {
 			for _, result := range content.ToolResult {
 				if result.Type == llm.ContentTypeText && result.Text != "" {
@@ -241,17 +241,17 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 				}
 			}
 		}
-		boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
-		// Build header: "✓ toolname (timing)" or just "✓ (timing)"
+		// Build header: "✓ toolname (timing)"
 		header := headerStyle.Render(statusIcon)
 		if toolName != "" {
 			header += " " + r.styles.ToolName.Render(toolName)
 		}
 		header += timing
 		if sb.Len() > 0 {
-			return boxStyle.Render(header + " " + sb.String())
+			return r.styles.ToolBoxStyle(r.width-4, content.ToolError).Render(header + " " + sb.String())
 		}
-		return boxStyle.Render(header)
+		// Return just the header line without a box for compactness
+		return header
 	}
 
 	// Verbose mode: render the full result content
@@ -285,16 +285,16 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 
 	// Wrap in bordered box with status icon in header
 	boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
-	// Build header: "✓ toolname (timing)" or just "✓ (timing)"
+	// Build header: "✓ toolname (timing)"
 	header := headerStyle.Render(statusIcon)
 	if toolName != "" {
 		header += " " + r.styles.ToolName.Render(toolName)
 	}
 	header += timing
 	if sb.Len() > 0 {
-		return boxStyle.Render(header + " " + sb.String())
+		return boxStyle.Render(header + "\n" + sb.String())
 	}
-	return boxStyle.Render(header + " Done")
+	return boxStyle.Render(header)
 }
 
 // formatDuration formats a duration in a human-readable way

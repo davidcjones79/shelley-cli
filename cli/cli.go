@@ -544,19 +544,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Update status to show which tool is running
 			m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
-			// Always show tool starting indicator for progress feedback
+			// Show tool starting indicator (verbose: boxed, non-verbose: inline)
 			toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
+			var content string
+			if m.verbose {
+				content = m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg)
+			} else {
+				content = toolMsg
+			}
 			m.messages = append(m.messages, renderedMessage{
 				role:    llm.MessageRoleAssistant,
-				content: m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg),
+				content: content,
 			})
 			m.updateViewportContent()
 
 		case llm.StreamEventToolInputDelta:
 			// Accumulate tool input as it streams
 			m.currentToolInput.WriteString(msg.event.ToolInput)
-			// Update the last message to show progress
-			if len(m.messages) > 0 && m.currentToolName != "" {
+			// Update the last message to show progress (only in verbose mode)
+			if m.verbose && len(m.messages) > 0 && m.currentToolName != "" {
 				toolMsg := m.styles.ToolName.Render(m.currentToolName) + " " + m.styles.ToolRunning.Render("running...")
 				// Show a compact summary of the input so far
 				inputSummary := m.formatToolInputSummary(m.currentToolInput.String())
@@ -777,10 +783,12 @@ func (m *Model) initLoop() error {
 		},
 		OnStream: func(event llm.StreamEvent) {
 			// Send stream events to the CLI's stream channel
+			m.config.Logger.Debug("stream event received", "type", event.Type.String(), "tool", event.ToolName)
 			select {
 			case m.streamChan <- event:
 			default:
 				// Channel full, skip (shouldn't happen with large buffer)
+				m.config.Logger.Warn("stream channel full, dropping event", "type", event.Type.String())
 			}
 		},
 	})
