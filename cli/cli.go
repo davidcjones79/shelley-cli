@@ -136,6 +136,9 @@ type Model struct {
 	// Available models cache (for number selection)
 	availableModels []string
 
+	// Last viewport content (to avoid unnecessary updates)
+	lastViewportContent string
+
 	// Database conversation (when DB is configured)
 	conversationID string
 	lastGitState   *gitstate.GitState
@@ -753,8 +756,14 @@ func (m *Model) updateViewportContent() {
 		content.WriteString("\n")
 	}
 
-	m.viewport.SetContent(content.String())
-	m.viewport.GotoBottom()
+	newContent := content.String()
+	
+	// Only update and scroll if content actually changed
+	if newContent != m.lastViewportContent {
+		m.lastViewportContent = newContent
+		m.viewport.SetContent(newContent)
+		m.viewport.GotoBottom()
+	}
 }
 
 // updateStreamingDisplay updates the viewport with the current streaming text
