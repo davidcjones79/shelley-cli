@@ -45,17 +45,9 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 			m.pendingMessages = nil
 			m.loop = nil
 			m.loopCtx, m.loopCancel = nil, nil
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.SystemMessage.Render("Cancelled"),
-			})
-			m.updateViewportContent()
+			m.showSystemMessage("Cancelled")
 		} else {
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.SystemMessage.Render("Nothing to cancel"),
-			})
-			m.updateViewportContent()
+			m.showSystemMessage("Nothing to cancel")
 		}
 		return nil
 	case "/verbose":
@@ -64,11 +56,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		if m.verbose {
 			status = "on"
 		}
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.SystemMessage.Render("Verbose mode: " + status),
-		})
-		m.updateViewportContent()
+		m.showSystemMessage("Verbose mode: " + status)
 		return nil
 
 	case "/mouse":
@@ -81,11 +69,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		} else {
 			cmd = tea.DisableMouse
 		}
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.SystemMessage.Render("Mouse mode: " + status),
-		})
-		m.updateViewportContent()
+		m.showSystemMessage("Mouse mode: " + status)
 		return cmd
 
 	// Database conversation commands
@@ -93,11 +77,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.listConversations()
 	case "/switch":
 		if len(parts) < 2 {
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.ErrorMessage.Render("Usage: /switch <conversation-id>"),
-			})
-			m.updateViewportContent()
+			m.showError("Usage: /switch <conversation-id>")
 			return nil
 		}
 		return m.switchConversation(parts[1])
@@ -109,21 +89,13 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.listArchivedConversations()
 	case "/unarchive":
 		if len(parts) < 2 {
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.ErrorMessage.Render("Usage: /unarchive <conversation-id>"),
-			})
-			m.updateViewportContent()
+			m.showError("Usage: /unarchive <conversation-id>")
 			return nil
 		}
 		return m.unarchiveConversation(parts[1])
 	case "/rename":
 		if len(parts) < 2 {
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.ErrorMessage.Render("Usage: /rename <new-slug>"),
-			})
-			m.updateViewportContent()
+			m.showError("Usage: /rename <new-slug>")
 			return nil
 		}
 		return m.renameConversation(strings.Join(parts[1:], "-"))
@@ -134,35 +106,19 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 			m.pendingConfirm = ""
 			return m.deleteConversation()
 		}
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Nothing to confirm"),
-		})
-		m.updateViewportContent()
+		m.showError("Nothing to confirm")
 		return nil
 	case "/no", "/n":
 		if m.pendingConfirm != "" {
 			m.pendingConfirm = ""
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.SystemMessage.Render("Cancelled"),
-			})
-			m.updateViewportContent()
+			m.showSystemMessage("Cancelled")
 			return nil
 		}
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Nothing to cancel"),
-		})
-		m.updateViewportContent()
+		m.showError("Nothing to cancel")
 		return nil
 	case "/search":
 		if len(parts) < 2 {
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.ErrorMessage.Render("Usage: /search <query>"),
-			})
-			m.updateViewportContent()
+			m.showError("Usage: /search <query>")
 			return nil
 		}
 		return m.searchConversations(strings.Join(parts[1:], " "))
@@ -172,11 +128,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.listModels()
 	case "/model":
 		if len(parts) < 2 {
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.ErrorMessage.Render("Usage: /model <model-id>"),
-			})
-			m.updateViewportContent()
+			m.showError("Usage: /model <model-id>")
 			return nil
 		}
 		return m.switchModel(parts[1])
@@ -199,11 +151,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	case "/cwd", "/cd":
 		if len(parts) < 2 {
 			// Show current working directory
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.SystemMessage.Render("Working directory: " + m.config.WorkingDir),
-			})
-			m.updateViewportContent()
+			m.showSystemMessage("Working directory: " + m.config.WorkingDir)
 			return nil
 		}
 		return m.changeWorkingDir(strings.Join(parts[1:], " "))
@@ -224,41 +172,25 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		switch parts[1] {
 		case "show":
 			if len(parts) < 3 {
-				m.messages = append(m.messages, renderedMessage{
-					role:    llm.MessageRoleAssistant,
-					content: m.styles.ErrorMessage.Render("Usage: /git show <commit>"),
-				})
-				m.updateViewportContent()
+				m.showError("Usage: /git show <commit>")
 				return nil
 			}
 			return m.gitShowCommit(parts[2])
 		case "diff":
 			if len(parts) < 3 {
-				m.messages = append(m.messages, renderedMessage{
-					role:    llm.MessageRoleAssistant,
-					content: m.styles.ErrorMessage.Render("Usage: /git diff <file>"),
-				})
-				m.updateViewportContent()
+				m.showError("Usage: /git diff <file>")
 				return nil
 			}
 			return m.gitDiffFile(strings.Join(parts[2:], " "))
 		default:
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.ErrorMessage.Render("Unknown git subcommand: " + parts[1] + " (try: show, diff)"),
-			})
-			m.updateViewportContent()
+			m.showError("Unknown git subcommand: " + parts[1] + " (try: show, diff)")
 			return nil
 		}
 
 	// Image attachment
 	case "/attach", "/image":
 		if len(parts) < 2 {
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.ErrorMessage.Render("Usage: /attach <path-to-image>"),
-			})
-			m.updateViewportContent()
+			m.showError("Usage: /attach <path-to-image>")
 			return nil
 		}
 		return m.attachImage(strings.Join(parts[1:], " "))
@@ -267,12 +199,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.listAttachments()
 
 	case "/help":
-		helpText := m.buildHelpText()
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.SystemMessage.Render(helpText),
-		})
-		m.updateViewportContent()
+		m.showSystemMessage(m.buildHelpText())
 		return nil
 	case "/quit", "/exit", "/q":
 		m.quitting = true
@@ -281,11 +208,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		}
 		return tea.Quit
 	default:
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Unknown command: " + cmd + " (try /help)"),
-		})
-		m.updateViewportContent()
+		m.showError("Unknown command: " + cmd + " (try /help)")
 		return nil
 	}
 }
@@ -355,11 +278,7 @@ func (m *Model) buildHelpText() string {
 // runSuggestedCommand executes a suggested shell command
 func (m *Model) runSuggestedCommand(args []string) tea.Cmd {
 	if len(m.suggestedCmds) == 0 {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("No suggested commands to run"),
-		})
-		m.updateViewportContent()
+		m.showError("No suggested commands to run")
 		return nil
 	}
 

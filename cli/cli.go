@@ -1403,6 +1403,24 @@ func (m *Model) listAttachments() tea.Cmd {
 }
 
 // handleTabCompletion handles tab key for completion
+// showSystemMessage displays a system message and updates the viewport
+func (m *Model) showSystemMessage(text string) {
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(text),
+	})
+	m.updateViewportContent()
+}
+
+// showError displays an error message and updates the viewport
+func (m *Model) showError(text string) {
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ErrorMessage.Render(text),
+	})
+	m.updateViewportContent()
+}
+
 func (m *Model) Cleanup() {
 	if m.loopCancel != nil {
 		m.loopCancel()
