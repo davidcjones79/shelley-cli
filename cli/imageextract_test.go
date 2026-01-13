@@ -74,6 +74,24 @@ func TestExtractImagePathsFromText(t *testing.T) {
 			wantText:       "File: [/some/file.txt]",
 			wantImageCount: 0,
 		},
+		{
+			name:           "single-quoted path",
+			input:          "Check this: '" + imgPath + "'",
+			wantText:       "Check this:",
+			wantImageCount: 1,
+		},
+		{
+			name:           "double-quoted path",
+			input:          "Look at \"" + imgPath + "\"",
+			wantText:       "Look at",
+			wantImageCount: 1,
+		},
+		{
+			name:           "file URL",
+			input:          "See file://" + imgPath,
+			wantText:       "See",
+			wantImageCount: 1,
+		},
 	}
 
 	for _, tt := range tests {

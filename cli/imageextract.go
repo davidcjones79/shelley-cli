@@ -12,7 +12,10 @@ import (
 // imagePathRegex matches:
 // 1. Bracketed paths: [/path/to/image.png]
 // 2. Bare paths that start with / or ~/ and end with an image extension
-var imagePathRegex = regexp.MustCompile(`(?:\[([^\[\]]+\.(?:png|jpg|jpeg|gif|webp))\]|(?:^|\s)((?:/|~/)[^\s]+\.(?:png|jpg|jpeg|gif|webp)))`)
+// 3. Single-quoted paths: '/path/to/image.png'
+// 4. Double-quoted paths: "/path/to/image.png"
+// 5. file:// URLs: file:///path/to/image.png
+var imagePathRegex = regexp.MustCompile(`(?:\[([^\[\]]+\.(?:png|jpg|jpeg|gif|webp))\]|'([^']+\.(?:png|jpg|jpeg|gif|webp))'|"([^"]+\.(?:png|jpg|jpeg|gif|webp))"|file://([^\s]+\.(?:png|jpg|jpeg|gif|webp))|(?:^|\s)((?:/|~/)[^\s]+\.(?:png|jpg|jpeg|gif|webp)))`)
 
 // extractImagePathsFromText extracts image file paths from text.
 // Returns the cleaned text (with paths removed) and a list of valid image paths.
@@ -27,25 +30,42 @@ func extractImagePathsFromText(text, workingDir string) (cleanedText string, ima
 
 	for _, match := range matches {
 		// match[0]:match[1] is the full match
-		// match[2]:match[3] is group 1 (bracketed path, may be -1 if not matched)
-		// match[4]:match[5] is group 2 (bare path, may be -1 if not matched)
+		// Groups (each pair may be -1 if not matched):
+		// match[2]:match[3] = group 1: bracketed path [path]
+		// match[4]:match[5] = group 2: single-quoted 'path'
+		// match[6]:match[7] = group 3: double-quoted "path"
+		// match[8]:match[9] = group 4: file:// URL
+		// match[10]:match[11] = group 5: bare path starting with / or ~/
 		
 		var path string
 		var fullStart, fullEnd int
 		
-		if match[2] != -1 {
+		switch {
+		case match[2] != -1:
 			// Bracketed path
 			path = text[match[2]:match[3]]
 			fullStart, fullEnd = match[0], match[1]
-		} else if match[4] != -1 {
-			// Bare path
+		case match[4] != -1:
+			// Single-quoted path
 			path = text[match[4]:match[5]]
-			fullStart, fullEnd = match[4], match[5]
+			fullStart, fullEnd = match[0], match[1]
+		case match[6] != -1:
+			// Double-quoted path
+			path = text[match[6]:match[7]]
+			fullStart, fullEnd = match[0], match[1]
+		case match[8] != -1:
+			// file:// URL
+			path = text[match[8]:match[9]]
+			fullStart, fullEnd = match[0], match[1]
+		case match[10] != -1:
+			// Bare path
+			path = text[match[10]:match[11]]
+			fullStart, fullEnd = match[10], match[11]
 			// Include any leading whitespace in removal
-			if match[0] < match[4] {
+			if match[0] < match[10] {
 				fullStart = match[0]
 			}
-		} else {
+		default:
 			continue
 		}
 
