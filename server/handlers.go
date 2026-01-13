@@ -646,13 +646,8 @@ func (s *Server) handleChatConversation(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	// Create user message
-	userMessage := llm.Message{
-		Role: llm.MessageRoleUser,
-		Content: []llm.Content{
-			{Type: llm.ContentTypeText, Text: req.Message},
-		},
-	}
+	// Create user message, extracting any embedded images
+	userMessage := s.buildUserMessage(req.Message, llmService.MaxImageDimension())
 
 	firstMessage, err := manager.AcceptUserMessage(ctx, llmService, modelID, userMessage)
 	if err != nil {
@@ -743,13 +738,8 @@ func (s *Server) handleNewConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create user message
-	userMessage := llm.Message{
-		Role: llm.MessageRoleUser,
-		Content: []llm.Content{
-			{Type: llm.ContentTypeText, Text: req.Message},
-		},
-	}
+	// Create user message, extracting any embedded images
+	userMessage := s.buildUserMessage(req.Message, llmService.MaxImageDimension())
 
 	firstMessage, err := manager.AcceptUserMessage(ctx, llmService, modelID, userMessage)
 	if err != nil {
@@ -1210,4 +1200,32 @@ func (s *Server) handleRenameConversation(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(conversation)
+}
+
+// buildUserMessage creates a user message from text, extracting any embedded images.
+func (s *Server) buildUserMessage(text string, maxImageDimension int) llm.Message {
+	cleanText, imageContents, err := ExtractImagesFromMessage(text, maxImageDimension)
+	if err != nil {
+		s.logger.Warn("Failed to extract images from message", "error", err)
+		// Continue with original text if extraction fails
+		cleanText = text
+		imageContents = nil
+	}
+
+	// Build content: text first, then images
+	var contents []llm.Content
+	if cleanText != "" {
+		contents = append(contents, llm.Content{Type: llm.ContentTypeText, Text: cleanText})
+	}
+	contents = append(contents, imageContents...)
+
+	// Ensure we have at least some content
+	if len(contents) == 0 {
+		contents = append(contents, llm.Content{Type: llm.ContentTypeText, Text: text})
+	}
+
+	return llm.Message{
+		Role:    llm.MessageRoleUser,
+		Content: contents,
+	}
 }
