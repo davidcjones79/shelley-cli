@@ -757,8 +757,8 @@ func (m *Model) updateViewportContent() {
 		m.lastViewportContent = newContent
 		m.viewport.SetContent(newContent)
 		
-		// Only auto-scroll if user was at bottom or we're actively streaming
-		if wasAtBottom || m.streamingActive {
+		// Only auto-scroll if user was already at bottom
+		if wasAtBottom {
 			m.viewport.GotoBottom()
 		}
 	}
