@@ -1,17 +1,18 @@
 # Shelley CLI
 
-An unofficial terminal interface for Shelley, the coding agent.
+A terminal interface for [Shelley](https://github.com/boldsoftware/shelley), the coding agent.
 
-## Installation
+![Shelley CLI Demo](https://github.com/davidcjones79/shelley-cli/raw/shelley-cli-test/cli/demo.gif)
 
-### On exe.dev VMs (Recommended)
+## Quick Start (exe.dev)
 
-Shelley CLI automatically uses the exe.dev LLM gateway - no API keys needed.
+On exe.dev VMs, Shelley CLI works out of the box with the built-in LLM gateway - no API keys needed.
 
 ```bash
 # Clone and build
 git clone https://github.com/davidcjones79/shelley-cli.git
 cd shelley-cli
+git checkout shelley-cli-test
 make
 
 # Create config file
@@ -23,59 +24,124 @@ cat > ~/.config/shelley/shelley.json << 'EOF'
 }
 EOF
 
-# Add alias to your shell (optional but recommended)
-echo 'alias shelley="~/shelley-cli/shelley --config ~/.config/shelley/shelley.json"' >> ~/.bashrc
+# Add alias (recommended)
+echo 'alias shelley="~/shelley-cli/bin/shelley --config ~/.config/shelley/shelley.json"' >> ~/.bashrc
 source ~/.bashrc
 
 # Run it
 shelley chat
 ```
 
-### On non-exe.dev machines
+## Installation (non-exe.dev)
 
-You'll need your own API keys from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/).
+You'll need Go 1.21+ and Node.js 18+ installed, plus API keys from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/).
 
 ```bash
 # Clone and build
 git clone https://github.com/davidcjones79/shelley-cli.git
 cd shelley-cli
+git checkout shelley-cli-test
 make
 
-# Set your API key (Anthropic example)
+# Set your API key
 export ANTHROPIC_API_KEY="your-api-key-here"
-
-# Or for OpenAI
-export OPENAI_API_KEY="your-api-key-here"
+# Or for OpenAI:
+# export OPENAI_API_KEY="your-api-key-here"
 
 # Run it
-./shelley chat
+./bin/shelley chat
 ```
 
-You can also add the API key to your `~/.bashrc` to persist it across sessions.
+Add the export to your `~/.bashrc` to persist across sessions.
 
 ## Features
 
-- **Streaming responses** - See text as it's generated
-- **Conversation sync** - Share conversations with the web UI via SQLite
-- **Multi-model support** - Switch between Claude, GPT, and open source models
-- **Image attachments** - Attach screenshots or drag-drop images
-- **Tab completion** - Complete file paths and commands
-- **Prompt history** - Use Up/Down arrows to cycle through previous prompts
+- **Streaming responses** - See text as it's generated, token by token
+- **Tool execution** - Runs bash commands, edits files, takes screenshots
+- **Conversation sync** - Share conversations with the Shelley web UI via SQLite
+- **Multi-model support** - Switch between Claude, GPT, and open source models on the fly
+- **Image attachments** - Drag-drop images into terminal or use `/attach`
+- **Tab completion** - Complete file paths and slash commands
+- **Prompt history** - Up/Down arrows cycle through previous prompts
+- **Git integration** - View recent commits and diffs inline
+- **Themes** - Dark and light themes available
 
-## Flags
+## Command Line Flags
 
-| Flag | Description |
-|------|-------------|
-| `-sync` | Sync conversations with database (enables `/conversations`, `/switch`) |
-| `-conversation <id>` | Resume specific conversation by ID or slug (requires `-sync`) |
-| `-browser` | Enable browser tools (screenshots, navigation) |
-| `-verbose` | Show tool execution details |
-| `-yes` | Auto-accept all tool operations (no confirmations) |
-| `-prompt <text>` | Send initial prompt (for non-interactive/piped usage) |
+```
+Usage: shelley chat [flags]
 
-## Commands
+Flags:
+  -sync              Sync conversations with database (enables /conversations, /switch)
+  -conversation ID   Resume specific conversation by ID or slug (requires -sync)
+  -browser           Enable browser tools (screenshots, navigation, etc.)
+  -verbose           Show tool execution details (commands, inputs, outputs)
+  -yes               Auto-accept all tool operations (no confirmation prompts)
+  -prompt TEXT       Send initial prompt and exit (for scripting/piping)
+```
 
-Type `/help` in the CLI to see all commands. Here are the highlights:
+### Examples
+
+```bash
+# Basic interactive chat
+shelley chat
+
+# With conversation persistence (syncs to web UI)
+shelley chat -sync
+
+# Resume a specific conversation
+shelley chat -sync -conversation my-project
+
+# See all tool details
+shelley chat -verbose
+
+# No confirmation prompts (use with caution)
+shelley chat -yes
+
+# Enable browser automation (requires Chrome/Chromium)
+shelley chat -browser
+
+# Non-interactive: send one prompt and exit
+shelley chat -prompt "What is 2+2?"
+
+# Pipe a file for analysis
+cat main.go | shelley chat -prompt "Explain this code:"
+```
+
+## Keyboard Shortcuts
+
+### Input
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send message |
+| `Ctrl+J` | Insert newline (for multi-line input) |
+| `Escape` | Clear input / Cancel current operation |
+| `Tab` | Complete file paths and commands |
+| `Up` / `Down` | Cycle through prompt history |
+
+### Scrolling
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+U` | Scroll up half page |
+| `Ctrl+D` | Scroll down half page |
+| `PgUp` | Scroll up full page |
+| `PgDown` | Scroll down full page |
+| `Home` | Scroll to top |
+| `End` | Scroll to bottom |
+| Mouse wheel | Scroll (when mouse mode enabled) |
+
+### Control
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+C` | Quit |
+| `Escape` | Cancel current operation (while processing) |
+
+## Slash Commands
+
+Type `/help` in the CLI to see all available commands.
 
 ### General
 
@@ -83,24 +149,27 @@ Type `/help` in the CLI to see all commands. Here are the highlights:
 |---------|-------------|
 | `/help` | Show all commands |
 | `/clear` | Clear conversation display |
-| `/stop` | Cancel current operation (or press Escape) |
+| `/stop` | Cancel current operation |
 | `/quit` | Exit the CLI (also `/exit`, `/q`) |
 | `/verbose` | Toggle tool detail visibility |
-| `/status` | Show session status |
+| `/status` | Show session status (model, tokens, working dir) |
+| `/mouse` | Toggle mouse mode on/off |
+| `/theme <dark\|light>` | Switch color theme |
+| `/cwd` or `/cd <path>` | Show or change working directory |
 
 ### Models
 
 | Command | Description |
 |---------|-------------|
-| `/models` | List available models |
-| `/model <id>` | Switch to a different model |
+| `/models` | List all available models |
+| `/model <id>` | Switch to a specific model |
 | `/fast` | Switch to Haiku (cheap & fast) |
 | `/smart` | Switch to Sonnet (balanced) |
 | `/think` | Switch to Opus (complex reasoning) |
 | `/context` | Show context window usage |
 | `/usage` | Show token usage and estimated cost |
 
-### Conversations (requires `-sync`)
+### Conversations (requires `-sync` flag)
 
 | Command | Description |
 |---------|-------------|
@@ -110,6 +179,8 @@ Type `/help` in the CLI to see all commands. Here are the highlights:
 | `/search <query>` | Search conversations by content |
 | `/rename <slug>` | Rename current conversation |
 | `/archive` | Archive current conversation |
+| `/archived` | List archived conversations |
+| `/unarchive <id>` | Restore archived conversation |
 | `/delete` | Delete current conversation |
 | `/export [file]` | Export conversation to markdown |
 
@@ -118,93 +189,184 @@ Type `/help` in the CLI to see all commands. Here are the highlights:
 | Command | Description |
 |---------|-------------|
 | `/attach <path>` | Attach image to next message |
+| `/image <path>` | Same as `/attach` |
 | `/attachments` | List pending attachments |
 
-You can also drag-drop image files into the terminal, or paste file paths.
+You can also:
+- Drag-drop image files into the terminal
+- Paste file paths directly in your message
+- Use bracketed paths like `[/path/to/image.png]`
+
+Supported formats: PNG, JPG, JPEG, GIF, WEBP
 
 ### Git
 
 | Command | Description |
 |---------|-------------|
-| `/git` | List recent commits |
-| `/git show <id>` | Show files in commit |
-| `/git diff <file>` | Show diff for file |
+| `/git` | List recent commits (last 10) |
+| `/git show <id>` | Show files changed in a commit |
+| `/git diff <file>` | Show colorized diff for a file |
 
-### Navigation
+### Legacy Sessions (JSON-based, deprecated)
 
-| Key | Action |
-|-----|--------|
-| Enter | Send message |
-| Escape | Cancel current operation |
-| Tab | Complete file paths and commands |
-| Up/Down | Cycle through prompt history |
-| Ctrl+U/D | Scroll message history (half-page) |
-| PgUp/PgDown | Scroll message history (full page) |
-| Ctrl+C | Quit |
+| Command | Description |
+|---------|-------------|
+| `/save <name>` | Save session to JSON file |
+| `/load <name>` | Load session from JSON file |
+| `/sessions` | List saved sessions |
 
-## Examples
+## Tool Confirmation
 
-### Basic chat
+By default, Shelley asks for confirmation before running tools that could modify your system:
 
-```bash
-shelley chat
+```
+🔧 Execute bash command?
+   echo "hello world"
+
+   [y]es  [n]o  [a]lways
 ```
 
-### With conversation sync (share with web UI)
+- Press `y` or `Enter` to allow once
+- Press `n` to deny
+- Press `a` to allow all future operations this session
+
+Use `-yes` flag to skip all confirmations (for trusted automation).
+
+## Conversation Sync
+
+With the `-sync` flag, conversations are stored in SQLite and can be:
+
+1. **Continued later** - Use `/switch` to resume any conversation
+2. **Shared with web UI** - The same database is used by `shelley serve`
+3. **Searched** - Use `/search` to find conversations by content
 
 ```bash
+# Start a synced conversation
 shelley chat -sync
+
+# Later, resume it
+shelley chat -sync -conversation my-project-name
+
+# Or switch from within the CLI
+/conversations     # list all
+/switch my-proj    # switch by slug
 ```
 
-### Resume a conversation
+## Available Models
 
+Models vary by provider and configuration. On exe.dev:
+
+| Provider | Models |
+|----------|--------|
+| Anthropic | claude-opus-4.5, claude-sonnet-4.5, claude-haiku-4.5 |
+| OpenAI | gpt-5, gpt-5-nano, gpt-5.1-codex |
+| Fireworks | qwen3-coder-fireworks, glm-4p6-fireworks |
+
+Use `/models` to see what's available in your environment.
+
+## Tips
+
+### Multi-line Input
+
+Press `Ctrl+J` to insert a newline. The input area expands automatically (up to 10 lines).
+
+### Text Selection
+
+Mouse mode is on by default for scrolling. To select text:
+- Toggle mouse mode off: `/mouse`
+- Or in iTerm2: hold `Option (⌥)` while selecting
+
+### Working Directory
+
+Shelley operates in your current working directory. Use `/cwd` to check it, or `/cd <path>` to change.
+
+### Verbose Mode
+
+Use `/verbose` or start with `-verbose` to see:
+- Full bash commands being executed
+- Tool inputs and outputs
+- File paths being modified
+
+### Cost Tracking
+
+Use `/usage` to see:
+- Total tokens consumed (input + output)
+- Estimated cost in USD
+- Breakdown by input vs output tokens
+
+## Troubleshooting
+
+### "No models available"
+
+Check your API key is set correctly:
 ```bash
-shelley chat -sync -conversation my-project
+echo $ANTHROPIC_API_KEY  # Should show your key
 ```
 
-### With browser tools enabled
-
+Or on exe.dev, ensure your config points to the gateway:
 ```bash
-shelley chat -browser
+cat ~/.config/shelley/shelley.json
 ```
 
-### Non-interactive mode (pipe input)
+### "Browser tools not available"
 
+Install Chrome or Chromium:
 ```bash
-echo "explain this code" | shelley chat -prompt "$(cat main.go)"
+# Ubuntu/Debian
+sudo apt install chromium-browser
+
+# macOS
+brew install --cask chromium
 ```
 
-## Themes
+### Slow startup
 
-Use `/theme dark` or `/theme light` to switch. The default is dark.
+First run may be slow as Go compiles. Subsequent runs use the cached binary in `bin/`.
 
-## Mouse Mode
+### UI glitches
 
-By default, mouse mode is on for in-app scrolling. Use `/mouse` to toggle it off if you need terminal text selection.
+Try resizing your terminal or pressing `Ctrl+L` to redraw.
 
-**Tip:** In iTerm2, hold **Option (⌥)** while clicking/dragging to select text even with mouse mode on.
+## Architecture
 
-## Background
+The CLI is built on top of the existing Shelley codebase:
 
-This CLI was built by someone who isn't a software engineer by trade, with significant help from AI coding assistants (including Shelley itself). It started as an experiment to see if a terminal interface could be added to the existing [Shelley](https://github.com/boldsoftware/shelley) codebase.
+```
+cli/
+├── cli.go           # Core TUI (Bubble Tea model, init, update, view)
+├── commands.go      # Slash command parsing and execution
+├── models.go        # Model switching, context tracking, usage
+├── conversations.go # Database conversation management
+├── sessions.go      # Legacy JSON session save/load
+├── message.go       # Message rendering with glamour markdown
+├── styles.go        # Theme definitions (colors, borders)
+├── completion.go    # Tab completion for paths and commands
+├── git.go           # Git log and diff rendering
+├── imageextract.go  # Image path detection and loading
+├── export.go        # Markdown export functionality
+└── utils.go         # Shared utilities
+```
 
-The process involved:
+The CLI reuses:
+- `llm/` - LLM provider integrations (Anthropic, OpenAI, etc.)
+- `loop/` - Conversation loop and tool execution
+- `claudetool/` - Tool implementations (bash, patch, browser, etc.)
+- `db/` - SQLite conversation storage
 
-1. **Forking Shelley** - Starting with the existing web-based agent architecture
-2. **Learning the codebase** - Understanding how the `loop/`, `llm/`, and `db/` packages work together
-3. **Building with AI assistance** - Using Claude and Shelley to help write the CLI, debug edge cases, and refactor code
-4. **Iterating on UX** - Adding features like streaming responses, image drag-drop, and conversation sync based on actual usage
+## Contributing
 
-The CLI is marked as "unofficial" because it's a community contribution, not part of the official Shelley project. The code has been refactored to minimize merge conflicts with upstream, so it should be possible to pull in future Shelley updates.
+This is a community fork. Issues and PRs welcome at [davidcjones79/shelley-cli](https://github.com/davidcjones79/shelley-cli).
 
-If you're interested in contributing or have questions about how something works, feel free to explore the code. The main files are:
+To run tests:
+```bash
+go test ./cli/...     # CLI unit tests
+make test-go          # All Go tests
+```
 
-- `cli.go` - Core TUI (Bubble Tea model, init, update, view)
-- `commands.go` - Slash command handling
-- `models.go` - Model switching, context, usage tracking
-- `conversations.go` - Database conversation management
-- `sessions.go` - Legacy JSON session save/load
-- `message.go` - Message rendering with glamour
-- `styles.go` - Theme definitions
+## Credits
+
+Built on top of [Shelley](https://github.com/boldsoftware/shelley) by Bold Software.
+
+This CLI was built with significant help from AI coding assistants (including Shelley itself). It started as an experiment to see if a terminal interface could complement the existing web UI.
 
 Built for the [exe.dev](https://exe.dev) community. 🚀
