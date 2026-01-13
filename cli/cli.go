@@ -2,12 +2,9 @@ package cli
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -18,7 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"shelley.exe.dev/claudetool"
 	"shelley.exe.dev/db"
-	"shelley.exe.dev/db/generated"
 	"shelley.exe.dev/gitstate"
 	"shelley.exe.dev/llm"
 	"shelley.exe.dev/loop"
@@ -31,22 +27,6 @@ var bashCodeBlockRe = regexp.MustCompile("(?s)```(?:bash|sh|shell|zsh)\\s*\\n(.*
 // slashCommandRe matches slash commands (e.g., /run, /help) but not file paths (e.g., /Users/foo)
 // A slash command is / followed by lowercase letters only, then end-of-string or whitespace
 var slashCommandRe = regexp.MustCompile(`^/[a-z]+(?:\s|$)`)
-
-// imageAttachment holds a pending image to attach to the next message
-type imageAttachment struct {
-	path      string
-	mediaType string
-	data      string // base64 encoded
-}
-
-// supportedImageTypes maps file extensions to MIME types
-var supportedImageTypes = map[string]string{
-	".png":  "image/png",
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".gif":  "image/gif",
-	".webp": "image/webp",
-}
 
 // Config holds configuration for the CLI
 type Config struct {
@@ -879,245 +859,7 @@ func extractBashCommands(text string) []string {
 	return cmds
 }
 
-// recordMessageToDB records a message to the database
-func (m *Model) recordMessageToDB(ctx context.Context, message llm.Message, usage llm.Usage) error {
-	if m.config.DB == nil || m.conversationID == "" {
-		return nil
-	}
 
-	// Determine message type
-	var msgType db.MessageType
-	switch message.Role {
-	case llm.MessageRoleUser:
-		msgType = db.MessageTypeUser
-	case llm.MessageRoleAssistant:
-		msgType = db.MessageTypeAgent
-	default:
-		msgType = db.MessageTypeAgent
-	}
-
-	// Check for tool content
-	for _, content := range message.Content {
-		if content.Type == llm.ContentTypeToolUse || content.Type == llm.ContentTypeToolResult {
-			msgType = db.MessageTypeTool
-			break
-		}
-	}
-
-	_, err := m.config.DB.CreateMessage(ctx, db.CreateMessageParams{
-		ConversationID: m.conversationID,
-		Type:           msgType,
-		LLMData:        message,
-		UsageData:      usage,
-	})
-	return err
-}
-
-// loadHistoryFromDB loads conversation history from the database
-func (m *Model) loadHistoryFromDB() ([]llm.Message, error) {
-	if m.config.DB == nil || m.conversationID == "" {
-		return nil, nil
-	}
-
-	var messages []generated.Message
-	err := m.config.DB.Queries(context.Background(), func(q *generated.Queries) error {
-		var err error
-		messages, err = q.ListMessages(context.Background(), m.conversationID)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var history []llm.Message
-	for _, msg := range messages {
-		// Skip system and gitinfo messages
-		if msg.Type == string(db.MessageTypeSystem) || msg.Type == string(db.MessageTypeGitInfo) {
-			continue
-		}
-		if msg.LlmData == nil {
-			continue
-		}
-		var llmMsg llm.Message
-		if err := json.Unmarshal([]byte(*msg.LlmData), &llmMsg); err != nil {
-			continue
-		}
-		history = append(history, llmMsg)
-	}
-	return history, nil
-}
-
-// createConversation creates a new conversation in the database
-func (m *Model) createConversation(ctx context.Context) error {
-	if m.config.DB == nil {
-		return nil
-	}
-
-	cwd := m.config.WorkingDir
-	conv, err := m.config.DB.CreateConversation(ctx, nil, true, &cwd)
-	if err != nil {
-		return err
-	}
-	m.conversationID = conv.ConversationID
-	return nil
-}
-
-// handleGitStateChange handles git state changes for display
-func (m *Model) handleGitStateChange(ctx context.Context, state *gitstate.GitState) {
-	if state == nil || !state.IsRepo {
-		return
-	}
-
-	// Check if state actually changed
-	if m.lastGitState != nil && state.Equal(m.lastGitState) {
-		return
-	}
-	m.lastGitState = state
-
-	// Display git info message
-	gitMsg := fmt.Sprintf("📦 %s", state.String())
-	m.messages = append(m.messages, renderedMessage{
-		role:    llm.MessageRoleAssistant,
-		content: m.styles.SystemMessage.Render(gitMsg),
-	})
-	m.updateViewportContent()
-
-	// Record to database if configured
-	if m.config.DB != nil && m.conversationID != "" {
-		message := llm.Message{
-			Role:    llm.MessageRoleAssistant,
-			Content: []llm.Content{{Type: llm.ContentTypeText, Text: state.String()}},
-		}
-		m.config.DB.CreateMessage(ctx, db.CreateMessageParams{
-			ConversationID: m.conversationID,
-			Type:           db.MessageTypeGitInfo,
-			LLMData:        message,
-		})
-	}
-}
-
-// exportConversation exports the conversation to a markdown file
-func (m *Model) attachImage(path string) tea.Cmd {
-	// Expand ~ to home directory
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			path = filepath.Join(home, path[2:])
-		}
-	}
-
-	// Make path absolute if relative
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(m.config.WorkingDir, path)
-	}
-
-	// Check file exists
-	info, err := os.Stat(path)
-	if err != nil {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("File not found: " + path),
-		})
-		m.updateViewportContent()
-		return nil
-	}
-
-	if info.IsDir() {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Path is a directory, not a file"),
-		})
-		m.updateViewportContent()
-		return nil
-	}
-
-	// Check file size (limit to 10MB)
-	if info.Size() > 10*1024*1024 {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("File too large (max 10MB)"),
-		})
-		m.updateViewportContent()
-		return nil
-	}
-
-	// Check file extension
-	ext := strings.ToLower(filepath.Ext(path))
-	mediaType, ok := supportedImageTypes[ext]
-	if !ok {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Unsupported image type: " + ext + " (supported: .png, .jpg, .jpeg, .gif, .webp)"),
-		})
-		m.updateViewportContent()
-		return nil
-	}
-
-	// Read and encode the file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Failed to read file: " + err.Error()),
-		})
-		m.updateViewportContent()
-		return nil
-	}
-
-	// Base64 encode
-	encoded := base64.StdEncoding.EncodeToString(data)
-
-	// Add to pending attachments
-	m.pendingAttachments = append(m.pendingAttachments, imageAttachment{
-		path:      path,
-		mediaType: mediaType,
-		data:      encoded,
-	})
-
-	// Show confirmation
-	filename := filepath.Base(path)
-	sizeKB := float64(info.Size()) / 1024
-	msg := fmt.Sprintf("🖼️  Attached: %s (%.1fKB, %s)", filename, sizeKB, mediaType)
-	if len(m.pendingAttachments) > 1 {
-		msg += fmt.Sprintf(" [%d attachments pending]", len(m.pendingAttachments))
-	}
-	msg += "\nType your message and press Enter to send with attachment(s)"
-
-	m.messages = append(m.messages, renderedMessage{
-		role:    llm.MessageRoleAssistant,
-		content: m.styles.ToolSuccess.Render(msg),
-	})
-	m.updateViewportContent()
-	return nil
-}
-
-// listAttachments shows pending attachments
-func (m *Model) listAttachments() tea.Cmd {
-	if len(m.pendingAttachments) == 0 {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.SystemMessage.Render("No pending attachments"),
-		})
-		m.updateViewportContent()
-		return nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Pending attachments:\n")
-	for i, att := range m.pendingAttachments {
-		sb.WriteString(fmt.Sprintf("  %d. %s (%s)\n", i+1, filepath.Base(att.path), att.mediaType))
-	}
-	sb.WriteString("\nThese will be sent with your next message")
-
-	m.messages = append(m.messages, renderedMessage{
-		role:    llm.MessageRoleAssistant,
-		content: m.styles.SystemMessage.Render(sb.String()),
-	})
-	m.updateViewportContent()
-	return nil
-}
-
-// handleTabCompletion handles tab key for completion
 func (m *Model) Cleanup() {
 	if m.loopCancel != nil {
 		m.loopCancel()
