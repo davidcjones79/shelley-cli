@@ -163,8 +163,11 @@ func TestNavigateTool(t *testing.T) {
 	inputJSON, _ := json.Marshal(input)
 
 	// Call the tool
-	toolOut := navTool.Run(ctx, []byte(inputJSON))
+	toolOut := navTool.Run(ctx, inputJSON)
 	if toolOut.Error != nil {
+		if strings.Contains(toolOut.Error.Error(), "failed to start browser") {
+			t.Skip("Browser automation not available in this environment")
+		}
 		t.Fatalf("Error running navigate tool: %v", toolOut.Error)
 	}
 	result := toolOut.LLMContent
@@ -318,7 +321,8 @@ func TestDefaultViewportSize(t *testing.T) {
 	navInput := []byte(`{"url": "about:blank"}`)
 	toolOut := tools.NewNavigateTool().Run(ctx, navInput)
 	if toolOut.Error != nil {
-		if strings.Contains(toolOut.Error.Error(), "browser automation not available") {
+		if strings.Contains(toolOut.Error.Error(), "failed to start browser") ||
+			strings.Contains(toolOut.Error.Error(), "browser automation not available") {
 			t.Skip("Browser automation not available in this environment")
 		}
 		t.Fatalf("Navigation error: %v", toolOut.Error)
