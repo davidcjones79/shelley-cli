@@ -172,7 +172,7 @@ func (r *MessageRenderer) renderToolUse(content llm.Content) string {
 }
 
 // renderToolResult renders a tool result block with status indicator
-// In verbose mode, shows full output. In non-verbose mode, shows a summary.
+// In verbose mode, shows full output. In non-verbose mode, shows just status.
 func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) string {
 	var sb strings.Builder
 
@@ -213,9 +213,31 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 		}
 	}
 
-	// Render the result content
+	// In non-verbose mode, just show status (no output text)
+	if !verbose {
+		// But always show errors
+		if content.ToolError {
+			for _, result := range content.ToolResult {
+				if result.Type == llm.ContentTypeText && result.Text != "" {
+					errText := strings.TrimSpace(result.Text)
+					if len(errText) > 200 {
+						errText = errText[:200] + "..."
+					}
+					sb.WriteString(style.Render(errText))
+					break
+				}
+			}
+		}
+		boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
+		header := headerStyle.Render(statusIcon) + timing
+		if sb.Len() > 0 {
+			return boxStyle.Render(header + " " + sb.String())
+		}
+		return boxStyle.Render(header)
+	}
+
+	// Verbose mode: render the full result content
 	var hasContent bool
-	var totalLen int
 	for _, result := range content.ToolResult {
 		// Check for image content in results (show indicator, no inline rendering)
 		if result.MediaType != "" && result.Data != "" {
@@ -229,18 +251,9 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 
 		if result.Type == llm.ContentTypeText && result.Text != "" {
 			text := strings.TrimSpace(result.Text)
-			totalLen += len(text)
 
-			// Truncation limits depend on verbose mode
-			var maxLen int
-			if verbose {
-				maxLen = 1000
-			} else {
-				maxLen = 200
-			}
-
-			if len(text) > maxLen {
-				text = text[:maxLen] + "... (truncated)"
+			if len(text) > 1000 {
+				text = text[:1000] + "... (truncated)"
 			}
 			// Linkify file paths in the output
 			text = linkifyPaths(text)
