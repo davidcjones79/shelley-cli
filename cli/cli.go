@@ -391,6 +391,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingMessages = nil
 	}
 
+	// Update viewport for scrolling
+	var vpCmd tea.Cmd
+	m.viewport, vpCmd = m.viewport.Update(msg)
+	cmds = append(cmds, vpCmd)
+
 	// Update textarea - always allow typing, even while processing
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
@@ -956,7 +961,7 @@ func Run(cfg Config) error {
 	}
 	defer model.Cleanup()
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err
 }
