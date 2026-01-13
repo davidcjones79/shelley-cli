@@ -815,6 +815,40 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.newConversation()
 	case "/archive":
 		return m.archiveConversation()
+	case "/archived":
+		return m.listArchivedConversations()
+	case "/unarchive":
+		if len(parts) < 2 {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render("Usage: /unarchive <conversation-id>"),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		return m.unarchiveConversation(parts[1])
+	case "/rename":
+		if len(parts) < 2 {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render("Usage: /rename <new-slug>"),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		return m.renameConversation(strings.Join(parts[1:], "-"))
+	case "/delete":
+		return m.deleteConversation()
+	case "/search":
+		if len(parts) < 2 {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render("Usage: /search <query>"),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		return m.searchConversations(strings.Join(parts[1:], " "))
 
 	// Image attachment
 	case "/attach", "/image":
@@ -865,9 +899,14 @@ func (m *Model) buildHelpText() string {
 	if m.config.DB != nil {
 		sb.WriteString("\nConversation Management (database enabled):\n")
 		sb.WriteString("  /conversations - List recent conversations\n")
+		sb.WriteString("  /search <q>    - Search conversations by content\n")
 		sb.WriteString("  /switch <id>   - Switch to conversation by ID or slug\n")
 		sb.WriteString("  /new           - Start a new conversation\n")
+		sb.WriteString("  /rename <slug> - Rename current conversation\n")
 		sb.WriteString("  /archive       - Archive current conversation\n")
+		sb.WriteString("  /archived      - List archived conversations\n")
+		sb.WriteString("  /unarchive <id>- Restore archived conversation\n")
+		sb.WriteString("  /delete        - Delete current conversation\n")
 	} else {
 		sb.WriteString("\nSession Management (legacy JSON files):\n")
 		sb.WriteString("  /save [name]   - Save session\n")
@@ -1295,9 +1334,19 @@ func (m *Model) listConversations() tea.Cmd {
 		if conv.Slug != nil && *conv.Slug != "" {
 			name = *conv.Slug
 		}
-		sb.WriteString(fmt.Sprintf("%s%s (%s)\n", marker, name, conv.UpdatedAt.Format("Jan 2 15:04")))
+		// Format: marker name (time) [cwd]
+		line := fmt.Sprintf("%s%s (%s)", marker, name, conv.UpdatedAt.Format("Jan 2 15:04"))
+		if conv.Cwd != nil && *conv.Cwd != "" {
+			cwd := *conv.Cwd
+			// Shorten home directory to ~
+			if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(cwd, home) {
+				cwd = "~" + cwd[len(home):]
+			}
+			line += fmt.Sprintf(" [%s]", cwd)
+		}
+		sb.WriteString(line + "\n")
 	}
-	sb.WriteString("\nUse /switch <id> to switch conversations")
+	sb.WriteString("\nUse /switch <id> to switch, /search <query> to search")
 
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleAssistant,
@@ -1447,6 +1496,277 @@ func (m *Model) archiveConversation() tea.Cmd {
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleAssistant,
 		content: m.styles.ToolSuccess.Render("Archived conversation: " + archivedID),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// listArchivedConversations lists archived conversations from the database
+func (m *Model) listArchivedConversations() tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -sync flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	conversations, err := m.config.DB.ListArchivedConversations(context.Background(), 20, 0)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to list archived conversations: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	if len(conversations) == 0 {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.SystemMessage.Render("No archived conversations"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Archived conversations:\n")
+	for _, conv := range conversations {
+		name := conv.ConversationID
+		if conv.Slug != nil && *conv.Slug != "" {
+			name = *conv.Slug
+		}
+		sb.WriteString(fmt.Sprintf("  %s (%s)\n", name, conv.UpdatedAt.Format("Jan 2 15:04")))
+	}
+	sb.WriteString("\nUse /unarchive <id> to restore")
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(sb.String()),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// unarchiveConversation restores an archived conversation
+func (m *Model) unarchiveConversation(conversationID string) tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -sync flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Try to find by ID first, then by slug
+	conv, err := m.config.DB.GetConversationByID(context.Background(), conversationID)
+	if err != nil {
+		conv, err = m.config.DB.GetConversationBySlug(context.Background(), conversationID)
+		if err != nil {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render("Conversation not found: " + conversationID),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+	}
+
+	_, err = m.config.DB.UnarchiveConversation(context.Background(), conv.ConversationID)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to unarchive: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	name := conv.ConversationID
+	if conv.Slug != nil && *conv.Slug != "" {
+		name = *conv.Slug
+	}
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render("Unarchived conversation: " + name),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// renameConversation renames the current conversation
+func (m *Model) renameConversation(newSlug string) tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -sync flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	if m.conversationID == "" {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("No active conversation to rename"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Sanitize the slug: lowercase, alphanumeric and hyphens only
+	newSlug = sanitizeSlug(newSlug)
+	if newSlug == "" {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Invalid slug (must contain alphanumeric characters)"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	_, err := m.config.DB.UpdateConversationSlug(context.Background(), m.conversationID, newSlug)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to rename: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render("Renamed conversation to: " + newSlug),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// sanitizeSlug cleans a slug: lowercase, alphanumeric and hyphens only, max 60 chars
+func sanitizeSlug(input string) string {
+	// Convert to lowercase
+	result := strings.ToLower(input)
+	// Replace spaces and underscores with hyphens
+	result = strings.ReplaceAll(result, " ", "-")
+	result = strings.ReplaceAll(result, "_", "-")
+	// Remove any character that's not alphanumeric or hyphen
+	var sb strings.Builder
+	for _, r := range result {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			sb.WriteRune(r)
+		}
+	}
+	result = sb.String()
+	// Collapse multiple hyphens
+	for strings.Contains(result, "--") {
+		result = strings.ReplaceAll(result, "--", "-")
+	}
+	// Trim leading/trailing hyphens
+	result = strings.Trim(result, "-")
+	// Limit length
+	if len(result) > 60 {
+		result = result[:60]
+		result = strings.TrimSuffix(result, "-")
+	}
+	return result
+}
+
+// deleteConversation deletes the current conversation
+func (m *Model) deleteConversation() tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -sync flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	if m.conversationID == "" {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("No active conversation to delete"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	deletedID := m.conversationID
+
+	err := m.config.DB.DeleteConversation(context.Background(), m.conversationID)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to delete: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Start fresh
+	m.newConversation()
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render("Deleted conversation: " + deletedID),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// searchConversations searches conversations by content
+func (m *Model) searchConversations(query string) tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -sync flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	conversations, err := m.config.DB.SearchConversationsWithMessages(context.Background(), query, 20, 0)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to search: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	if len(conversations) == 0 {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.SystemMessage.Render("No conversations found matching: " + query),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Search results for \"%s\":\n", query))
+	for _, conv := range conversations {
+		marker := "  "
+		if conv.ConversationID == m.conversationID {
+			marker = "→ "
+		}
+		name := conv.ConversationID
+		if conv.Slug != nil && *conv.Slug != "" {
+			name = *conv.Slug
+		}
+		sb.WriteString(fmt.Sprintf("%s%s (%s)\n", marker, name, conv.UpdatedAt.Format("Jan 2 15:04")))
+	}
+	sb.WriteString("\nUse /switch <id> to switch conversations")
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(sb.String()),
 	})
 	m.updateViewportContent()
 	return nil
@@ -1646,9 +1966,14 @@ func (m *Model) completeSlashCommand(prefix string) []string {
 		commands = append(commands,
 			"/conversations",
 			"/convos",
+			"/search",
 			"/switch",
 			"/new",
+			"/rename",
 			"/archive",
+			"/archived",
+			"/unarchive",
+			"/delete",
 		)
 	} else {
 		commands = append(commands,
