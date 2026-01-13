@@ -1441,6 +1441,43 @@ button {
   padding-right: max(1rem, env(safe-area-inset-right));
 }
 
+.slash-command-result {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0 1rem 0.5rem;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+}
+
+.slash-command-result pre {
+  margin: 0;
+  font-family: inherit;
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+}
+
+.slash-command-dismiss {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.slash-command-dismiss:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
 .message-queued-feedback {
   text-align: center;
   font-size: 0.75rem;

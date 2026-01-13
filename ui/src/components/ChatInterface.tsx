@@ -362,6 +362,7 @@ function ChatInterface({
   mostRecentCwd,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [slashCommandResult, setSlashCommandResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -498,6 +499,14 @@ function ChatInterface({
     }
   }, [messages]);
 
+  // Auto-clear slash command result after 4 seconds
+  useEffect(() => {
+    if (slashCommandResult) {
+      const timer = setTimeout(() => setSlashCommandResult(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [slashCommandResult]);
+
   // Close overflow menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -629,8 +638,58 @@ function ChatInterface({
     };
   };
 
+  // Handle slash commands - returns true if handled
+  const handleSlashCommand = (input: string): boolean => {
+    const trimmed = input.trim();
+    if (!trimmed.startsWith("/")) return false;
+    
+    const [cmd, ...args] = trimmed.slice(1).split(/\s+/);
+    const command = cmd.toLowerCase();
+    
+    switch (command) {
+      case "help":
+      case "?":
+        setSlashCommandResult(
+          "Available commands:\n" +
+          "  /help, /?     - Show this help\n" +
+          "  /clear        - Start a new conversation\n" +
+          "  /stop, /cancel - Stop the current agent task\n" +
+          "  /diff, /diffs  - Open the diff viewer"
+        );
+        return true;
+      case "clear":
+      case "new":
+        onNewConversation();
+        return true;
+      case "stop":
+      case "cancel":
+        if (agentWorking && conversationId) {
+          handleCancel();
+        } else {
+          setSlashCommandResult("No task is currently running.");
+        }
+        return true;
+      case "diff":
+      case "diffs":
+        if (currentConversation?.cwd || selectedCwd) {
+          setShowDiffViewer(true);
+        } else {
+          setSlashCommandResult("No working directory set.");
+        }
+        return true;
+      default:
+        setSlashCommandResult(`Unknown command: /${command}. Type /help for available commands.`);
+        return true;
+    }
+  };
+
   const sendMessage = async (message: string) => {
     if (!message.trim() || sending) return;
+    
+    // Handle slash commands first
+    if (handleSlashCommand(message)) {
+      return;
+    }
 
     try {
       setSending(true);
@@ -1320,7 +1379,20 @@ function ChatInterface({
         </div>
       </div>
 
-      {/* Message input */}
+      {/* Slash command result */}
+      {slashCommandResult && (
+        <div className="slash-command-result">
+          <pre>{slashCommandResult}</pre>
+          <button
+            className="slash-command-dismiss"
+            onClick={() => setSlashCommandResult(null)}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Message input */}
       <MessageInput
         key={conversationId || "new"}
@@ -1331,6 +1403,14 @@ function ChatInterface({
         onClearInjectedText={() => setDiffCommentText("")}
         persistKey={conversationId || "new-conversation"}
         agentWorking={agentWorking}
+        onEscape={() => {
+          if (agentWorking && conversationId) {
+            handleCancel();
+          }
+        }}
+        messageHistory={messages
+          .filter(m => m.type === "user" && m.text)
+          .map(m => m.text || "")}
       />
 
       {/* Directory Picker Modal */}

@@ -54,6 +54,10 @@ interface MessageInputProps {
   persistKey?: string;
   /** Whether the agent is currently working on a response */
   agentWorking?: boolean;
+  /** Called when user presses Escape */
+  onEscape?: () => void;
+  /** History of previous messages for up/down navigation */
+  messageHistory?: string[];
 }
 
 const PERSIST_KEY_PREFIX = "shelley_draft_";
@@ -67,6 +71,8 @@ function MessageInput({
   onClearInjectedText,
   persistKey,
   agentWorking = false,
+  onEscape,
+  messageHistory = [],
 }: MessageInputProps) {
   const [message, setMessage] = useState(() => {
     // Load persisted draft if persistKey is set
@@ -80,6 +86,8 @@ function MessageInput({
   const [uploadsInProgress, setUploadsInProgress] = useState(0);
   const [dragCounter, setDragCounter] = useState(0);
   const [isListening, setIsListening] = useState(false);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const savedDraftRef = useRef<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   // Track the base text (before speech recognition started) and finalized speech text
@@ -293,6 +301,8 @@ function MessageInput({
       const wasAgentWorking = agentWorking;
       // Clear immediately to allow queueing next message
       setMessage("");
+      setHistoryIndex(-1);
+      savedDraftRef.current = "";
       if (persistKey) {
         localStorage.removeItem(PERSIST_KEY_PREFIX + persistKey);
       }
@@ -312,13 +322,56 @@ function MessageInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Don't submit while IME is composing (e.g., converting Japanese hiragana to kanji)
+    // Don't handle while IME is composing (e.g., converting Japanese hiragana to kanji)
     if (e.nativeEvent.isComposing) {
       return;
     }
+    
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (onEscape) {
+        onEscape();
+      }
+      return;
+    }
+    
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
+      return;
+    }
+    
+    // Up/down arrow for message history (only when at start/end of input)
+    if (e.key === "ArrowUp" && messageHistory.length > 0) {
+      const textarea = textareaRef.current;
+      // Only navigate history if cursor is at the beginning
+      if (textarea && textarea.selectionStart === 0 && textarea.selectionEnd === 0) {
+        e.preventDefault();
+        if (historyIndex === -1) {
+          // Save current draft before navigating
+          savedDraftRef.current = message;
+        }
+        const newIndex = Math.min(historyIndex + 1, messageHistory.length - 1);
+        setHistoryIndex(newIndex);
+        setMessage(messageHistory[messageHistory.length - 1 - newIndex]);
+      }
+    }
+    
+    if (e.key === "ArrowDown" && historyIndex >= 0) {
+      const textarea = textareaRef.current;
+      // Only navigate history if cursor is at the end
+      if (textarea && textarea.selectionStart === message.length) {
+        e.preventDefault();
+        const newIndex = historyIndex - 1;
+        if (newIndex < 0) {
+          // Restore saved draft
+          setHistoryIndex(-1);
+          setMessage(savedDraftRef.current);
+        } else {
+          setHistoryIndex(newIndex);
+          setMessage(messageHistory[messageHistory.length - 1 - newIndex]);
+        }
+      }
     }
   };
 
