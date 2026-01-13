@@ -2,11 +2,56 @@
 
 An unofficial terminal interface for Shelley, the coding agent.
 
-## Quick Start
+## Installation
+
+### On exe.dev VMs (Recommended)
+
+Shelley CLI automatically uses the exe.dev LLM gateway - no API keys needed.
 
 ```bash
+# Clone and build
+git clone https://github.com/davidcjones79/shelley-cli.git
+cd shelley-cli
+make
+
+# Create config file
+mkdir -p ~/.config/shelley
+cat > ~/.config/shelley/shelley.json << 'EOF'
+{
+  "llm_gateway": "http://169.254.169.254/gateway/llm",
+  "default_model": "claude-sonnet-4.5"
+}
+EOF
+
+# Add alias to your shell (optional but recommended)
+echo 'alias shelley="~/shelley-cli/shelley --config ~/.config/shelley/shelley.json"' >> ~/.bashrc
+source ~/.bashrc
+
+# Run it
 shelley chat
 ```
+
+### On non-exe.dev machines
+
+You'll need your own API keys from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/).
+
+```bash
+# Clone and build
+git clone https://github.com/davidcjones79/shelley-cli.git
+cd shelley-cli
+make
+
+# Set your API key (Anthropic example)
+export ANTHROPIC_API_KEY="your-api-key-here"
+
+# Or for OpenAI
+export OPENAI_API_KEY="your-api-key-here"
+
+# Run it
+./shelley chat
+```
+
+You can also add the API key to your `~/.bashrc` to persist it across sessions.
 
 ## Features
 
