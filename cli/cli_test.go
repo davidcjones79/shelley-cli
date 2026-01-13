@@ -112,3 +112,23 @@ func TestColorizeDiff(t *testing.T) {
 		t.Error("colorizeDiff should contain added lines")
 	}
 }
+
+func TestStripAnsiCodes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"hello", "hello"},
+		{"\x1b[31mred\x1b[0m", "red"},
+		{"\x1b[1;32mbold green\x1b[0m normal", "bold green normal"},
+		{"no codes here", "no codes here"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		result := stripAnsiCodes(tt.input)
+		if result != tt.expected {
+			t.Errorf("stripAnsiCodes(%q) = %q, want %q", tt.input, result, tt.expected)
+		}
+	}
+}
