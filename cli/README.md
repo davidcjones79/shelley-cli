@@ -2,8 +2,6 @@
 
 A terminal interface for [Shelley](https://github.com/boldsoftware/shelley), the coding agent.
 
-![Shelley CLI Demo](https://github.com/davidcjones79/shelley-cli/raw/shelley-cli-test/cli/demo.gif)
-
 ## Quick Start (exe.dev)
 
 On exe.dev VMs, Shelley CLI works out of the box with the built-in LLM gateway - no API keys needed.
