@@ -1,5 +1,7 @@
 # Shelley: a coding agent for exe.dev
 
+> **🆕 This fork adds a CLI interface!** See [cli/README.md](cli/README.md) for installation and usage.
+
 Shelley is a mobile-friendly, web-based, multi-conversation, multi-modal,
 multi-model, single-user coding agent built for but not exclusive to
 [exe.dev](https://exe.dev/). It does not come with authorization or sandboxing:
