@@ -53,6 +53,7 @@ test-go: ui
 # Run end-to-end tests
 test-e2e: ui
 	@echo "Running E2E tests..."
+	cd ui && npx playwright install chromium --with-deps
 	cd ui && pnpm run test:e2e
 
 # Run E2E tests in headed mode (with visible browser)
