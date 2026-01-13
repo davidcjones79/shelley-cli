@@ -309,7 +309,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case tea.KeyEscape:
-			// Cancel current operation
+			// Cancel current operation or clear input
 			if m.processing && m.loopCancel != nil {
 				m.loopCancel()
 				m.processing = false
@@ -322,6 +322,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					content: m.styles.SystemMessage.Render("Cancelled"),
 				})
 				m.updateViewportContent()
+			} else {
+				// Clear input box
+				m.textarea.Reset()
 			}
 
 		case tea.KeyCtrlJ:
