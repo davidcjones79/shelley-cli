@@ -200,10 +200,13 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 
 	case "/describe":
 		if len(parts) < 2 {
-			m.showError("Usage: /describe <path-to-image> [prompt]")
-			return nil
+			// No args - show last result from Mac describe-image script
+			return m.showLastImageResult()
 		}
 		return m.describeImage(strings.Join(parts[1:], " "))
+
+	case "/imgresult":
+		return m.showLastImageResult()
 
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
