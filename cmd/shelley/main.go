@@ -99,7 +99,7 @@ func runChat(global GlobalConfig, args []string) {
 	fs := flag.NewFlagSet("chat", flag.ExitOnError)
 	prompt := fs.String("prompt", "", "Initial prompt to send (optional, for non-interactive mode)")
 	yesMode := fs.Bool("yes", false, "Auto-accept all tool operations (no confirmations)")
-	verbose := fs.Bool("verbose", false, "Show tool execution details (off by default)")
+	verbose := fs.Bool("verbose", true, "Show tool execution details")
 	enableBrowser := fs.Bool("browser", false, "Enable browser tools (screenshots, navigation, etc.)")
 	useDB := fs.Bool("sync", false, "Sync conversations with database (enables /conversations, /switch)")
 	conversationID := fs.String("conversation", "", "Resume specific conversation by ID or slug (requires -sync)")
