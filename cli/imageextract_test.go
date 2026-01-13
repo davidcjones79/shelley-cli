@@ -7,9 +7,10 @@ import (
 )
 
 func TestExtractImagePathsFromText(t *testing.T) {
-	// Create a test image file
+	// Create test image files
 	tmpDir := t.TempDir()
 	imgPath := filepath.Join(tmpDir, "test.png")
+	imgPathWithSpaces := filepath.Join(tmpDir, "Screenshot 2024-01-15 at 10.30.00 AM.png")
 	// A minimal valid PNG (1x1 red pixel)
 	pngData := []byte{
 		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
@@ -29,6 +30,9 @@ func TestExtractImagePathsFromText(t *testing.T) {
 		0xAE, 0x42, 0x60, 0x82, // IEND CRC
 	}
 	if err := os.WriteFile(imgPath, pngData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imgPathWithSpaces, pngData, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -90,6 +94,12 @@ func TestExtractImagePathsFromText(t *testing.T) {
 			name:           "file URL",
 			input:          "See file://" + imgPath,
 			wantText:       "See",
+			wantImageCount: 1,
+		},
+		{
+			name:           "bare path with spaces (drag-drop)",
+			input:          imgPathWithSpaces,
+			wantText:       "",
 			wantImageCount: 1,
 		},
 	}

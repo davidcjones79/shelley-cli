@@ -20,6 +20,21 @@ var imagePathRegex = regexp.MustCompile(`(?:\[([^\[\]]+\.(?:png|jpg|jpeg|gif|web
 // extractImagePathsFromText extracts image file paths from text.
 // Returns the cleaned text (with paths removed) and a list of valid image paths.
 func extractImagePathsFromText(text, workingDir string) (cleanedText string, imagePaths []string) {
+	// Special case: if the entire input looks like a bare image path (possibly with spaces),
+	// try it directly. This handles drag-and-drop from Finder where paths aren't quoted.
+	trimmed := strings.TrimSpace(text)
+	if (strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "~/")) && hasImageExtension(trimmed) {
+		path := trimmed
+		if strings.HasPrefix(path, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				path = filepath.Join(home, path[2:])
+			}
+		}
+		if isValidImageFile(path) {
+			return "", []string{path}
+		}
+	}
+
 	matches := imagePathRegex.FindAllStringSubmatchIndex(text, -1)
 	if len(matches) == 0 {
 		return text, nil
@@ -97,6 +112,16 @@ func extractImagePathsFromText(text, workingDir string) (cleanedText string, ima
 	result.WriteString(text[lastEnd:])
 	
 	return strings.TrimSpace(result.String()), imagePaths
+}
+
+// hasImageExtension checks if a path ends with a supported image extension
+func hasImageExtension(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".png") ||
+		strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") ||
+		strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".webp")
 }
 
 // isValidImageFile checks if a path points to a valid image file
