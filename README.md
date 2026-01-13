@@ -69,6 +69,29 @@ with an appropriately ironic nod at
 "[Ozymandias](https://www.poetryfoundation.org/poems/46565/ozymandias)."
 Shelley is a computer program, and, it's an it.
 
+# Using exe.dev LLM Gateway
+
+If running on an exe.dev VM, you can use the built-in LLM gateway instead of your own API keys.
+
+Add to your `~/.bashrc`:
+
+```bash
+# exe.dev LLM Gateway configuration
+export ANTHROPIC_API_KEY="$EXE_DEV_TOKEN"
+export ANTHROPIC_BASE_URL="http://169.254.169.254/gateway/llm/anthropic"
+export OPENAI_API_KEY="$EXE_DEV_TOKEN"
+export OPENAI_BASE_URL="http://169.254.169.254/gateway/llm/openai/v1"
+export FIREWORKS_API_KEY="$EXE_DEV_TOKEN"
+export FIREWORKS_BASE_URL="http://169.254.169.254/gateway/llm/fireworks/inference/v1"
+```
+
+Then `source ~/.bashrc` or start a new terminal.
+
+Available models:
+- **Anthropic:** claude-opus-4.5, claude-sonnet-4.5, claude-haiku-4.5
+- **OpenAI:** gpt-5, gpt-5-nano, gpt-5.1-codex
+- **Fireworks:** qwen3-coder-fireworks, glm-4p6-fireworks
+
 # Open source
 
 Shelley is Apache licensed. We require a CLA for contributions.
