@@ -19,6 +19,9 @@ type MessageRecordFunc func(ctx context.Context, message llm.Message, usage llm.
 // This is used to record user-visible notifications about git changes.
 type GitStateChangeFunc func(ctx context.Context, state *gitstate.GitState)
 
+// StreamCallback is called during streaming to provide real-time updates
+type StreamCallback func(event llm.StreamEvent)
+
 // Config contains all configuration needed to create a Loop
 type Config struct {
 	LLM              llm.Service
@@ -33,6 +36,9 @@ type Config struct {
 	// If set, this is called at end of turn to check for git state changes.
 	// If nil, Config.WorkingDir is used as a static value.
 	GetWorkingDir func() string
+	// OnStream is called during streaming to provide real-time updates.
+	// If the LLM service supports streaming and this is set, streaming will be used.
+	OnStream StreamCallback
 }
 
 // Loop manages a conversation turn with an LLM including tool execution and message recording.
@@ -51,6 +57,7 @@ type Loop struct {
 	onGitStateChange GitStateChangeFunc
 	getWorkingDir    func() string
 	lastGitState     *gitstate.GitState
+	onStream         StreamCallback
 }
 
 // NewLoop creates a new Loop instance with the provided configuration
@@ -79,6 +86,7 @@ func NewLoop(config Config) *Loop {
 		onGitStateChange: config.OnGitStateChange,
 		getWorkingDir:    config.GetWorkingDir,
 		lastGitState:     initialGitState,
+		onStream:         config.OnStream,
 	}
 }
 
@@ -248,7 +256,19 @@ func (l *Loop) processLLMRequest(ctx context.Context) error {
 	llmCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	resp, err := llmService.Do(llmCtx, req)
+	var resp *llm.Response
+	var err error
+
+	// Use streaming if available and callback is set
+	if streamer, ok := llmService.(llm.Streamer); ok && l.onStream != nil {
+		resp, err = streamer.DoStream(llmCtx, req, func(event llm.StreamEvent) error {
+			l.onStream(event)
+			return nil
+		})
+	} else {
+		resp, err = llmService.Do(llmCtx, req)
+	}
+
 	if err != nil {
 		// Record the error as a message so it can be displayed in the UI
 		errorMessage := llm.Message{
