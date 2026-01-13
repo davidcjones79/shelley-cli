@@ -179,8 +179,9 @@ Use `/theme dark` or `/theme light` to switch. The default is dark.
 
 ## Mouse Mode
 
-By default, mouse mode is off to allow text selection in your terminal.
-Use `/mouse` to toggle mouse scrolling (disables text selection).
+By default, mouse mode is on for in-app scrolling. Use `/mouse` to toggle it off if you need terminal text selection.
+
+**Tip:** In iTerm2, hold **Option (⌥)** while clicking/dragging to select text even with mouse mode on.
 
 ## Background
 

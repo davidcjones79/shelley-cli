@@ -215,6 +215,7 @@ func New(cfg Config) (*Model, error) {
 		streamChan:     make(chan llm.StreamEvent, 100),
 		verbose:        cfg.Verbose,
 		conversationID: cfg.ConversationID,
+		mouseEnabled:   true,
 	}
 
 	// If resuming a conversation, load and display history
@@ -245,6 +246,7 @@ func (m *Model) Init() tea.Cmd {
 		m.spinner.Tick,
 		m.waitForResponse(),
 		m.waitForStream(),
+		tea.EnableMouseCellMotion,
 	)
 }
 
