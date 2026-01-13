@@ -142,8 +142,10 @@ type Model struct {
 
 	// Tool streaming state
 	currentToolName  string            // name of currently running tool
+	currentToolID    string            // ID of currently running tool
 	currentToolInput strings.Builder   // accumulates tool input JSON as it streams
-	toolNames        map[string]string // maps tool use ID to tool name
+	toolNames        map[string]string          // maps tool use ID to tool name
+	toolInputs       map[string]json.RawMessage // maps tool use ID to tool input
 }
 
 // renderedMessage holds a pre-rendered message for display
@@ -224,6 +226,7 @@ func New(cfg Config) (*Model, error) {
 		conversationID: cfg.ConversationID,
 		mouseEnabled:   true,
 		toolNames:      make(map[string]string),
+		toolInputs:     make(map[string]json.RawMessage),
 	}
 
 	// If resuming a conversation, load and display history
@@ -232,15 +235,19 @@ func New(cfg Config) (*Model, error) {
 		if err != nil {
 			cfg.Logger.Warn("Failed to load conversation history", "error", err)
 		} else {
-			// First pass: extract all tool names from tool_use content
+			// First pass: extract all tool names and inputs from tool_use content
 			for _, msg := range history {
 				for _, content := range msg.Content {
 					if content.Type == llm.ContentTypeToolUse && content.ID != "" && content.ToolName != "" {
 						m.toolNames[content.ID] = content.ToolName
+						if len(content.ToolInput) > 0 {
+							m.toolInputs[content.ID] = content.ToolInput
+						}
 					}
 				}
 			}
 			m.renderer.toolNames = m.toolNames
+			m.renderer.toolInputs = m.toolInputs
 			// Second pass: render messages
 			for _, msg := range history {
 				rendered := m.renderer.RenderMessage(msg, m.verbose)
@@ -448,13 +455,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Finalize any remaining streaming text
 				m.finalizeStreamingText()
 				// Only render tool content, not text (already shown via streaming)
-				// Extract tool names from tool_use content and share with renderer
+				// Extract tool names and inputs from tool_use content and share with renderer
 				for _, content := range msg.message.Content {
 					if content.Type == llm.ContentTypeToolUse && content.ID != "" && content.ToolName != "" {
 						m.toolNames[content.ID] = content.ToolName
+						if len(content.ToolInput) > 0 {
+							m.toolInputs[content.ID] = content.ToolInput
+						}
 					}
 				}
 				m.renderer.toolNames = m.toolNames
+				m.renderer.toolInputs = m.toolInputs
 				for _, content := range msg.message.Content {
 					if content.Type == llm.ContentTypeToolUse || content.Type == llm.ContentTypeToolResult {
 						rendered := m.renderer.renderContent(msg.message.Role, content, m.verbose)
@@ -468,13 +479,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				// Non-streaming path: render the full message
-				// Extract tool names from tool_use content for later lookup
+				// Extract tool names and inputs from tool_use content for later lookup
 				for _, content := range msg.message.Content {
 					if content.Type == llm.ContentTypeToolUse && content.ID != "" && content.ToolName != "" {
 						m.toolNames[content.ID] = content.ToolName
+						if len(content.ToolInput) > 0 {
+							m.toolInputs[content.ID] = content.ToolInput
+						}
 					}
 				}
 				m.renderer.toolNames = m.toolNames
+				m.renderer.toolInputs = m.toolInputs
 				rendered := m.renderer.RenderMessage(msg.message, m.verbose)
 				if rendered != "" {
 					m.messages = append(m.messages, renderedMessage{
@@ -538,6 +553,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.finalizeStreamingText()
 			// Track current tool for input streaming
 			m.currentToolName = msg.event.ToolName
+			m.currentToolID = msg.event.ToolUseID
 			m.currentToolInput.Reset()
 			// Store tool name by ID for later lookup in results
 			if msg.event.ToolUseID != "" {
@@ -562,23 +578,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case llm.StreamEventToolInputDelta:
 			// Accumulate tool input as it streams
 			m.currentToolInput.WriteString(msg.event.ToolInput)
-			// Update the last message to show progress (only in verbose mode)
-			if m.verbose && len(m.messages) > 0 && m.currentToolName != "" {
+			// Update the last message to show progress
+			if len(m.messages) > 0 && m.currentToolName != "" {
 				toolMsg := m.styles.ToolName.Render(m.currentToolName) + " " + m.styles.ToolRunning.Render("running...")
 				// Show a compact summary of the input so far
 				inputSummary := m.formatToolInputSummary(m.currentToolInput.String())
 				if inputSummary != "" {
 					toolMsg += " " + m.styles.ToolInput.Render(inputSummary)
 				}
-				m.messages[len(m.messages)-1].content = m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg)
+				if m.verbose {
+					m.messages[len(m.messages)-1].content = m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg)
+				} else {
+					m.messages[len(m.messages)-1].content = toolMsg
+				}
 				m.updateViewportContent()
 			}
 
 		case llm.StreamEventContentBlockStop:
 			// Content block finished - finalize streaming text if any
 			m.finalizeStreamingText()
+			// Save tool input before clearing (for later display in tool results)
+			if m.currentToolID != "" && m.currentToolInput.Len() > 0 {
+				m.toolInputs[m.currentToolID] = json.RawMessage(m.currentToolInput.String())
+				m.renderer.toolInputs = m.toolInputs
+			}
 			// Clear tool state
 			m.currentToolName = ""
+			m.currentToolID = ""
 			m.currentToolInput.Reset()
 
 		case llm.StreamEventMessageComplete:
@@ -866,6 +892,7 @@ func (m *Model) updateStreamingDisplay() {
 }
 
 // formatToolInputSummary returns a compact summary of tool input JSON
+// It prioritizes showing the most relevant field based on the tool type
 func (m *Model) formatToolInputSummary(inputJSON string) string {
 	if inputJSON == "" {
 		return ""
@@ -879,20 +906,75 @@ func (m *Model) formatToolInputSummary(inputJSON string) string {
 		}
 		return ""
 	}
-	// Show first meaningful key-value pair
+
+	// Priority order for different tools
+	// bash: show command
+	// patch: show path
+	// keyword_search: show query
+	// change_dir: show path
+	priorityKeys := []string{"command", "path", "query", "search_terms", "thoughts"}
+
+	for _, key := range priorityKeys {
+		if v, ok := input[key]; ok {
+			return m.formatInputValue(key, v)
+		}
+	}
+
+	// Fall back to first string value
 	for k, v := range input {
 		if str, ok := v.(string); ok {
-			if len(str) > 40 {
-				str = str[:40] + "..."
-			}
-			// Truncate on newline
-			if idx := strings.Index(str, "\n"); idx > 0 {
-				str = str[:idx] + "..."
-			}
-			return k + ": " + str
+			return m.formatInputValue(k, str)
 		}
 	}
 	return ""
+}
+
+// formatInputValue formats a single input key-value for display
+func (m *Model) formatInputValue(key string, value any) string {
+	var str string
+	switch v := value.(type) {
+	case string:
+		str = v
+	case []any:
+		// For arrays (like search_terms), join first few items
+		var parts []string
+		for i, item := range v {
+			if i >= 3 {
+				parts = append(parts, "...")
+				break
+			}
+			if s, ok := item.(string); ok {
+				parts = append(parts, s)
+			}
+		}
+		str = strings.Join(parts, ", ")
+	default:
+		return ""
+	}
+
+	// For command, show more context (first line, up to 60 chars)
+	maxLen := 40
+	if key == "command" {
+		maxLen = 60
+	}
+
+	// Truncate on newline
+	if idx := strings.Index(str, "\n"); idx > 0 {
+		str = str[:idx]
+		if len(str) > maxLen {
+			str = str[:maxLen] + "..."
+		} else {
+			str = str + " ..."
+		}
+	} else if len(str) > maxLen {
+		str = str[:maxLen] + "..."
+	}
+
+	// For command, don't show the key name (it's obvious)
+	if key == "command" {
+		return str
+	}
+	return key + ": " + str
 }
 
 // finalizeStreamingText moves accumulated streaming text to a permanent message

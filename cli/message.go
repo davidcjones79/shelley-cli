@@ -38,7 +38,8 @@ type MessageRenderer struct {
 	styles    *Styles
 	renderer  *glamour.TermRenderer
 	width     int
-	toolNames map[string]string // maps tool use ID to tool name
+	toolNames  map[string]string          // maps tool use ID to tool name
+	toolInputs map[string]json.RawMessage // maps tool use ID to tool input
 }
 
 // NewMessageRenderer creates a new message renderer
@@ -187,11 +188,20 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 		statusIcon = "✓"
 	}
 
-	// Look up tool name from ID
+	// Look up tool name and input from ID
 	toolName := ""
-	if r.toolNames != nil && content.ToolUseID != "" {
-		toolName = r.toolNames[content.ToolUseID]
+	var toolInput json.RawMessage
+	if content.ToolUseID != "" {
+		if r.toolNames != nil {
+			toolName = r.toolNames[content.ToolUseID]
+		}
+		if r.toolInputs != nil {
+			toolInput = r.toolInputs[content.ToolUseID]
+		}
 	}
+
+	// Extract command/input summary for display
+	inputSummary := r.formatToolInputSummary(toolName, toolInput)
 
 	// Add timing info if available
 	var timing string
@@ -241,10 +251,13 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 				}
 			}
 		}
-		// Build header: "✓ toolname (timing)"
+		// Build header: "✓ toolname command... (timing)"
 		header := headerStyle.Render(statusIcon)
 		if toolName != "" {
 			header += " " + r.styles.ToolName.Render(toolName)
+		}
+		if inputSummary != "" {
+			header += " " + r.styles.ToolInput.Render(inputSummary)
 		}
 		header += timing
 		if sb.Len() > 0 {
@@ -285,16 +298,96 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 
 	// Wrap in bordered box with status icon in header
 	boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
-	// Build header: "✓ toolname (timing)"
+	// Build header: "✓ toolname command... (timing)"
 	header := headerStyle.Render(statusIcon)
 	if toolName != "" {
 		header += " " + r.styles.ToolName.Render(toolName)
+	}
+	if inputSummary != "" {
+		header += " " + r.styles.ToolInput.Render(inputSummary)
 	}
 	header += timing
 	if sb.Len() > 0 {
 		return boxStyle.Render(header + "\n" + sb.String())
 	}
 	return boxStyle.Render(header)
+}
+
+// formatToolInputSummary extracts the most relevant field from tool input for display
+func (r *MessageRenderer) formatToolInputSummary(toolName string, input json.RawMessage) string {
+	if len(input) == 0 {
+		return ""
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(input, &data); err != nil {
+		return ""
+	}
+
+	// Priority order based on tool type
+	priorityKeys := []string{"command", "path", "query", "search_terms", "thoughts"}
+
+	for _, key := range priorityKeys {
+		if v, ok := data[key]; ok {
+			return r.formatInputValue(key, v)
+		}
+	}
+
+	// Fall back to first string value
+	for k, v := range data {
+		if _, ok := v.(string); ok {
+			return r.formatInputValue(k, v)
+		}
+	}
+	return ""
+}
+
+// formatInputValue formats a single input key-value for display
+func (r *MessageRenderer) formatInputValue(key string, value any) string {
+	var str string
+	switch v := value.(type) {
+	case string:
+		str = v
+	case []any:
+		// For arrays (like search_terms), join first few items
+		var parts []string
+		for i, item := range v {
+			if i >= 3 {
+				parts = append(parts, "...")
+				break
+			}
+			if s, ok := item.(string); ok {
+				parts = append(parts, s)
+			}
+		}
+		str = strings.Join(parts, ", ")
+	default:
+		return ""
+	}
+
+	// For command, show more context (first line, up to 60 chars)
+	maxLen := 40
+	if key == "command" {
+		maxLen = 60
+	}
+
+	// Truncate on newline
+	if idx := strings.Index(str, "\n"); idx > 0 {
+		str = str[:idx]
+		if len(str) > maxLen {
+			str = str[:maxLen] + "..."
+		} else {
+			str = str + " ..."
+		}
+	} else if len(str) > maxLen {
+		str = str[:maxLen] + "..."
+	}
+
+	// For command, don't show the key name (it's obvious)
+	if key == "command" {
+		return str
+	}
+	return key + ": " + str
 }
 
 // formatDuration formats a duration in a human-readable way
