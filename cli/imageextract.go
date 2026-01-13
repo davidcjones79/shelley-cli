@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"shelley.exe.dev/llm/imageutil"
 )
 
 // imagePathRegex matches:
@@ -172,8 +174,9 @@ func isValidImageFile(path string) bool {
 	return strings.HasPrefix(contentType, "image/")
 }
 
-// loadImageAsAttachment loads an image file and returns it as an attachment
-func loadImageAsAttachment(path string) (*imageAttachment, error) {
+// loadImageAsAttachment loads an image file and returns it as an attachment.
+// If maxImageDimension > 0, images larger than that dimension will be resized.
+func loadImageAsAttachment(path string, maxImageDimension int) (*imageAttachment, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -183,6 +186,16 @@ func loadImageAsAttachment(path string) (*imageAttachment, error) {
 	contentType := http.DetectContentType(data)
 	if !strings.HasPrefix(contentType, "image/") {
 		contentType = "image/png" // fallback
+	}
+
+	// Resize if needed
+	if maxImageDimension > 0 {
+		resized, newFormat, _, err := imageutil.ResizeImage(data, maxImageDimension)
+		if err == nil {
+			data = resized
+			contentType = newFormat
+		}
+		// If resize fails, just use original
 	}
 
 	return &imageAttachment{

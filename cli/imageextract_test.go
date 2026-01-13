@@ -185,7 +185,7 @@ func TestLoadImageAsAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	att, err := loadImageAsAttachment(imgPath)
+	att, err := loadImageAsAttachment(imgPath, 0) // 0 means no resizing
 	if err != nil {
 		t.Fatalf("loadImageAsAttachment() error = %v", err)
 	}
