@@ -261,6 +261,8 @@ func (l *Loop) processLLMRequest(ctx context.Context) error {
 
 	// Use streaming if available and callback is set
 	if streamer, ok := llmService.(llm.Streamer); ok && l.onStream != nil {
+		// Emit request start event for immediate UI feedback
+		l.onStream(llm.StreamEvent{Type: llm.StreamEventRequestStart})
 		resp, err = streamer.DoStream(llmCtx, req, func(event llm.StreamEvent) error {
 			l.onStream(event)
 			return nil

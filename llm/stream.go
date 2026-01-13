@@ -14,6 +14,7 @@ const (
 	StreamEventThinkingDelta
 	StreamEventContentBlockStop
 	StreamEventMessageComplete
+	StreamEventRequestStart // Emitted when request begins (before API call)
 )
 
 // StreamEvent represents a streaming event from the LLM

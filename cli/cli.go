@@ -85,6 +85,7 @@ type Model struct {
 	ready         bool
 	viewportReady bool
 	processing    bool
+	processStatus string // Current processing status (e.g., "Sending request...", "Receiving...")
 	err           error
 	totalUsage    llm.Usage
 	quitting      bool
@@ -466,9 +467,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamMsg:
 		switch msg.event.Type {
+		case llm.StreamEventRequestStart:
+			// Request is being sent to the API
+			m.processStatus = "Sending request..."
+
 		case llm.StreamEventTextDelta:
 			// Accumulate text and update display
 			m.streamingActive = true
+			m.processStatus = "Receiving..."
 			m.streamingText.WriteString(msg.event.Text)
 			m.updateStreamingDisplay()
 
@@ -481,6 +487,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case llm.StreamEventToolUseStart:
 			// Finalize any streaming text first
 			m.finalizeStreamingText()
+			// Update status to show which tool is running
+			m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
 			// Always show tool starting (brief indicator)
 			toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
 			m.messages = append(m.messages, renderedMessage{
@@ -563,6 +571,7 @@ func (m *Model) sendMessage() tea.Cmd {
 
 	m.textarea.Reset()
 	m.processing = true
+	m.processStatus = "Preparing request..."
 	m.err = nil
 	m.streamingActive = false
 	m.streamingText.Reset()
@@ -850,7 +859,11 @@ func (m *Model) View() string {
 
 	var footer string
 	if m.processing {
-		statusLine := m.spinner.View() + " " + m.styles.Thinking.Render("Agent working...")
+		status := m.processStatus
+		if status == "" {
+			status = "Agent working..."
+		}
+		statusLine := m.spinner.View() + " " + m.styles.Thinking.Render(status)
 		if len(m.pendingMessages) > 0 {
 			statusLine += m.styles.SystemMessage.Render(fmt.Sprintf(" (%d queued)", len(m.pendingMessages)))
 		}
