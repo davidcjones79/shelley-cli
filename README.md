@@ -73,7 +73,36 @@ Shelley is a computer program, and, it's an it.
 
 If running on an exe.dev VM, you can use the built-in LLM gateway instead of your own API keys.
 
-Add to your `~/.bashrc`:
+## Option 1: Config File (Recommended)
+
+Create a config file at `~/.config/shelley/shelley.json`:
+
+```bash
+mkdir -p ~/.config/shelley
+cat > ~/.config/shelley/shelley.json << 'EOF'
+{
+  "llm_gateway": "http://169.254.169.254/gateway/llm",
+  "default_model": "claude-sonnet-4.5"
+}
+EOF
+```
+
+Then add an alias to your `~/.bashrc`:
+
+```bash
+alias shelley='~/shelley-cli/shelley --config ~/.config/shelley/shelley.json'
+```
+
+Now you can simply run:
+
+```bash
+shelley chat    # CLI mode
+shelley serve   # Web UI
+```
+
+## Option 2: Environment Variables
+
+Alternatively, add to your `~/.bashrc`:
 
 ```bash
 # exe.dev LLM Gateway configuration
@@ -87,10 +116,15 @@ export FIREWORKS_BASE_URL="http://169.254.169.254/gateway/llm/fireworks/inferenc
 
 Then `source ~/.bashrc` or start a new terminal.
 
-Available models:
-- **Anthropic:** claude-opus-4.5, claude-sonnet-4.5, claude-haiku-4.5
-- **OpenAI:** gpt-5, gpt-5-nano, gpt-5.1-codex
-- **Fireworks:** qwen3-coder-fireworks, glm-4p6-fireworks
+## Available Models
+
+| Provider | Models |
+|----------|--------|
+| Anthropic | claude-opus-4.5, claude-sonnet-4.5, claude-haiku-4.5 |
+| OpenAI | gpt-5, gpt-5-nano, gpt-5.1-codex |
+| Fireworks | qwen3-coder-fireworks, glm-4p6-fireworks |
+
+In the CLI, use `/models` to list available models and `/model <name>` to switch.
 
 # Open source
 
