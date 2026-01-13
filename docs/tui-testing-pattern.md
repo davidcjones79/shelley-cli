@@ -127,3 +127,35 @@ See [cmd/shelley/main.go](https://github.com/davidcjones79/shelley-cli/blob/shel
 2. **Return structured output** - JSON is easy for AI to parse
 3. **Add a help command** - `./my-tui -cmd "help"` lists available commands
 4. **Test the non-interactive mode** - Write unit tests for `ProcessCommand()`
+
+---
+
+## Alternative: Use tmux (Simpler!)
+
+As [Phil from exe.dev points out](https://philz.dev/blog/tmux-for-agents/), you can use `tmux` to interact with TUIs without modifying them:
+
+```bash
+# Start a detached session
+tmux new-session -d -s testing
+
+# Run your TUI in it
+tmux send-keys -t testing './my-tui-app' Enter
+
+# Send keystrokes
+tmux send-keys -t testing 'j'      # down
+tmux send-keys -t testing 'k'      # up
+tmux send-keys -t testing Enter    # select
+
+# Capture what's on screen
+tmux capture-pane -p -t testing
+
+# Kill when done
+tmux kill-session -t testing
+```
+
+This approach:
+- **No code changes needed** - works with any TUI
+- **Agents already know tmux** - it's in their training data
+- **Real terminal emulation** - escape sequences work properly
+
+For most cases, `tmux` is the simpler solution. The `-cmd` flag pattern is useful when you want structured output or need to test specific internal state.
