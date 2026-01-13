@@ -17,21 +17,40 @@ import (
 // 5. file:// URLs: file:///path/to/image.png
 var imagePathRegex = regexp.MustCompile(`(?:\[([^\[\]]+\.(?:png|jpg|jpeg|gif|webp))\]|'([^']+\.(?:png|jpg|jpeg|gif|webp))'|"([^"]+\.(?:png|jpg|jpeg|gif|webp))"|file://([^\s]+\.(?:png|jpg|jpeg|gif|webp))|(?:^|\s)((?:/|~/)[^\s]+\.(?:png|jpg|jpeg|gif|webp)))`)
 
+// unescapeShellPath converts shell-escaped paths (with backslash-space) to normal paths
+func unescapeShellPath(path string) string {
+	// Replace shell escape sequences: \ -> <placeholder>, then \ space -> space, then restore
+	// Common escapes: \ (space), \( \) \[ \] etc.
+	result := path
+	result = strings.ReplaceAll(result, "\\ ", " ")
+	result = strings.ReplaceAll(result, "\\(", "(")
+	result = strings.ReplaceAll(result, "\\)", ")")
+	result = strings.ReplaceAll(result, "\\[", "[")
+	result = strings.ReplaceAll(result, "\\]", "]")
+	result = strings.ReplaceAll(result, "\\'", "'")
+	result = strings.ReplaceAll(result, "\\\"", "\"")
+	return result
+}
+
 // extractImagePathsFromText extracts image file paths from text.
 // Returns the cleaned text (with paths removed) and a list of valid image paths.
 func extractImagePathsFromText(text, workingDir string) (cleanedText string, imagePaths []string) {
 	// Special case: if the entire input looks like a bare image path (possibly with spaces),
 	// try it directly. This handles drag-and-drop from Finder where paths aren't quoted.
 	trimmed := strings.TrimSpace(text)
-	if (strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "~/")) && hasImageExtension(trimmed) {
-		path := trimmed
-		if strings.HasPrefix(path, "~/") {
-			if home, err := os.UserHomeDir(); err == nil {
-				path = filepath.Join(home, path[2:])
+	// Try both raw and unescaped versions (for shell-escaped paths like /path/to/Screenshot\ 2024.png)
+	unescaped := unescapeShellPath(trimmed)
+	for _, candidate := range []string{trimmed, unescaped} {
+		if (strings.HasPrefix(candidate, "/") || strings.HasPrefix(candidate, "~/")) && hasImageExtension(candidate) {
+			path := candidate
+			if strings.HasPrefix(path, "~/") {
+				if home, err := os.UserHomeDir(); err == nil {
+					path = filepath.Join(home, path[2:])
+				}
 			}
-		}
-		if isValidImageFile(path) {
-			return "", []string{path}
+			if isValidImageFile(path) {
+				return "", []string{path}
+			}
 		}
 	}
 
