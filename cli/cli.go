@@ -500,16 +500,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.finalizeStreamingText()
 			// Update status to show which tool is running
 			m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
-			// In verbose mode, show tool starting indicator
-			// In non-verbose mode, status bar shows progress; result will be shown when complete
-			if m.verbose {
-				toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
-				m.messages = append(m.messages, renderedMessage{
-					role:    llm.MessageRoleAssistant,
-					content: m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg),
-				})
-				m.updateViewportContent()
-			}
+			// Always show tool starting indicator for progress feedback
+			toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg),
+			})
+			m.updateViewportContent()
 
 		case llm.StreamEventContentBlockStop:
 			// Content block finished - finalize streaming text if any
