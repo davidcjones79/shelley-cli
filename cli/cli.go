@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -10,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -23,6 +23,7 @@ import (
 	"shelley.exe.dev/llm"
 	"shelley.exe.dev/loop"
 	"shelley.exe.dev/models"
+	"shelley.exe.dev/slug"
 )
 
 // bashCodeBlockRe matches ```bash or ```sh code blocks
@@ -514,7 +515,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.waitForResponse())
 
 	case streamMsg:
-		switch msg.event.Type {
+			switch msg.event.Type {
 		case llm.StreamEventRequestStart:
 			// Request is being sent to the API
 			m.processStatus = "Sending request..."
@@ -652,8 +653,9 @@ func (m *Model) sendMessage() tea.Cmd {
 
 	// Auto-extract image paths from text (e.g., from drag-drop which pastes file path)
 	cleanedText, imagePaths := extractImagePathsFromText(text, m.config.WorkingDir)
+	maxImageDim := m.config.LLMService.MaxImageDimension()
 	for _, imgPath := range imagePaths {
-		if att, err := loadImageAsAttachment(imgPath); err == nil {
+		if att, err := loadImageAsAttachment(imgPath, maxImageDim); err == nil {
 			m.pendingAttachments = append(m.pendingAttachments, *att)
 		}
 	}
@@ -692,10 +694,25 @@ func (m *Model) sendMessage() tea.Cmd {
 	m.updateViewportContent()
 
 	// Create conversation in database on first message
-	if m.config.DB != nil && m.conversationID == "" {
+	isFirstMessage := m.config.DB != nil && m.conversationID == ""
+	if isFirstMessage {
 		if err := m.createConversation(context.Background()); err != nil {
 			m.config.Logger.Error("Failed to create conversation", "error", err)
+			isFirstMessage = false
 		}
+	}
+
+	// Generate slug for new conversation (in background)
+	if isFirstMessage && m.config.ModelManager != nil {
+		convID := m.conversationID
+		modelID := m.config.Model
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if _, err := slug.GenerateSlug(ctx, m.config.ModelManager, m.config.DB, m.config.Logger, convID, text, modelID); err != nil {
+				m.config.Logger.Debug("Failed to generate slug", "error", err)
+			}
+		}()
 	}
 
 	// Initialize loop if needed
@@ -738,6 +755,15 @@ func (m *Model) initLoop() error {
 		WorkingDir:    m.config.WorkingDir,
 		ModelID:       m.config.Model,
 		EnableBrowser: m.config.EnableBrowser,
+	}
+	// If we have database sync, persist CWD changes
+	if m.config.DB != nil && m.conversationID != "" {
+		convID := m.conversationID
+		toolSetConfig.OnWorkingDirChange = func(newDir string) {
+			if err := m.config.DB.UpdateConversationCwd(context.Background(), convID, newDir); err != nil {
+				m.config.Logger.Debug("Failed to persist CWD change", "error", err)
+			}
+		}
 	}
 	m.toolSet = claudetool.NewToolSet(m.loopCtx, toolSetConfig)
 
@@ -1142,7 +1168,7 @@ func (m *Model) attachImage(path string) tea.Cmd {
 		path = filepath.Join(m.config.WorkingDir, path)
 	}
 
-	// Check file exists
+	// Check file exists (for better error messages)
 	info, err := os.Stat(path)
 	if err != nil {
 		m.messages = append(m.messages, renderedMessage{
@@ -1162,53 +1188,27 @@ func (m *Model) attachImage(path string) tea.Cmd {
 		return nil
 	}
 
-	// Check file size (limit to 10MB)
-	if info.Size() > 10*1024*1024 {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("File too large (max 10MB)"),
-		})
-		m.updateViewportContent()
-		return nil
-	}
-
-	// Check file extension
-	ext := strings.ToLower(filepath.Ext(path))
-	mediaType, ok := supportedImageTypes[ext]
-	if !ok {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Unsupported image type: " + ext + " (supported: .png, .jpg, .jpeg, .gif, .webp)"),
-		})
-		m.updateViewportContent()
-		return nil
-	}
-
-	// Read and encode the file
-	data, err := os.ReadFile(path)
+	// Load and optionally resize the image
+	maxImageDim := m.config.LLMService.MaxImageDimension()
+	att, err := loadImageAsAttachment(path, maxImageDim)
 	if err != nil {
 		m.messages = append(m.messages, renderedMessage{
 			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Failed to read file: " + err.Error()),
+			content: m.styles.ErrorMessage.Render("Failed to load image: " + err.Error()),
 		})
 		m.updateViewportContent()
 		return nil
 	}
 
-	// Base64 encode
-	encoded := base64.StdEncoding.EncodeToString(data)
-
 	// Add to pending attachments
-	m.pendingAttachments = append(m.pendingAttachments, imageAttachment{
-		path:      path,
-		mediaType: mediaType,
-		data:      encoded,
-	})
+	m.pendingAttachments = append(m.pendingAttachments, *att)
 
 	// Show confirmation
 	filename := filepath.Base(path)
-	sizeKB := float64(info.Size()) / 1024
-	msg := fmt.Sprintf("🖼️  Attached: %s (%.1fKB, %s)", filename, sizeKB, mediaType)
+	// Calculate size after potential resizing
+	dataLen := len(att.data) * 3 / 4 // approximate decoded size from base64
+	sizeKB := float64(dataLen) / 1024
+	msg := fmt.Sprintf("🖼️  Attached: %s (%.1fKB, %s)", filename, sizeKB, att.mediaType)
 	if len(m.pendingAttachments) > 1 {
 		msg += fmt.Sprintf(" [%d attachments pending]", len(m.pendingAttachments))
 	}
