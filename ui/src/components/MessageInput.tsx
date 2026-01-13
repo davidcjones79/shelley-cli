@@ -395,7 +395,7 @@ function MessageInput({
           placeholder={agentWorking ? "Type next message (will be queued)..." : "Message, paste image, or attach file..."}
           className="message-textarea"
           disabled={isDisabled}
-          rows={1}
+          rows={3}
           aria-label="Message input"
           data-testid="message-input"
           autoFocus={autoFocus}
