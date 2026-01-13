@@ -137,6 +137,9 @@ type Model struct {
 	conversationID string
 	lastGitState   *gitstate.GitState
 
+	// Confirmation state for destructive operations
+	pendingConfirm string // e.g., "delete" when waiting for confirmation
+
 	// Channels for async communication
 	responseChan chan responseMsg
 }
@@ -854,7 +857,34 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		}
 		return m.renameConversation(strings.Join(parts[1:], "-"))
 	case "/delete":
-		return m.deleteConversation()
+		return m.confirmDeleteConversation()
+	case "/yes", "/y":
+		if m.pendingConfirm == "delete" {
+			m.pendingConfirm = ""
+			return m.deleteConversation()
+		}
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Nothing to confirm"),
+		})
+		m.updateViewportContent()
+		return nil
+	case "/no", "/n":
+		if m.pendingConfirm != "" {
+			m.pendingConfirm = ""
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.SystemMessage.Render("Cancelled"),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Nothing to cancel"),
+		})
+		m.updateViewportContent()
+		return nil
 	case "/search":
 		if len(parts) < 2 {
 			m.messages = append(m.messages, renderedMessage{
@@ -887,6 +917,19 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 			return m.toggleTheme()
 		}
 		return m.setTheme(parts[1])
+	case "/cwd", "/cd":
+		if len(parts) < 2 {
+			// Show current working directory
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.SystemMessage.Render("Working directory: " + m.config.WorkingDir),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		return m.changeWorkingDir(strings.Join(parts[1:], " "))
+	case "/status":
+		return m.showStatus()
 
 	// Git commands
 	case "/git":
@@ -994,8 +1037,10 @@ func (m *Model) buildHelpText() string {
 		sb.WriteString("  /context       - Show context window usage\n")
 	}
 
-	sb.WriteString("\nDisplay:\n")
+	sb.WriteString("\nDisplay & Navigation:\n")
 	sb.WriteString("  /theme [name]  - Toggle or set theme (dark/light)\n")
+	sb.WriteString("  /cwd [path]    - Show or change working directory\n")
+	sb.WriteString("  /status        - Show session status\n")
 
 	sb.WriteString("\nGit:\n")
 	sb.WriteString("  /git           - List recent commits\n")
@@ -1765,6 +1810,35 @@ func sanitizeSlug(input string) string {
 }
 
 // deleteConversation deletes the current conversation
+// confirmDeleteConversation asks for confirmation before deleting
+func (m *Model) confirmDeleteConversation() tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -sync flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	if m.conversationID == "" {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("No active conversation to delete"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	m.pendingConfirm = "delete"
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ErrorMessage.Render(fmt.Sprintf("Delete conversation %s? Type /yes to confirm or /no to cancel", m.conversationID)),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
 func (m *Model) deleteConversation() tea.Cmd {
 	if m.config.DB == nil {
 		m.messages = append(m.messages, renderedMessage{
@@ -2038,6 +2112,133 @@ func (m *Model) setTheme(themeName string) tea.Cmd {
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleAssistant,
 		content: m.styles.ToolSuccess.Render("Theme set to: " + themeName),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// changeWorkingDir changes the working directory
+func (m *Model) changeWorkingDir(path string) tea.Cmd {
+	// Expand ~ to home directory
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	} else if path == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = home
+		}
+	}
+
+	// Make path absolute if relative
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(m.config.WorkingDir, path)
+	}
+
+	// Clean the path
+	path = filepath.Clean(path)
+
+	// Check if path exists and is a directory
+	info, err := os.Stat(path)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Directory not found: " + path),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+	if !info.IsDir() {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Not a directory: " + path),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	oldDir := m.config.WorkingDir
+	m.config.WorkingDir = path
+
+	// Update the toolset's working directory if it exists
+	if m.toolSet != nil {
+		m.toolSet.WorkingDir().Set(path)
+	}
+
+	// Format paths for display
+	oldDisplay := oldDir
+	newDisplay := path
+	if home, err := os.UserHomeDir(); err == nil {
+		if strings.HasPrefix(oldDisplay, home) {
+			oldDisplay = "~" + oldDisplay[len(home):]
+		}
+		if strings.HasPrefix(newDisplay, home) {
+			newDisplay = "~" + newDisplay[len(home):]
+		}
+	}
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render(fmt.Sprintf("Changed directory: %s → %s", oldDisplay, newDisplay)),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// showStatus shows current session status
+func (m *Model) showStatus() tea.Cmd {
+	var sb strings.Builder
+	sb.WriteString("Session Status:\n")
+
+	// Model
+	sb.WriteString(fmt.Sprintf("  Model: %s\n", m.styles.ModelName.Render(m.config.Model)))
+
+	// Working directory
+	wd := m.config.WorkingDir
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(wd, home) {
+		wd = "~" + wd[len(home):]
+	}
+	sb.WriteString(fmt.Sprintf("  Working Dir: %s\n", m.styles.WorkingDir.Render(wd)))
+
+	// Conversation
+	if m.conversationID != "" {
+		sb.WriteString(fmt.Sprintf("  Conversation: %s\n", m.conversationID))
+	} else {
+		sb.WriteString("  Conversation: (none)\n")
+	}
+
+	// Context usage
+	if m.config.LLMService != nil {
+		maxContext := m.config.LLMService.TokenContextWindow()
+		if maxContext > 0 && m.totalUsage.InputTokens > 0 {
+			percent := float64(m.totalUsage.InputTokens) / float64(maxContext) * 100
+			sb.WriteString(fmt.Sprintf("  Context: %s / %s (%.1f%%)\n",
+				formatTokens(m.totalUsage.InputTokens),
+				formatTokensInt(maxContext),
+				percent))
+		} else {
+			sb.WriteString(fmt.Sprintf("  Context: %s used\n", formatTokens(m.totalUsage.InputTokens)))
+		}
+	}
+
+	// Token totals
+	sb.WriteString(fmt.Sprintf("  Tokens: ↑%s ↓%s\n",
+		formatTokens(m.totalUsage.InputTokens),
+		formatTokens(m.totalUsage.OutputTokens)))
+
+	// Theme
+	sb.WriteString(fmt.Sprintf("  Theme: %s\n", m.styles.Theme()))
+
+	// Processing state
+	if m.processing {
+		sb.WriteString("  State: " + m.styles.ToolRunning.Render("processing...") + "\n")
+	} else {
+		sb.WriteString("  State: ready\n")
+	}
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(sb.String()),
 	})
 	m.updateViewportContent()
 	return nil
@@ -2632,6 +2833,9 @@ func (m *Model) completeSlashCommand(prefix string) []string {
 		"/image",
 		"/attachments",
 		"/theme",
+		"/cwd",
+		"/cd",
+		"/status",
 	}
 
 	// Add DB-specific commands if database is configured
