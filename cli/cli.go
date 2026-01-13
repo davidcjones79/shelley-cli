@@ -140,8 +140,9 @@ type Model struct {
 	streamingActive bool            // true if we received streaming events for current message
 
 	// Tool streaming state
-	currentToolName  string          // name of currently running tool
-	currentToolInput strings.Builder // accumulates tool input JSON as it streams
+	currentToolName  string            // name of currently running tool
+	currentToolInput strings.Builder   // accumulates tool input JSON as it streams
+	toolNames        map[string]string // maps tool use ID to tool name
 }
 
 // renderedMessage holds a pre-rendered message for display
@@ -221,6 +222,7 @@ func New(cfg Config) (*Model, error) {
 		verbose:        cfg.Verbose,
 		conversationID: cfg.ConversationID,
 		mouseEnabled:   true,
+		toolNames:      make(map[string]string),
 	}
 
 	// If resuming a conversation, load and display history
@@ -229,6 +231,16 @@ func New(cfg Config) (*Model, error) {
 		if err != nil {
 			cfg.Logger.Warn("Failed to load conversation history", "error", err)
 		} else {
+			// First pass: extract all tool names from tool_use content
+			for _, msg := range history {
+				for _, content := range msg.Content {
+					if content.Type == llm.ContentTypeToolUse && content.ID != "" && content.ToolName != "" {
+						m.toolNames[content.ID] = content.ToolName
+					}
+				}
+			}
+			m.renderer.toolNames = m.toolNames
+			// Second pass: render messages
 			for _, msg := range history {
 				rendered := m.renderer.RenderMessage(msg, m.verbose)
 				if rendered != "" {
@@ -435,6 +447,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Finalize any remaining streaming text
 				m.finalizeStreamingText()
 				// Only render tool content, not text (already shown via streaming)
+				// Extract tool names from tool_use content and share with renderer
+				for _, content := range msg.message.Content {
+					if content.Type == llm.ContentTypeToolUse && content.ID != "" && content.ToolName != "" {
+						m.toolNames[content.ID] = content.ToolName
+					}
+				}
+				m.renderer.toolNames = m.toolNames
 				for _, content := range msg.message.Content {
 					if content.Type == llm.ContentTypeToolUse || content.Type == llm.ContentTypeToolResult {
 						rendered := m.renderer.renderContent(msg.message.Role, content, m.verbose)
@@ -448,6 +467,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				// Non-streaming path: render the full message
+				// Extract tool names from tool_use content for later lookup
+				for _, content := range msg.message.Content {
+					if content.Type == llm.ContentTypeToolUse && content.ID != "" && content.ToolName != "" {
+						m.toolNames[content.ID] = content.ToolName
+					}
+				}
+				m.renderer.toolNames = m.toolNames
 				rendered := m.renderer.RenderMessage(msg.message, m.verbose)
 				if rendered != "" {
 					m.messages = append(m.messages, renderedMessage{
@@ -512,6 +538,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Track current tool for input streaming
 			m.currentToolName = msg.event.ToolName
 			m.currentToolInput.Reset()
+			// Store tool name by ID for later lookup in results
+			if msg.event.ToolUseID != "" {
+				m.toolNames[msg.event.ToolUseID] = msg.event.ToolName
+			}
 			// Update status to show which tool is running
 			m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
 			// Always show tool starting indicator for progress feedback

@@ -35,9 +35,10 @@ func linkifyPaths(text string) string {
 
 // MessageRenderer handles rendering of LLM messages to terminal output
 type MessageRenderer struct {
-	styles   *Styles
-	renderer *glamour.TermRenderer
-	width    int
+	styles    *Styles
+	renderer  *glamour.TermRenderer
+	width     int
+	toolNames map[string]string // maps tool use ID to tool name
 }
 
 // NewMessageRenderer creates a new message renderer
@@ -186,6 +187,12 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 		statusIcon = "✓"
 	}
 
+	// Look up tool name from ID
+	toolName := ""
+	if r.toolNames != nil && content.ToolUseID != "" {
+		toolName = r.toolNames[content.ToolUseID]
+	}
+
 	// Add timing info if available
 	var timing string
 	if content.ToolUseStartTime != nil && content.ToolUseEndTime != nil {
@@ -207,7 +214,13 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 					// Show path (no inline images in viewport - causes layout issues)
 					sb.WriteString(r.styles.SystemMessage.Render(fmt.Sprintf("🖼️  Screenshot: %s", osc8Link("file://"+path, path))))
 					boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
-					return boxStyle.Render(headerStyle.Render(statusIcon) + timing + " " + sb.String())
+					// Build header with tool name if available
+					header := headerStyle.Render(statusIcon)
+					if toolName != "" {
+						header += " " + r.styles.ToolName.Render(toolName)
+					}
+					header += timing
+					return boxStyle.Render(header + " " + sb.String())
 				}
 			}
 		}
@@ -229,7 +242,12 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 			}
 		}
 		boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
-		header := headerStyle.Render(statusIcon) + timing
+		// Build header: "✓ toolname (timing)" or just "✓ (timing)"
+		header := headerStyle.Render(statusIcon)
+		if toolName != "" {
+			header += " " + r.styles.ToolName.Render(toolName)
+		}
+		header += timing
 		if sb.Len() > 0 {
 			return boxStyle.Render(header + " " + sb.String())
 		}
@@ -267,7 +285,12 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 
 	// Wrap in bordered box with status icon in header
 	boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
-	header := headerStyle.Render(statusIcon) + timing
+	// Build header: "✓ toolname (timing)" or just "✓ (timing)"
+	header := headerStyle.Render(statusIcon)
+	if toolName != "" {
+		header += " " + r.styles.ToolName.Render(toolName)
+	}
+	header += timing
 	if sb.Len() > 0 {
 		return boxStyle.Render(header + " " + sb.String())
 	}
