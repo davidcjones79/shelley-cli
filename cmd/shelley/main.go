@@ -555,6 +555,27 @@ func buildLLMConfig(logger *slog.Logger, configPath, terminalURL, defaultModel s
 		Logger:          logger,
 	}
 
+	// Check for gateway from environment variable
+	if gateway := os.Getenv("LLM_GATEWAY"); gateway != "" {
+		gateway = strings.TrimSuffix(gateway, "/")
+		llmCfg.Gateway = gateway
+		logger.Info("Using LLM gateway from environment", "gateway", gateway)
+
+		// When using a gateway, default all API keys to "implicit" unless otherwise set
+		if llmCfg.AnthropicAPIKey == "" {
+			llmCfg.AnthropicAPIKey = "implicit"
+		}
+		if llmCfg.OpenAIAPIKey == "" {
+			llmCfg.OpenAIAPIKey = "implicit"
+		}
+		if llmCfg.GeminiAPIKey == "" {
+			llmCfg.GeminiAPIKey = "implicit"
+		}
+		if llmCfg.FireworksAPIKey == "" {
+			llmCfg.FireworksAPIKey = "implicit"
+		}
+	}
+
 	if configPath != "" {
 		data, err := os.ReadFile(configPath)
 		if err != nil {
@@ -575,23 +596,26 @@ func buildLLMConfig(logger *slog.Logger, configPath, terminalURL, defaultModel s
 			return llmCfg
 		}
 
+		// Config file gateway overrides environment variable
 		if cfg.LLMGateway != "" {
 			gateway := strings.TrimSuffix(cfg.LLMGateway, "/")
-			llmCfg.Gateway = gateway
-			logger.Info("Using LLM gateway", "gateway", gateway)
+			if llmCfg.Gateway != gateway {
+				llmCfg.Gateway = gateway
+				logger.Info("Using LLM gateway from config", "gateway", gateway)
 
-			// When using a gateway, default all API keys to "implicit" unless otherwise set
-			if llmCfg.AnthropicAPIKey == "" {
-				llmCfg.AnthropicAPIKey = "implicit"
-			}
-			if llmCfg.OpenAIAPIKey == "" {
-				llmCfg.OpenAIAPIKey = "implicit"
-			}
-			if llmCfg.GeminiAPIKey == "" {
-				llmCfg.GeminiAPIKey = "implicit"
-			}
-			if llmCfg.FireworksAPIKey == "" {
-				llmCfg.FireworksAPIKey = "implicit"
+				// When using a gateway, default all API keys to "implicit" unless otherwise set
+				if llmCfg.AnthropicAPIKey == "" {
+					llmCfg.AnthropicAPIKey = "implicit"
+				}
+				if llmCfg.OpenAIAPIKey == "" {
+					llmCfg.OpenAIAPIKey = "implicit"
+				}
+				if llmCfg.GeminiAPIKey == "" {
+					llmCfg.GeminiAPIKey = "implicit"
+				}
+				if llmCfg.FireworksAPIKey == "" {
+					llmCfg.FireworksAPIKey = "implicit"
+				}
 			}
 		}
 
