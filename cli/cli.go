@@ -486,6 +486,17 @@ func (m *Model) sendMessage() tea.Cmd {
 	// Clear suggested commands for new conversation turn
 	m.suggestedCmds = nil
 
+	// Auto-extract image paths from text (e.g., from drag-drop which pastes file path)
+	cleanedText, imagePaths := extractImagePathsFromText(text, m.config.WorkingDir)
+	for _, imgPath := range imagePaths {
+		if att, err := loadImageAsAttachment(imgPath); err == nil {
+			m.pendingAttachments = append(m.pendingAttachments, *att)
+		}
+	}
+	if cleanedText != "" {
+		text = cleanedText
+	}
+
 	// Build message content with text and any pending attachments
 	var content []llm.Content
 
