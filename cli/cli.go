@@ -188,11 +188,11 @@ func New(cfg Config) (*Model, error) {
 		cfg.Logger = slog.Default()
 	}
 
-	// Create textarea for input (starts at 1 line, auto-expands)
+	// Create textarea for input (starts at 2 lines, auto-expands)
 	ta := textarea.New()
 	ta.Placeholder = "Type your message... (Enter to send, Alt+Enter for newline)"
 	ta.Focus()
-	ta.SetHeight(1)
+	ta.SetHeight(2)
 	ta.SetWidth(80)
 	ta.ShowLineNumbers = false
 	ta.MaxHeight = 10 // Cap expansion at 10 lines
@@ -215,7 +215,7 @@ func New(cfg Config) (*Model, error) {
 	m := &Model{
 		config:         cfg,
 		textarea:       ta,
-		textareaHeight: 1,
+		textareaHeight: 2,
 		spinner:        sp,
 		viewport:       vp,
 		renderer:       renderer,
@@ -337,8 +337,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Queue message for later processing
 					m.pendingMessages = append(m.pendingMessages, text)
 					m.textarea.Reset()
-					m.textareaHeight = 1
-					m.textarea.SetHeight(1)
+					m.textareaHeight = 2
+					m.textarea.SetHeight(2)
 					m.recalculateViewportHeight()
 					// Show queued feedback
 					m.messages = append(m.messages, renderedMessage{
@@ -668,8 +668,8 @@ func (m *Model) sendMessage() tea.Cmd {
 	m.currentInput = ""
 
 	m.textarea.Reset()
-	m.textareaHeight = 1
-	m.textarea.SetHeight(1)
+	m.textareaHeight = 2
+	m.textarea.SetHeight(2)
 	m.recalculateViewportHeight()
 	m.processing = true
 	m.processStatus = "Preparing request..."
