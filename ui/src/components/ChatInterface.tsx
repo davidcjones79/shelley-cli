@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Message, Conversation, StreamResponse, LLMContent } from "../types";
+import {
+  Message,
+  Conversation,
+  StreamResponse,
+  LLMContent,
+  ConversationListUpdate,
+} from "../types";
 import { api } from "../services/api";
 import { ThemeMode, getStoredTheme, setStoredTheme, applyTheme } from "../services/theme";
 import MessageComponent from "./Message";
@@ -124,11 +130,12 @@ interface CoalescedToolCallProps {
   toolEndTime?: string | null;
   hasResult?: boolean;
   display?: unknown;
+  onCommentTextChange?: (text: string) => void;
 }
 
 // Map tool names to their specialized components.
 // IMPORTANT: When adding a new tool here, also add it to Message.tsx renderContent()
-// for both tool_use and tool_result cases. See AGENT.md in this directory.
+// for both tool_use and tool_result cases. See AGENTS.md in this directory.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOL_COMPONENTS: Record<string, React.ComponentType<any>> = {
   bash: BashTool,
@@ -155,6 +162,7 @@ function CoalescedToolCall({
   toolEndTime,
   hasResult,
   display,
+  onCommentTextChange,
 }: CoalescedToolCallProps) {
   // Calculate execution time if available
   let executionTime = "";
@@ -183,6 +191,8 @@ function CoalescedToolCall({
       ...(toolName === "browser_recent_console_logs" || toolName === "browser_clear_console_logs"
         ? { toolName }
         : {}),
+      // Patch tool can add comments
+      ...(toolName === "patch" && onCommentTextChange ? { onCommentTextChange } : {}),
     };
     return <ToolComponent {...props} />;
   }
@@ -348,8 +358,12 @@ interface ChatInterfaceProps {
   onNewConversation: () => void;
   currentConversation?: Conversation;
   onConversationUpdate?: (conversation: Conversation) => void;
+  onConversationListUpdate?: (update: ConversationListUpdate) => void;
   onFirstMessage?: (message: string, model: string, cwd?: string) => Promise<void>;
   mostRecentCwd?: string | null;
+  isDrawerCollapsed?: boolean;
+  onToggleDrawerCollapse?: () => void;
+  openDiffViewerTrigger?: number; // increment to trigger opening diff viewer
 }
 
 function ChatInterface({
@@ -358,8 +372,12 @@ function ChatInterface({
   onNewConversation,
   currentConversation,
   onConversationUpdate,
+  onConversationListUpdate,
   onFirstMessage,
   mostRecentCwd,
+  isDrawerCollapsed,
+  onToggleDrawerCollapse,
+  openDiffViewerTrigger,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [slashCommandResult, setSlashCommandResult] = useState<string | null>(null);
@@ -442,8 +460,7 @@ function ChatInterface({
   const terminalURL = window.__SHELLEY_INIT__?.terminal_url || null;
   const links = window.__SHELLEY_INIT__?.links || [];
   const hostname = window.__SHELLEY_INIT__?.hostname || "localhost";
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [, setReconnectAttempts] = useState(0);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -451,6 +468,7 @@ function ChatInterface({
   const eventSourceRef = useRef<EventSource | null>(null);
   const overflowMenuRef = useRef<HTMLDivElement>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const periodicRetryRef = useRef<number | null>(null);
   const userScrolledRef = useRef(false);
 
   // Load messages and set up streaming
@@ -472,6 +490,9 @@ function ChatInterface({
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (periodicRetryRef.current) {
+        clearInterval(periodicRetryRef.current);
       }
     };
   }, [conversationId]);
@@ -522,6 +543,36 @@ function ChatInterface({
       };
     }
   }, [showOverflowMenu]);
+
+  // Reconnect when page becomes visible, focused, or online
+  // Store reconnect function in a ref so event listeners always have the latest version
+  const reconnectRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        reconnectRef.current();
+      }
+    };
+
+    const handleFocus = () => {
+      reconnectRef.current();
+    };
+
+    const handleOnline = () => {
+      reconnectRef.current();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
 
   const loadMessages = async () => {
     if (!conversationId) return;
@@ -581,8 +632,13 @@ function ChatInterface({
         }
 
         // Update conversation data if provided
-        if (onConversationUpdate) {
+        if (onConversationUpdate && streamResponse.conversation) {
           onConversationUpdate(streamResponse.conversation);
+        }
+
+        // Handle conversation list updates (for other conversations)
+        if (onConversationListUpdate && streamResponse.conversation_list_update) {
+          onConversationListUpdate(streamResponse.conversation_list_update);
         }
 
         if (typeof streamResponse.agent_working === "boolean") {
@@ -605,15 +661,23 @@ function ChatInterface({
         eventSourceRef.current = null;
       }
 
-      // Backoff delays: 1s, 5s, 10s, then give up
-      const delays = [1000, 5000, 10000];
+      // Backoff delays: 1s, 2s, 5s, then show disconnected but keep retrying periodically
+      const delays = [1000, 2000, 5000];
 
       setReconnectAttempts((prev) => {
         const attempts = prev + 1;
 
         if (attempts > delays.length) {
-          // Give up and show disconnected UI
+          // Show disconnected UI but start periodic retry every 30 seconds
           setIsDisconnected(true);
+          if (!periodicRetryRef.current) {
+            periodicRetryRef.current = window.setInterval(() => {
+              if (eventSourceRef.current === null) {
+                console.log("Periodic reconnect attempt");
+                setupMessageStream();
+              }
+            }, 30000);
+          }
           return attempts;
         }
 
@@ -632,9 +696,13 @@ function ChatInterface({
 
     eventSource.onopen = () => {
       console.log("Message stream connected");
-      // Reset reconnect attempts on successful connection
+      // Reset reconnect attempts and clear periodic retry on successful connection
       setReconnectAttempts(0);
       setIsDisconnected(false);
+      if (periodicRetryRef.current) {
+        clearInterval(periodicRetryRef.current);
+        periodicRetryRef.current = null;
+      }
     };
   };
 
@@ -730,14 +798,36 @@ function ChatInterface({
   };
 
   const handleManualReconnect = () => {
+    if (!conversationId || eventSourceRef.current) return;
     setIsDisconnected(false);
     setReconnectAttempts(0);
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
+    if (periodicRetryRef.current) {
+      clearInterval(periodicRetryRef.current);
+      periodicRetryRef.current = null;
+    }
     setupMessageStream();
   };
+
+  // Update the reconnect ref when isDisconnected or conversationId changes
+  useEffect(() => {
+    reconnectRef.current = () => {
+      if (isDisconnected && conversationId && !eventSourceRef.current) {
+        console.log("Visibility/focus/online triggered reconnect attempt");
+        handleManualReconnect();
+      }
+    };
+  }, [isDisconnected, conversationId]);
+
+  // Handle external trigger to open diff viewer
+  useEffect(() => {
+    if (openDiffViewerTrigger && openDiffViewerTrigger > 0) {
+      setShowDiffViewer(true);
+    }
+  }, [openDiffViewerTrigger]);
 
   const handleCancel = async () => {
     if (!conversationId || cancelling) return;
@@ -991,6 +1081,7 @@ function ChatInterface({
               setDiffViewerInitialCommit(commit);
               setShowDiffViewer(true);
             }}
+            onCommentTextChange={setDiffCommentText}
           />
         );
       } else if (item.type === "tool") {
@@ -1005,6 +1096,7 @@ function ChatInterface({
             toolEndTime={item.toolEndTime}
             hasResult={item.hasResult}
             display={item.display}
+            onCommentTextChange={setDiffCommentText}
           />
         );
       }
@@ -1033,6 +1125,25 @@ function ChatInterface({
               />
             </svg>
           </button>
+
+          {/* Expand drawer button - desktop only when collapsed */}
+          {isDrawerCollapsed && onToggleDrawerCollapse && (
+            <button
+              onClick={onToggleDrawerCollapse}
+              className="btn-icon show-on-desktop-only"
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+            >
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 5l7 7-7 7M5 5l7 7-7 7"
+                />
+              </svg>
+            </button>
+          )}
 
           <h1 className="header-title" title={currentConversation?.slug || "Shelley"}>
             {getDisplayTitle()}

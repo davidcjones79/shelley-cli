@@ -496,13 +496,20 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	query = r.URL.Query().Get("q")
+	searchContent := r.URL.Query().Get("search_content") == "true"
 
 	// Get conversations from database
 	var conversations []generated.Conversation
 	var err error
 
 	if query != "" {
-		conversations, err = s.db.SearchConversations(ctx, query, int64(limit), int64(offset))
+		if searchContent {
+			// Search in both slug and message content
+			conversations, err = s.db.SearchConversationsWithMessages(ctx, query, int64(limit), int64(offset))
+		} else {
+			// Search only in slug
+			conversations, err = s.db.SearchConversations(ctx, query, int64(limit), int64(offset))
+		}
 	} else {
 		conversations, err = s.db.ListConversations(ctx, int64(limit), int64(offset))
 	}
@@ -725,6 +732,12 @@ func (s *Server) handleNewConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conversationID := conversation.ConversationID
+
+	// Notify conversation list subscribers about the new conversation
+	go s.publishConversationListUpdate(ConversationListUpdate{
+		Type:         "update",
+		Conversation: conversation,
+	})
 
 	// Get or create conversation manager
 	manager, err := s.getOrCreateConversationManager(ctx, conversationID)
@@ -1094,6 +1107,12 @@ func (s *Server) handleArchiveConversation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Notify conversation list subscribers
+	go s.publishConversationListUpdate(ConversationListUpdate{
+		Type:         "update",
+		Conversation: conversation,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(conversation)
 }
@@ -1113,6 +1132,12 @@ func (s *Server) handleUnarchiveConversation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Notify conversation list subscribers
+	go s.publishConversationListUpdate(ConversationListUpdate{
+		Type:         "update",
+		Conversation: conversation,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(conversation)
 }
@@ -1130,6 +1155,12 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+
+	// Notify conversation list subscribers about the deletion
+	go s.publishConversationListUpdate(ConversationListUpdate{
+		Type:           "delete",
+		ConversationID: conversationID,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
@@ -1197,6 +1228,12 @@ func (s *Server) handleRenameConversation(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+
+	// Notify conversation list subscribers
+	go s.publishConversationListUpdate(ConversationListUpdate{
+		Type:         "update",
+		Conversation: conversation,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(conversation)

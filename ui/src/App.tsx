@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import ChatInterface from "./components/ChatInterface";
 import ConversationDrawer from "./components/ConversationDrawer";
-import { Conversation } from "./types";
+import CommandPalette from "./components/CommandPalette";
+import { Conversation, ConversationListUpdate } from "./types";
 import { api } from "./services/api";
 
 // Check if a slug is a generated ID (format: cXXXX where X is alphanumeric)
@@ -61,6 +62,9 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerCollapsed, setDrawerCollapsed] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [diffViewerTrigger, setDiffViewerTrigger] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const initialSlugResolved = useRef(false);
@@ -99,6 +103,42 @@ function App() {
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
+  }, []);
+
+  // Global keyboard shortcut for command palette (Cmd+K / Ctrl+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Handle conversation list updates from the message stream
+  const handleConversationListUpdate = useCallback((update: ConversationListUpdate) => {
+    if (update.type === "update" && update.conversation) {
+      setConversations((prev) => {
+        // Check if this conversation already exists
+        const existingIndex = prev.findIndex(
+          (c) => c.conversation_id === update.conversation!.conversation_id,
+        );
+
+        if (existingIndex >= 0) {
+          // Update existing conversation in place (don't re-sort to avoid distracting jumps)
+          const updated = [...prev];
+          updated[existingIndex] = update.conversation!;
+          return updated;
+        } else {
+          // Add new conversation at the top
+          return [update.conversation!, ...prev];
+        }
+      });
+    } else if (update.type === "delete" && update.conversation_id) {
+      setConversations((prev) => prev.filter((c) => c.conversation_id !== update.conversation_id));
+    }
   }, []);
 
   // Update page title and URL when conversation changes
@@ -144,6 +184,10 @@ function App() {
   const selectConversation = (conversationId: string) => {
     setCurrentConversationId(conversationId);
     setDrawerOpen(false);
+  };
+
+  const toggleDrawerCollapsed = () => {
+    setDrawerCollapsed((prev) => !prev);
   };
 
   const updateConversation = (updatedConversation: Conversation) => {
@@ -229,7 +273,9 @@ function App() {
       {/* Conversations drawer */}
       <ConversationDrawer
         isOpen={drawerOpen}
+        isCollapsed={drawerCollapsed}
         onClose={() => setDrawerOpen(false)}
+        onToggleCollapse={toggleDrawerCollapsed}
         conversations={conversations}
         currentConversationId={currentConversationId}
         onSelectConversation={selectConversation}
@@ -247,10 +293,34 @@ function App() {
           onNewConversation={startNewConversation}
           currentConversation={currentConversation}
           onConversationUpdate={updateConversation}
+          onConversationListUpdate={handleConversationListUpdate}
           onFirstMessage={handleFirstMessage}
           mostRecentCwd={mostRecentCwd}
+          isDrawerCollapsed={drawerCollapsed}
+          onToggleDrawerCollapse={toggleDrawerCollapsed}
+          openDiffViewerTrigger={diffViewerTrigger}
         />
       </div>
+
+      {/* Command Palette */}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        conversations={conversations}
+        onNewConversation={() => {
+          startNewConversation();
+          setCommandPaletteOpen(false);
+        }}
+        onSelectConversation={(id) => {
+          selectConversation(id);
+          setCommandPaletteOpen(false);
+        }}
+        onOpenDiffViewer={() => {
+          setDiffViewerTrigger((prev) => prev + 1);
+          setCommandPaletteOpen(false);
+        }}
+        hasCwd={!!(currentConversation?.cwd || mostRecentCwd)}
+      />
 
       {/* Backdrop for mobile drawer */}
       {drawerOpen && (
