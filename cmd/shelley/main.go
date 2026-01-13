@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -597,6 +598,16 @@ func buildLLMConfig(logger *slog.Logger, configPath, terminalURL, defaultModel s
 		}
 		if llmCfg.FireworksAPIKey == "" {
 			llmCfg.FireworksAPIKey = "implicit"
+		}
+	}
+
+	// If no explicit config path provided, check the default location
+	if configPath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			defaultPath := filepath.Join(home, ".config", "shelley", "shelley.json")
+			if _, err := os.Stat(defaultPath); err == nil {
+				configPath = defaultPath
+			}
 		}
 	}
 
