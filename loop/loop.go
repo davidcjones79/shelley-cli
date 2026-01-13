@@ -114,9 +114,10 @@ func (l *Loop) GetHistory() []llm.Message {
 	for i, msg := range l.history {
 		// Copy the message
 		historyCopy[i] = llm.Message{
-			Role:    msg.Role,
-			ToolUse: msg.ToolUse, // This is a pointer, but we won't modify it in tests
-			Content: make([]llm.Content, len(msg.Content)),
+			Role:      msg.Role,
+			ToolUse:   msg.ToolUse, // This is a pointer, but we won't modify it in tests
+			Content:   make([]llm.Content, len(msg.Content)),
+			EndOfTurn: msg.EndOfTurn,
 		}
 		// Copy content slice
 		copy(historyCopy[i].Content, msg.Content)
