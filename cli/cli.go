@@ -79,6 +79,9 @@ type Model struct {
 	historyIndex  int
 	currentInput  string // Saves current input when cycling through history
 
+	// Message queue for messages sent while processing
+	pendingMessages []string
+
 	// Shell integration - store suggested commands
 	suggestedCmds []string
 
@@ -210,8 +213,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyEnter:
 			// Send message on Enter
-			if !m.processing && strings.TrimSpace(m.textarea.Value()) != "" {
-				return m, m.sendMessage()
+			text := strings.TrimSpace(m.textarea.Value())
+			if text != "" {
+				if m.processing {
+					// Queue message for later processing
+					m.pendingMessages = append(m.pendingMessages, text)
+					m.textarea.Reset()
+					// Show queued feedback
+					m.messages = append(m.messages, renderedMessage{
+						role:    llm.MessageRoleUser,
+						content: m.styles.SystemMessage.Render(fmt.Sprintf("Message queued (%d pending)", len(m.pendingMessages))),
+					})
+					m.updateViewportContent()
+				} else {
+					return m, m.sendMessage()
+				}
 			}
 
 		case tea.KeyUp:
@@ -262,12 +278,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Calculate heights for each section:
 		// Header: 1 line
 		// Footer: 3 lines (status bar + prompt line + textarea line)
-		// Or 1 line when processing
+		// Now always 3 since we show input even while processing
 		headerHeight := 1
 		footerHeight := 3
-		if m.processing {
-			footerHeight = 1
-		}
 
 		viewportHeight := msg.Height - headerHeight - footerHeight
 		if viewportHeight < 3 {
@@ -345,17 +358,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case processingDoneMsg:
 		m.processing = false
+		// Process any pending messages
+		if len(m.pendingMessages) > 0 {
+			nextMsg := m.pendingMessages[0]
+			m.pendingMessages = m.pendingMessages[1:]
+			m.textarea.SetValue(nextMsg)
+			return m, m.sendMessage()
+		}
 
 	case errMsg:
 		m.err = msg.err
 		m.processing = false
+		// Clear pending messages on error
+		m.pendingMessages = nil
 	}
 
-	// Update textarea
-	if !m.processing {
-		var cmd tea.Cmd
-		m.textarea, cmd = m.textarea.Update(msg)
-		cmds = append(cmds, cmd)
+	// Update textarea - always allow typing, even while processing
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	cmds = append(cmds, cmd)
+
+	// Update placeholder based on state
+	if m.processing {
+		m.textarea.Placeholder = "Type next message (will be queued)..."
+	} else {
+		m.textarea.Placeholder = "Type your message... (Enter to send, Ctrl+C to quit)"
 	}
 
 	return m, tea.Batch(cmds...)
@@ -536,7 +563,12 @@ func (m *Model) View() string {
 	// ========== FOOTER (status + input) ==========
 	var footer string
 	if m.processing {
-		footer = m.spinner.View() + " " + m.styles.Thinking.Render("Agent working...")
+		statusLine := m.spinner.View() + " " + m.styles.Thinking.Render("Agent working...")
+		if len(m.pendingMessages) > 0 {
+			statusLine += m.styles.SystemMessage.Render(fmt.Sprintf(" (%d queued)", len(m.pendingMessages)))
+		}
+		// Show input even while processing so user can queue messages
+		footer = statusLine + "\n" + m.renderer.RenderPrompt() + m.textarea.View()
 	} else {
 		footer = m.renderStatusBar() + "\n" + m.renderer.RenderPrompt() + m.textarea.View()
 	}
@@ -696,7 +728,7 @@ func (m *Model) saveSession(name string) tea.Cmd {
 
 	for _, msg := range m.messages {
 		session.Messages = append(session.Messages, SessionMessage{
-			Role:    string(msg.role),
+			Role:    msg.role.String(),
 			Content: msg.content,
 		})
 	}
