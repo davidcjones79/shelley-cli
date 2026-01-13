@@ -200,13 +200,13 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 
 	case "/describe":
 		if len(parts) < 2 {
-			// No args - show last result from Mac describe-image script
-			return m.showLastImageResult()
+			m.showError("Usage: /describe <path-to-image> [prompt]")
+			return nil
 		}
 		return m.describeImage(strings.Join(parts[1:], " "))
 
 	case "/imgresult":
-		return m.showLastImageResult()
+		return m.injectImageResult()
 
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
@@ -237,6 +237,7 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /attach <path> - Attach image to next message (.png, .jpg, .gif, .webp)\n")
 	sb.WriteString("  /attachments   - List pending attachments\n")
 	sb.WriteString("  /describe <path> [prompt] - Analyze image with vision model\n")
+	sb.WriteString("  /imgresult     - Inject Mac describe-image result as context\n")
 
 	if m.config.DB != nil {
 		sb.WriteString("\nConversation Management (database enabled):\n")

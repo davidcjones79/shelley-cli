@@ -290,8 +290,8 @@ type describeImageResultMsg struct {
 	err  error
 }
 
-// showLastImageResult displays the result from the Mac describe-image script
-func (m *Model) showLastImageResult() tea.Cmd {
+// injectImageResult reads the Mac describe-image result and injects it into the conversation as context
+func (m *Model) injectImageResult() tea.Cmd {
 	resultFile := "/tmp/shelley-image-result.txt"
 	
 	data, err := os.ReadFile(resultFile)
@@ -306,16 +306,32 @@ func (m *Model) showLastImageResult() tea.Cmd {
 		return nil
 	}
 	
-	// Render as assistant message
-	responseMsg := llm.Message{
-		Role:    llm.MessageRoleAssistant,
-		Content: []llm.Content{{Type: llm.ContentTypeText, Text: content}},
+	// Format as context for the LLM
+	contextText := "[Image description from local machine]:\n" + content
+	
+	// Add as user message to display
+	userMsg := llm.Message{
+		Role:    llm.MessageRoleUser,
+		Content: []llm.Content{{Type: llm.ContentTypeText, Text: contextText}},
 	}
-	rendered := m.renderer.RenderMessage(responseMsg, false)
+	rendered := m.renderer.RenderMessage(userMsg, true)
 	m.messages = append(m.messages, renderedMessage{
-		role:    llm.MessageRoleAssistant,
+		role:    llm.MessageRoleUser,
 		content: rendered,
 	})
 	m.updateViewportContent()
+	
+	// Initialize loop if needed and add to conversation context
+	if m.loop == nil {
+		if err := m.initLoop(); err != nil {
+			m.showError("Failed to initialize: " + err.Error())
+			return nil
+		}
+	}
+	
+	// Queue the message so it becomes part of the conversation context
+	m.loop.QueueUserMessage(userMsg)
+	
+	m.showSystemMessage("Image description added to conversation context. You can now ask questions about it.")
 	return nil
 }
