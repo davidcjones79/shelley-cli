@@ -153,7 +153,7 @@ type (
 		usage   llm.Usage
 		err     error
 	}
-	processingDoneMsg struct{}
+
 	errMsg            struct{ err error }
 	streamMsg         struct {
 		event llm.StreamEvent
@@ -471,6 +471,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if we should stop processing
 		if msg.message.EndOfTurn || msg.err != nil {
 			m.processing = false
+			// Process any pending messages
+			if len(m.pendingMessages) > 0 {
+				nextMsg := m.pendingMessages[0]
+				m.pendingMessages = m.pendingMessages[1:]
+				m.textarea.SetValue(nextMsg)
+				return m, m.sendMessage()
+			}
 		}
 
 		// Continue waiting for responses
@@ -519,16 +526,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Continue waiting for stream events
 		cmds = append(cmds, m.waitForStream())
-
-	case processingDoneMsg:
-		m.processing = false
-		// Process any pending messages
-		if len(m.pendingMessages) > 0 {
-			nextMsg := m.pendingMessages[0]
-			m.pendingMessages = m.pendingMessages[1:]
-			m.textarea.SetValue(nextMsg)
-			return m, m.sendMessage()
-		}
 
 	case errMsg:
 		m.err = msg.err
@@ -631,31 +628,39 @@ func (m *Model) sendMessage() tea.Cmd {
 	// Update viewport with new message
 	m.updateViewportContent()
 
-	return func() tea.Msg {
-		// Create conversation in database on first message
-		if m.config.DB != nil && m.conversationID == "" {
-			if err := m.createConversation(context.Background()); err != nil {
-				m.config.Logger.Error("Failed to create conversation", "error", err)
-			}
+	// Create conversation in database on first message
+	if m.config.DB != nil && m.conversationID == "" {
+		if err := m.createConversation(context.Background()); err != nil {
+			m.config.Logger.Error("Failed to create conversation", "error", err)
 		}
-
-		// Initialize loop if needed
-		if m.loop == nil {
-			if err := m.initLoop(); err != nil {
-				return errMsg{err}
-			}
-		}
-
-		// Queue the message
-		m.loop.QueueUserMessage(userMsg)
-
-		// Process the turn
-		if err := m.loop.ProcessOneTurn(m.loopCtx); err != nil {
-			return errMsg{err}
-		}
-
-		return processingDoneMsg{}
 	}
+
+	// Initialize loop if needed
+	if m.loop == nil {
+		if err := m.initLoop(); err != nil {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.renderer.RenderError(err),
+			})
+			m.updateViewportContent()
+			m.processing = false
+			return nil
+		}
+	}
+
+	// Queue the message
+	m.loop.QueueUserMessage(userMsg)
+
+	// Process the turn in a goroutine so streaming can update the UI
+	go func() {
+		if err := m.loop.ProcessOneTurn(m.loopCtx); err != nil {
+			m.responseChan <- responseMsg{err: err}
+		}
+		// Signal that processing is done
+		m.responseChan <- responseMsg{message: llm.Message{EndOfTurn: true}}
+	}()
+
+	return nil
 }
 
 // initLoop initializes the agent loop
