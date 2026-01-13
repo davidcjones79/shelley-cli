@@ -190,7 +190,7 @@ func New(cfg Config) (*Model, error) {
 
 	// Create textarea for input (starts at 2 lines, auto-expands)
 	ta := textarea.New()
-	ta.Placeholder = "Type your message... (Enter to send, Alt+Enter for newline)"
+	ta.Placeholder = "Type your message... (Enter to send, Ctrl+J for newline)"
 	ta.Focus()
 	ta.SetHeight(2)
 	ta.SetWidth(80)
@@ -324,8 +324,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateViewportContent()
 			}
 
+		case tea.KeyCtrlJ:
+			// Ctrl+J inserts a newline (works reliably on Mac)
+			m.textarea.InsertString("\n")
+			return m, nil
+
 		case tea.KeyEnter:
-			// Alt+Enter inserts a newline; plain Enter sends
+			// Alt+Enter also inserts newline (works in some terminals)
 			if msg.Alt {
 				m.textarea.InsertString("\n")
 				return m, nil
@@ -644,7 +649,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.processing {
 		m.textarea.Placeholder = "Type next message (will be queued)..."
 	} else {
-		m.textarea.Placeholder = "Type your message... (Enter to send, Alt+Enter for newline)"
+		m.textarea.Placeholder = "Type your message... (Enter to send, Ctrl+J for newline)"
 	}
 
 	return m, tea.Batch(cmds...)
