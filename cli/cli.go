@@ -479,15 +479,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case llm.StreamEventToolUseStart:
 			// Finalize any streaming text first
 			m.finalizeStreamingText()
-			// Show tool starting
-			if m.verbose {
-				toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
-				m.messages = append(m.messages, renderedMessage{
-					role:    llm.MessageRoleAssistant,
-					content: m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg),
-				})
-				m.updateViewportContent()
-			}
+			// Always show tool starting (brief indicator)
+			toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg),
+			})
+			m.updateViewportContent()
 
 		case llm.StreamEventContentBlockStop:
 			// Content block finished - finalize streaming text if any
