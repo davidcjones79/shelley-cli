@@ -142,6 +142,11 @@ type Model struct {
 
 	// Channels for async communication
 	responseChan chan responseMsg
+	streamChan   chan llm.StreamEvent
+
+	// Streaming state
+	streamingText strings.Builder // accumulates streaming text
+	streamingMsg  *renderedMessage // the message being streamed
 }
 
 // getSessionsDir returns the directory for storing sessions
@@ -172,6 +177,9 @@ type (
 	}
 	processingDoneMsg struct{}
 	errMsg            struct{ err error }
+	streamMsg         struct {
+		event llm.StreamEvent
+	}
 )
 
 // New creates a new CLI model
@@ -227,6 +235,7 @@ func New(cfg Config) (*Model, error) {
 		promptHistory:  []string{},
 		historyIndex:   -1,
 		responseChan:   make(chan responseMsg, 10),
+		streamChan:     make(chan llm.StreamEvent, 100),
 		verbose:        cfg.Verbose,
 		conversationID: cfg.ConversationID,
 	}
@@ -258,6 +267,7 @@ func (m *Model) Init() tea.Cmd {
 		textarea.Blink,
 		m.spinner.Tick,
 		m.waitForResponse(),
+		m.waitForStream(),
 	)
 }
 
@@ -266,6 +276,14 @@ func (m *Model) waitForResponse() tea.Cmd {
 	return func() tea.Msg {
 		resp := <-m.responseChan
 		return resp
+	}
+}
+
+// waitForStream returns a command that waits for streaming events
+func (m *Model) waitForStream() tea.Cmd {
+	return func() tea.Msg {
+		event := <-m.streamChan
+		return streamMsg{event: event}
 	}
 }
 
@@ -446,6 +464,44 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Continue waiting for responses
 		cmds = append(cmds, m.waitForResponse())
+
+	case streamMsg:
+		switch msg.event.Type {
+		case llm.StreamEventTextDelta:
+			// Accumulate text and update display
+			m.streamingText.WriteString(msg.event.Text)
+			m.updateStreamingDisplay()
+
+		case llm.StreamEventThinkingDelta:
+			// Could show thinking indicator if verbose
+			if m.verbose {
+				// For now, just accumulate - could add a thinking indicator
+			}
+
+		case llm.StreamEventToolUseStart:
+			// Finalize any streaming text first
+			m.finalizeStreamingText()
+			// Show tool starting
+			if m.verbose {
+				toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
+				m.messages = append(m.messages, renderedMessage{
+					role:    llm.MessageRoleAssistant,
+					content: m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg),
+				})
+				m.updateViewportContent()
+			}
+
+		case llm.StreamEventContentBlockStop:
+			// Content block finished - finalize streaming text if any
+			m.finalizeStreamingText()
+
+		case llm.StreamEventMessageComplete:
+			// Message complete - make sure streaming text is finalized
+			m.finalizeStreamingText()
+			// Usage will be updated via responseMsg
+		}
+		// Continue waiting for stream events
+		cmds = append(cmds, m.waitForStream())
 
 	case processingDoneMsg:
 		m.processing = false
@@ -637,6 +693,14 @@ func (m *Model) initLoop() error {
 		OnGitStateChange: func(ctx context.Context, state *gitstate.GitState) {
 			m.handleGitStateChange(ctx, state)
 		},
+		OnStream: func(event llm.StreamEvent) {
+			// Send stream events to the CLI's stream channel
+			select {
+			case m.streamChan <- event:
+			default:
+				// Channel full, skip (shouldn't happen with large buffer)
+			}
+		},
 	})
 
 	return nil
@@ -654,8 +718,47 @@ func (m *Model) updateViewportContent() {
 		content.WriteString("\n")
 	}
 
+	// Add streaming text if any
+	if m.streamingText.Len() > 0 {
+		if len(m.messages) > 0 {
+			content.WriteString("\n")
+		}
+		content.WriteString(m.streamingText.String())
+		content.WriteString("\n")
+	}
+
 	m.viewport.SetContent(content.String())
 	m.viewport.GotoBottom()
+}
+
+// updateStreamingDisplay updates the viewport with the current streaming text
+func (m *Model) updateStreamingDisplay() {
+	m.updateViewportContent()
+}
+
+// finalizeStreamingText moves accumulated streaming text to a permanent message
+func (m *Model) finalizeStreamingText() {
+	if m.streamingText.Len() == 0 {
+		return
+	}
+
+	text := m.streamingText.String()
+	m.streamingText.Reset()
+
+	// Render the text through the markdown renderer
+	rendered, err := m.renderer.renderer.Render(text)
+	if err != nil {
+		rendered = text
+	}
+	rendered = strings.TrimSpace(rendered)
+
+	if rendered != "" {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: rendered,
+		})
+	}
+	m.updateViewportContent()
 }
 
 // renderStatusBar creates the status bar with model, tokens, and cwd
@@ -917,6 +1020,8 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.switchModel("claude-opus-4.5")
 	case "/context":
 		return m.showContext()
+	case "/usage", "/cost":
+		return m.showUsage()
 	case "/theme":
 		if len(parts) < 2 {
 			// Toggle theme
@@ -1580,6 +1685,74 @@ func (m *Model) showContext() tea.Cmd {
 		}
 		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 		sb.WriteString(fmt.Sprintf("  [%s]", bar))
+	}
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(sb.String()),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// showUsage shows token usage and estimated costs
+func (m *Model) showUsage() tea.Cmd {
+	u := m.totalUsage
+
+	var sb strings.Builder
+	sb.WriteString("Session Usage:\n")
+
+	// Token counts
+	sb.WriteString(fmt.Sprintf("  Input tokens:    %s\n", formatTokens(u.InputTokens)))
+	sb.WriteString(fmt.Sprintf("  Output tokens:   %s\n", formatTokens(u.OutputTokens)))
+
+	// Cache stats
+	if u.CacheCreationInputTokens > 0 || u.CacheReadInputTokens > 0 {
+		sb.WriteString(fmt.Sprintf("  Cache created:   %s\n", formatTokens(u.CacheCreationInputTokens)))
+		sb.WriteString(fmt.Sprintf("  Cache read:      %s\n", formatTokens(u.CacheReadInputTokens)))
+	}
+
+	// Cost estimates based on current model
+	// Prices per million tokens (as of 2024)
+	var inputPrice, outputPrice, cacheReadPrice, cacheWritePrice float64
+	switch {
+	case strings.Contains(m.config.Model, "opus"):
+		inputPrice, outputPrice = 15.0, 75.0
+		cacheReadPrice, cacheWritePrice = 1.5, 18.75
+	case strings.Contains(m.config.Model, "sonnet"):
+		inputPrice, outputPrice = 3.0, 15.0
+		cacheReadPrice, cacheWritePrice = 0.3, 3.75
+	case strings.Contains(m.config.Model, "haiku"):
+		inputPrice, outputPrice = 0.25, 1.25
+		cacheReadPrice, cacheWritePrice = 0.025, 0.3125
+	default:
+		// Default to Sonnet pricing
+		inputPrice, outputPrice = 3.0, 15.0
+		cacheReadPrice, cacheWritePrice = 0.3, 3.75
+	}
+
+	// Calculate costs (prices are per million tokens)
+	inputCost := float64(u.InputTokens) / 1_000_000 * inputPrice
+	outputCost := float64(u.OutputTokens) / 1_000_000 * outputPrice
+	cacheReadCost := float64(u.CacheReadInputTokens) / 1_000_000 * cacheReadPrice
+	cacheWriteCost := float64(u.CacheCreationInputTokens) / 1_000_000 * cacheWritePrice
+	totalCost := inputCost + outputCost + cacheReadCost + cacheWriteCost
+
+	// Calculate savings from cache (cache read vs full input price)
+	cacheSavings := float64(u.CacheReadInputTokens) / 1_000_000 * (inputPrice - cacheReadPrice)
+
+	sb.WriteString(fmt.Sprintf("\nEstimated Cost (%s):\n", m.config.Model))
+	sb.WriteString(fmt.Sprintf("  Input:      $%.4f\n", inputCost))
+	sb.WriteString(fmt.Sprintf("  Output:     $%.4f\n", outputCost))
+	if cacheReadCost > 0 || cacheWriteCost > 0 {
+		sb.WriteString(fmt.Sprintf("  Cache read: $%.4f\n", cacheReadCost))
+		sb.WriteString(fmt.Sprintf("  Cache write:$%.4f\n", cacheWriteCost))
+	}
+	sb.WriteString(fmt.Sprintf("  ─────────────────\n"))
+	sb.WriteString(fmt.Sprintf("  Total:      $%.4f\n", totalCost))
+
+	if cacheSavings > 0.0001 {
+		sb.WriteString(fmt.Sprintf("\n  💰 Cache saved: $%.4f\n", cacheSavings))
 	}
 
 	m.messages = append(m.messages, renderedMessage{
