@@ -378,7 +378,7 @@ func (l *loggingService) Do(ctx context.Context, request *llm.Request) (*llm.Res
 			}
 		}
 
-		l.logger.Info("LLM request completed", logAttrs...)
+		l.logger.Debug("LLM request completed", logAttrs...)
 	}
 
 	return response, err
