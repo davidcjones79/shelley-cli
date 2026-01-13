@@ -1,13 +1,17 @@
 package cli
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"shelley.exe.dev/llm"
 	"shelley.exe.dev/llm/imageutil"
 )
 
@@ -203,4 +207,85 @@ func loadImageAsAttachment(path string, maxImageDimension int) (*imageAttachment
 		mediaType: contentType,
 		data:      base64.StdEncoding.EncodeToString(data),
 	}, nil
+}
+
+// describeImage sends an image to a vision model and returns the description
+func (m *Model) describeImage(input string) tea.Cmd {
+	// Parse input - could be just path or "path prompt"
+	parts := strings.SplitN(strings.TrimSpace(input), " ", 2)
+	imagePath := parts[0]
+	prompt := "Describe this image in detail."
+	if len(parts) > 1 {
+		prompt = parts[1]
+	}
+
+	// Clean up path (remove quotes, brackets)
+	imagePath = strings.Trim(imagePath, "\"'[]")
+	
+	// Expand ~ to home directory
+	if strings.HasPrefix(imagePath, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			imagePath = filepath.Join(home, imagePath[2:])
+		}
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
+		m.showError("File not found: " + imagePath)
+		return nil
+	}
+
+	// Load the image
+	attachment, err := loadImageAsAttachment(imagePath, m.config.LLMService.MaxImageDimension())
+	if err != nil {
+		m.showError("Failed to load image: " + err.Error())
+		return nil
+	}
+
+	m.showSystemMessage("Analyzing image with vision model...")
+
+	// Build message with image
+	contents := []llm.Content{
+		{Type: llm.ContentTypeText, Text: prompt},
+		{
+			Type:      llm.ContentTypeText,
+			MediaType: attachment.mediaType,
+			Data:      attachment.data,
+		},
+	}
+
+	userMsg := llm.Message{
+		Role:    llm.MessageRoleUser,
+		Content: contents,
+	}
+
+	// Send directly to LLM (bypassing the loop for this one-off request)
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+
+		req := &llm.Request{
+			Messages: []llm.Message{userMsg},
+		}
+		resp, err := m.config.LLMService.Do(ctx, req)
+		if err != nil {
+			return describeImageResultMsg{err: err}
+		}
+
+		// Extract text from response
+		var text string
+		for _, content := range resp.Content {
+			if content.Type == llm.ContentTypeText {
+				text += content.Text
+			}
+		}
+
+		return describeImageResultMsg{text: text}
+	}
+}
+
+// describeImageResultMsg is the result of image description
+type describeImageResultMsg struct {
+	text string
+	err  error
 }
