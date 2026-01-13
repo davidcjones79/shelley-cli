@@ -36,6 +36,8 @@ type BashTool struct {
 	WorkingDir *MutableWorkingDir
 	// LLMProvider provides access to LLM services for tool validation
 	LLMProvider LLMServiceProvider
+	// SkipPermission skips permission checks (--yes mode)
+	SkipPermission bool
 }
 
 const (
@@ -183,8 +185,8 @@ func (b *BashTool) Run(ctx context.Context, m json.RawMessage) llm.ToolOut {
 		return llm.ErrorToolOut(err)
 	}
 
-	// Custom permission callback if set
-	if b.CheckPermission != nil {
+	// Custom permission callback if set (skip in --yes mode)
+	if b.CheckPermission != nil && !b.SkipPermission {
 		if err := b.CheckPermission(req.Command); err != nil {
 			return llm.ErrorToolOut(err)
 		}

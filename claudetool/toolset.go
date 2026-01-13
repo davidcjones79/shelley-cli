@@ -50,6 +50,8 @@ type ToolSetConfig struct {
 	// OnWorkingDirChange is called when the working directory changes.
 	// This can be used to persist the change to a database.
 	OnWorkingDirChange func(newDir string)
+	// SkipPermission skips permission checks for bash commands (--yes mode).
+	SkipPermission bool
 }
 
 // ToolSet holds a set of tools for a single conversation.
@@ -95,6 +97,7 @@ func NewToolSet(ctx context.Context, cfg ToolSetConfig) *ToolSet {
 		WorkingDir:       wd,
 		LLMProvider:      cfg.LLMProvider,
 		EnableJITInstall: cfg.EnableJITInstall,
+		SkipPermission:   cfg.SkipPermission,
 	}
 
 	// Use simplified patch schema for weaker models, full schema for sonnet/opus
