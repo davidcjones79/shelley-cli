@@ -97,6 +97,10 @@ func (m *Model) completeSlashCommand(prefix string) []string {
 		commands = append(commands,
 			"/models",
 			"/model",
+			"/fast",
+			"/smart",
+			"/think",
+			"/opus",
 			"/context",
 		)
 	}

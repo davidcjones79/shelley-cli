@@ -909,6 +909,12 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 			return nil
 		}
 		return m.switchModel(parts[1])
+	case "/fast":
+		return m.switchModel("claude-haiku-4.5")
+	case "/smart":
+		return m.switchModel("claude-sonnet-4.5")
+	case "/think", "/opus":
+		return m.switchModel("claude-opus-4.5")
 	case "/context":
 		return m.showContext()
 	case "/theme":
@@ -1040,6 +1046,9 @@ func (m *Model) buildHelpText() string {
 		sb.WriteString("\nModel & Context:\n")
 		sb.WriteString("  /models        - List available models\n")
 		sb.WriteString("  /model <id>    - Switch to a different model\n")
+		sb.WriteString("  /fast          - Switch to Haiku (cheap & fast)\n")
+		sb.WriteString("  /smart         - Switch to Sonnet (balanced)\n")
+		sb.WriteString("  /think         - Switch to Opus (complex reasoning)\n")
 		sb.WriteString("  /context       - Show context window usage\n")
 	}
 
