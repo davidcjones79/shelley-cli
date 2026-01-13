@@ -111,6 +111,7 @@ func (m *Model) switchConversation(conversationID string) tea.Cmd {
 	m.messages = nil
 	m.totalUsage = llm.Usage{}
 	m.suggestedCmds = nil
+	m.toolNames = make(map[string]string) // Reset tool names for new conversation
 
 	history, err := m.loadHistoryFromDB()
 	if err != nil {
@@ -119,6 +120,16 @@ func (m *Model) switchConversation(conversationID string) tea.Cmd {
 			content: m.styles.ErrorMessage.Render("Failed to load history: " + err.Error()),
 		})
 	} else {
+		// First pass: extract tool names
+		for _, msg := range history {
+			for _, content := range msg.Content {
+				if content.Type == llm.ContentTypeToolUse && content.ID != "" && content.ToolName != "" {
+					m.toolNames[content.ID] = content.ToolName
+				}
+			}
+		}
+		m.renderer.toolNames = m.toolNames
+		// Second pass: render messages
 		for _, msg := range history {
 			rendered := m.renderer.RenderMessage(msg, m.verbose)
 			if rendered != "" {
