@@ -627,6 +627,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.processing = false
 		// Clear pending messages on error
 		m.pendingMessages = nil
+
+	case describeImageResultMsg:
+		if msg.err != nil {
+			m.showError("Image analysis failed: " + msg.err.Error())
+		} else {
+			// Render the response as markdown
+			responseMsg := llm.Message{
+				Role:    llm.MessageRoleAssistant,
+				Content: []llm.Content{{Type: llm.ContentTypeText, Text: msg.text}},
+			}
+			rendered := m.renderer.RenderMessage(responseMsg, false)
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: rendered,
+			})
+			m.updateViewportContent()
+		}
 	}
 
 	// Update viewport for scrolling

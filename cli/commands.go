@@ -198,6 +198,13 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	case "/attachments":
 		return m.listAttachments()
 
+	case "/describe":
+		if len(parts) < 2 {
+			m.showError("Usage: /describe <path-to-image> [prompt]")
+			return nil
+		}
+		return m.describeImage(strings.Join(parts[1:], " "))
+
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
 		return nil
@@ -223,9 +230,10 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /stop          - Cancel current operation (or press Escape)\n")
 	sb.WriteString("  /quit          - Exit the CLI\n")
 
-	sb.WriteString("\nImage Attachments:\n")
+	sb.WriteString("\nImages:\n")
 	sb.WriteString("  /attach <path> - Attach image to next message (.png, .jpg, .gif, .webp)\n")
 	sb.WriteString("  /attachments   - List pending attachments\n")
+	sb.WriteString("  /describe <path> [prompt] - Analyze image with vision model\n")
 
 	if m.config.DB != nil {
 		sb.WriteString("\nConversation Management (database enabled):\n")
