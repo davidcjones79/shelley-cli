@@ -509,7 +509,10 @@ func (m *Model) initLoop() error {
 func (m *Model) updateViewportContent() {
 	var content strings.Builder
 
-	for _, msg := range m.messages {
+	for i, msg := range m.messages {
+		if i > 0 {
+			content.WriteString("\n") // Extra blank line between messages
+		}
 		content.WriteString(msg.content)
 		content.WriteString("\n")
 	}

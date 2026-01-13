@@ -96,19 +96,22 @@ func (r *MessageRenderer) renderText(role llm.MessageRole, text string) string {
 	// Trim whitespace that glamour adds
 	rendered = strings.TrimSpace(rendered)
 
-	// Add role prefix on same line for short messages, or with colon
-	prefix := ""
+	// Format with role label on its own line for better readability
+	var result strings.Builder
 	switch role {
 	case llm.MessageRoleUser:
-		prefix = r.styles.UserMessage.Render("You: ")
+		result.WriteString(r.styles.UserMessage.Render("━━━ You ━━━"))
+		result.WriteString("\n")
+		result.WriteString(rendered)
 	case llm.MessageRoleAssistant:
-		prefix = r.styles.AssistantMessage.Render("Shelley: ")
+		result.WriteString(r.styles.AssistantMessage.Render("━━━ Shelley ━━━"))
+		result.WriteString("\n")
+		result.WriteString(rendered)
+	default:
+		result.WriteString(rendered)
 	}
 
-	if prefix != "" {
-		return prefix + rendered
-	}
-	return rendered
+	return result.String()
 }
 
 // renderToolUse renders a tool use block with bordered box

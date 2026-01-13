@@ -47,11 +47,12 @@ type Styles struct {
 func DefaultStyles() *Styles {
 	return &Styles{
 		UserMessage: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("12")). // Blue
+			Foreground(lipgloss.Color("14")). // Cyan
 			Bold(true),
 
 		AssistantMessage: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")), // White
+			Foreground(lipgloss.Color("10")). // Green
+			Bold(true),
 
 		SystemMessage: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8")). // Gray
