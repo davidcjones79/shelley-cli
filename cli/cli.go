@@ -139,6 +139,9 @@ type Model struct {
 	// Last viewport content (to avoid unnecessary updates)
 	lastViewportContent string
 
+	// Mouse mode enabled (for scrolling, but prevents text selection)
+	mouseEnabled bool
+
 	// Database conversation (when DB is configured)
 	conversationID string
 	lastGitState   *gitstate.GitState
@@ -955,6 +958,23 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		m.updateViewportContent()
 		return nil
 
+	case "/mouse":
+		m.mouseEnabled = !m.mouseEnabled
+		status := "off (text selection enabled, use PgUp/PgDown to scroll)"
+		var cmd tea.Cmd
+		if m.mouseEnabled {
+			status = "on (mouse scrolling enabled, text selection disabled)"
+			cmd = tea.EnableMouseCellMotion
+		} else {
+			cmd = tea.DisableMouse
+		}
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.SystemMessage.Render("Mouse mode: " + status),
+		})
+		m.updateViewportContent()
+		return cmd
+
 	// Database conversation commands
 	case "/conversations", "/convos":
 		return m.listConversations()
@@ -1194,6 +1214,7 @@ func (m *Model) buildHelpText() string {
 
 	sb.WriteString("\nDisplay & Navigation:\n")
 	sb.WriteString("  /theme [name]  - Toggle or set theme (dark/light)\n")
+	sb.WriteString("  /mouse         - Toggle mouse mode (off=select text, on=scroll)\n")
 	sb.WriteString("  /cwd [path]    - Show or change working directory\n")
 	sb.WriteString("  /status        - Show session status\n")
 	sb.WriteString("  /export [file] - Export conversation to markdown\n")
@@ -2119,7 +2140,7 @@ func Run(cfg Config) error {
 	}
 	defer model.Cleanup()
 
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err = p.Run()
 	return err
 }
