@@ -138,6 +138,10 @@ type Model struct {
 	// Streaming state
 	streamingText   strings.Builder // accumulates streaming text
 	streamingActive bool            // true if we received streaming events for current message
+
+	// Tool streaming state
+	currentToolName  string          // name of currently running tool
+	currentToolInput strings.Builder // accumulates tool input JSON as it streams
 }
 
 // renderedMessage holds a pre-rendered message for display
@@ -505,6 +509,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case llm.StreamEventToolUseStart:
 			// Finalize any streaming text first
 			m.finalizeStreamingText()
+			// Track current tool for input streaming
+			m.currentToolName = msg.event.ToolName
+			m.currentToolInput.Reset()
 			// Update status to show which tool is running
 			m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
 			// Always show tool starting indicator for progress feedback
@@ -515,9 +522,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 			m.updateViewportContent()
 
+		case llm.StreamEventToolInputDelta:
+			// Accumulate tool input as it streams
+			m.currentToolInput.WriteString(msg.event.ToolInput)
+			// Update the last message to show progress
+			if len(m.messages) > 0 && m.currentToolName != "" {
+				toolMsg := m.styles.ToolName.Render(m.currentToolName) + " " + m.styles.ToolRunning.Render("running...")
+				// Show a compact summary of the input so far
+				inputSummary := m.formatToolInputSummary(m.currentToolInput.String())
+				if inputSummary != "" {
+					toolMsg += " " + m.styles.ToolInput.Render(inputSummary)
+				}
+				m.messages[len(m.messages)-1].content = m.styles.ToolBoxStyle(m.width-4, false).Render(toolMsg)
+				m.updateViewportContent()
+			}
+
 		case llm.StreamEventContentBlockStop:
 			// Content block finished - finalize streaming text if any
 			m.finalizeStreamingText()
+			// Clear tool state
+			m.currentToolName = ""
+			m.currentToolInput.Reset()
 
 		case llm.StreamEventMessageComplete:
 			// Message complete - make sure streaming text is finalized
@@ -583,6 +608,8 @@ func (m *Model) sendMessage() tea.Cmd {
 	m.err = nil
 	m.streamingActive = false
 	m.streamingText.Reset()
+	m.currentToolName = ""
+	m.currentToolInput.Reset()
 
 	// Clear suggested commands for new conversation turn
 	m.suggestedCmds = nil
@@ -772,6 +799,36 @@ func (m *Model) updateViewportContent() {
 // updateStreamingDisplay updates the viewport with the current streaming text
 func (m *Model) updateStreamingDisplay() {
 	m.updateViewportContent()
+}
+
+// formatToolInputSummary returns a compact summary of tool input JSON
+func (m *Model) formatToolInputSummary(inputJSON string) string {
+	if inputJSON == "" {
+		return ""
+	}
+	// Try to parse as JSON object
+	var input map[string]any
+	if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+		// Partial JSON - just show length indicator
+		if len(inputJSON) > 20 {
+			return fmt.Sprintf("(%d chars)", len(inputJSON))
+		}
+		return ""
+	}
+	// Show first meaningful key-value pair
+	for k, v := range input {
+		if str, ok := v.(string); ok {
+			if len(str) > 40 {
+				str = str[:40] + "..."
+			}
+			// Truncate on newline
+			if idx := strings.Index(str, "\n"); idx > 0 {
+				str = str[:idx] + "..."
+			}
+			return k + ": " + str
+		}
+	}
+	return ""
 }
 
 // finalizeStreamingText moves accumulated streaming text to a permanent message
