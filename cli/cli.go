@@ -109,6 +109,11 @@ type Model struct {
 	historyIndex  int
 	currentInput  string // Saves current input when cycling through history
 
+	// Tab completion
+	completions      []string
+	completionIndex  int
+	completionPrefix string // Original text before completion started
+
 	// Message queue for messages sent while processing
 	pendingMessages []string
 
@@ -306,6 +311,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case tea.KeyTab:
+			// Tab completion
+			if !m.processing {
+				return m, m.handleTabCompletion()
+			}
+
 		case tea.KeyUp:
 			// Cycle to previous prompt in history
 			if !m.processing && len(m.promptHistory) > 0 {
@@ -453,8 +464,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Update textarea - always allow typing, even while processing
 	var cmd tea.Cmd
+	oldValue := m.textarea.Value()
 	m.textarea, cmd = m.textarea.Update(msg)
 	cmds = append(cmds, cmd)
+
+	// Clear completions if text changed (except from tab completion itself)
+	if m.textarea.Value() != oldValue && !strings.HasPrefix(m.textarea.Value(), m.completionPrefix) {
+		m.clearCompletions()
+	}
 
 	// Update placeholder based on state
 	if m.processing {
@@ -859,6 +876,10 @@ func (m *Model) buildHelpText() string {
 	}
 
 	sb.WriteString("\n  /help          - Show this help")
+	sb.WriteString("\n\nTips:\n")
+	sb.WriteString("  Tab            - Complete file paths and commands\n")
+	sb.WriteString("  Up/Down        - Cycle through prompt history\n")
+	sb.WriteString("  PgUp/PgDown    - Scroll message history")
 	return sb.String()
 }
 
@@ -1550,6 +1571,259 @@ func (m *Model) listAttachments() tea.Cmd {
 	})
 	m.updateViewportContent()
 	return nil
+}
+
+// handleTabCompletion handles tab key for completion
+func (m *Model) handleTabCompletion() tea.Cmd {
+	text := m.textarea.Value()
+
+	// For single-line input, complete on the full text
+	textToCursor := text
+
+	// If we're already cycling through completions, advance to next
+	if len(m.completions) > 0 && strings.HasPrefix(text, m.completionPrefix) {
+		m.completionIndex = (m.completionIndex + 1) % len(m.completions)
+		m.textarea.SetValue(m.completions[m.completionIndex])
+		m.textarea.CursorEnd()
+		return nil
+	}
+
+	// Start new completion
+	m.completionPrefix = text
+	m.completions = nil
+	m.completionIndex = 0
+
+	// Check if completing a slash command
+	if strings.HasPrefix(textToCursor, "/") && !strings.Contains(textToCursor, " ") {
+		m.completions = m.completeSlashCommand(textToCursor)
+	} else {
+		// File path completion - find the word being typed
+		m.completions = m.completeFilePath(textToCursor)
+	}
+
+	if len(m.completions) == 0 {
+		return nil
+	}
+
+	if len(m.completions) == 1 {
+		// Single match - just complete it
+		m.textarea.SetValue(m.completions[0])
+		m.textarea.CursorEnd()
+		m.completions = nil // Clear so next tab starts fresh
+	} else {
+		// Multiple matches - complete common prefix and start cycling
+		common := longestCommonPrefix(m.completions)
+		if common != text {
+			m.textarea.SetValue(common)
+			m.textarea.CursorEnd()
+			m.completionPrefix = common
+		} else {
+			// Already at common prefix, show first completion
+			m.textarea.SetValue(m.completions[0])
+			m.textarea.CursorEnd()
+		}
+	}
+
+	return nil
+}
+
+// completeSlashCommand returns completions for slash commands
+func (m *Model) completeSlashCommand(prefix string) []string {
+	commands := []string{
+		"/help",
+		"/clear",
+		"/run",
+		"/stop",
+		"/cancel",
+		"/verbose",
+		"/attach",
+		"/image",
+		"/attachments",
+	}
+
+	// Add DB-specific commands if database is configured
+	if m.config.DB != nil {
+		commands = append(commands,
+			"/conversations",
+			"/convos",
+			"/switch",
+			"/new",
+			"/archive",
+		)
+	} else {
+		commands = append(commands,
+			"/save",
+			"/load",
+			"/sessions",
+		)
+	}
+
+	var matches []string
+	for _, cmd := range commands {
+		if strings.HasPrefix(cmd, prefix) {
+			matches = append(matches, cmd)
+		}
+	}
+	return matches
+}
+
+// completeFilePath returns completions for file paths
+func (m *Model) completeFilePath(text string) []string {
+	// Find the last "word" that looks like a path
+	// Words are separated by spaces (but not escaped spaces)
+	words := splitRespectingQuotes(text)
+	if len(words) == 0 {
+		return nil
+	}
+
+	lastWord := words[len(words)-1]
+	prefix := strings.Join(words[:len(words)-1], " ")
+	if prefix != "" {
+		prefix += " "
+	}
+
+	// Expand ~ to home directory
+	pathToComplete := lastWord
+	homeExpanded := false
+	if strings.HasPrefix(pathToComplete, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			pathToComplete = filepath.Join(home, pathToComplete[2:])
+			homeExpanded = true
+		}
+	}
+
+	// Make path absolute if relative
+	if !filepath.IsAbs(pathToComplete) {
+		pathToComplete = filepath.Join(m.config.WorkingDir, pathToComplete)
+	}
+
+	// Get directory and prefix for matching
+	dir := filepath.Dir(pathToComplete)
+	base := filepath.Base(pathToComplete)
+
+	// If the path ends with /, list directory contents
+	if strings.HasSuffix(lastWord, "/") || strings.HasSuffix(lastWord, string(filepath.Separator)) {
+		dir = pathToComplete
+		base = ""
+	}
+
+	// Check if directory exists
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+
+	// Read directory entries
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var matches []string
+	for _, entry := range entries {
+		name := entry.Name()
+		// Skip hidden files unless explicitly looking for them
+		if strings.HasPrefix(name, ".") && !strings.HasPrefix(base, ".") {
+			continue
+		}
+
+		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(base)) {
+			// Build the completed path
+			var completedPath string
+			if homeExpanded {
+				// Restore ~/
+				home, _ := os.UserHomeDir()
+				relDir := strings.TrimPrefix(dir, home)
+				completedPath = "~" + filepath.Join(relDir, name)
+			} else if strings.HasPrefix(lastWord, "/") {
+				// Absolute path
+				completedPath = filepath.Join(dir, name)
+			} else {
+				// Relative path - reconstruct from original
+				origDir := filepath.Dir(lastWord)
+				if origDir == "." && !strings.HasPrefix(lastWord, "./") {
+					completedPath = name
+				} else {
+					completedPath = filepath.Join(origDir, name)
+				}
+			}
+
+			// Add trailing slash for directories
+			if entry.IsDir() {
+				completedPath += "/"
+			}
+
+			matches = append(matches, prefix+completedPath)
+		}
+	}
+
+	return matches
+}
+
+// splitRespectingQuotes splits a string by spaces, respecting quoted sections
+func splitRespectingQuotes(s string) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := false
+	quoteChar := rune(0)
+
+	for i, r := range s {
+		if (r == '"' || r == '\'') && (i == 0 || s[i-1] != '\\') {
+			if !inQuote {
+				inQuote = true
+				quoteChar = r
+			} else if r == quoteChar {
+				inQuote = false
+				quoteChar = 0
+			} else {
+				current.WriteRune(r)
+			}
+		} else if r == ' ' && !inQuote {
+			if current.Len() > 0 {
+				result = append(result, current.String())
+				current.Reset()
+			}
+		} else {
+			current.WriteRune(r)
+		}
+	}
+
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+
+	// If trailing space, add empty string to signal "complete in current dir"
+	if len(s) > 0 && s[len(s)-1] == ' ' && !inQuote {
+		result = append(result, "")
+	}
+
+	return result
+}
+
+// longestCommonPrefix finds the longest common prefix of a slice of strings
+func longestCommonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	if len(strs) == 1 {
+		return strs[0]
+	}
+
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		for len(prefix) > 0 && !strings.HasPrefix(s, prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
+	}
+	return prefix
+}
+
+// clearCompletions resets completion state (call when input changes)
+func (m *Model) clearCompletions() {
+	m.completions = nil
+	m.completionIndex = 0
+	m.completionPrefix = ""
 }
 
 // Cleanup releases resources
