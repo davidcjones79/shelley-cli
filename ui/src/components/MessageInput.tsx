@@ -52,6 +52,8 @@ interface MessageInputProps {
   onClearInjectedText?: () => void;
   /** If set, persist draft message to localStorage under this key */
   persistKey?: string;
+  /** Whether the agent is currently working on a response */
+  agentWorking?: boolean;
 }
 
 const PERSIST_KEY_PREFIX = "shelley_draft_";
@@ -64,6 +66,7 @@ function MessageInput({
   injectedText,
   onClearInjectedText,
   persistKey,
+  agentWorking = false,
 }: MessageInputProps) {
   const [message, setMessage] = useState(() => {
     // Load persisted draft if persistKey is set
@@ -72,6 +75,7 @@ function MessageInput({
     }
     return "";
   });
+  const [queuedFeedback, setQueuedFeedback] = useState(false);
 
   const [uploadsInProgress, setUploadsInProgress] = useState(0);
   const [dragCounter, setDragCounter] = useState(0);
@@ -286,6 +290,7 @@ function MessageInput({
       }
 
       const messageToSend = message;
+      const wasAgentWorking = agentWorking;
       // Clear immediately to allow queueing next message
       setMessage("");
       if (persistKey) {
@@ -294,6 +299,11 @@ function MessageInput({
 
       try {
         await onSend(messageToSend);
+        // Show brief "queued" feedback if sent while agent was working
+        if (wasAgentWorking) {
+          setQueuedFeedback(true);
+          setTimeout(() => setQueuedFeedback(false), 2000);
+        }
       } catch {
         // Restore message on error so user can retry
         setMessage(messageToSend);
@@ -364,6 +374,11 @@ function MessageInput({
           <div className="drag-overlay-content">Drop files here</div>
         </div>
       )}
+      {queuedFeedback && (
+        <div className="message-queued-feedback">
+          Message queued — will be processed after current task
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="message-input-form">
         <textarea
           ref={textareaRef}
@@ -377,7 +392,7 @@ function MessageInput({
               requestAnimationFrame(() => requestAnimationFrame(onFocus));
             }
           }}
-          placeholder="Message, paste image, or attach file..."
+          placeholder={agentWorking ? "Type next message (will be queued)..." : "Message, paste image, or attach file..."}
           className="message-textarea"
           disabled={isDisabled}
           rows={1}

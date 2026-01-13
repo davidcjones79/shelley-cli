@@ -1330,6 +1330,7 @@ function ChatInterface({
         injectedText={diffCommentText}
         onClearInjectedText={() => setDiffCommentText("")}
         persistKey={conversationId || "new-conversation"}
+        agentWorking={agentWorking}
       />
 
       {/* Directory Picker Modal */}

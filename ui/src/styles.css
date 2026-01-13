@@ -1441,6 +1441,27 @@ button {
   padding-right: max(1rem, env(safe-area-inset-right));
 }
 
+.message-queued-feedback {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+  animation: fade-in-out 2s ease-in-out;
+}
+
+@keyframes fade-in-out {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .message-input-form {
   display: flex;
   align-items: flex-end;
