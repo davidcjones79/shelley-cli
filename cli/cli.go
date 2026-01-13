@@ -145,8 +145,8 @@ type Model struct {
 	streamChan   chan llm.StreamEvent
 
 	// Streaming state
-	streamingText strings.Builder // accumulates streaming text
-	streamingMsg  *renderedMessage // the message being streamed
+	streamingText   strings.Builder // accumulates streaming text
+	streamingActive bool            // true if we received streaming events for current message
 }
 
 // getSessionsDir returns the directory for storing sessions
@@ -433,13 +433,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				content: rendered,
 			})
 		} else {
-			// Render and add the message
-			rendered := m.renderer.RenderMessage(msg.message, m.verbose)
-			if rendered != "" {
-				m.messages = append(m.messages, renderedMessage{
-					role:    msg.message.Role,
-					content: rendered,
-				})
+			// If streaming was active, the text was already displayed
+			// Only render non-text content (tool uses, etc.) and update usage
+			if m.streamingActive {
+				m.streamingActive = false
+				// Finalize any remaining streaming text
+				m.finalizeStreamingText()
+				// Only render tool content, not text (already shown via streaming)
+				for _, content := range msg.message.Content {
+					if content.Type == llm.ContentTypeToolUse || content.Type == llm.ContentTypeToolResult {
+						rendered := m.renderer.renderContent(msg.message.Role, content, m.verbose)
+						if rendered != "" {
+							m.messages = append(m.messages, renderedMessage{
+								role:    msg.message.Role,
+								content: rendered,
+							})
+						}
+					}
+				}
+			} else {
+				// Non-streaming path: render the full message
+				rendered := m.renderer.RenderMessage(msg.message, m.verbose)
+				if rendered != "" {
+					m.messages = append(m.messages, renderedMessage{
+						role:    msg.message.Role,
+						content: rendered,
+					})
+				}
 			}
 			m.totalUsage.Add(msg.usage)
 
@@ -469,6 +489,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.event.Type {
 		case llm.StreamEventTextDelta:
 			// Accumulate text and update display
+			m.streamingActive = true
 			m.streamingText.WriteString(msg.event.Text)
 			m.updateStreamingDisplay()
 
@@ -566,6 +587,8 @@ func (m *Model) sendMessage() tea.Cmd {
 	m.textarea.Reset()
 	m.processing = true
 	m.err = nil
+	m.streamingActive = false
+	m.streamingText.Reset()
 
 	// Clear suggested commands for new conversation turn
 	m.suggestedCmds = nil
