@@ -99,6 +99,7 @@ func runChat(global GlobalConfig, args []string) {
 	fs := flag.NewFlagSet("chat", flag.ExitOnError)
 	prompt := fs.String("prompt", "", "Initial prompt to send (optional, for non-interactive mode)")
 	yesMode := fs.Bool("yes", false, "Auto-accept all tool operations (no confirmations)")
+	verbose := fs.Bool("verbose", false, "Show tool execution details (off by default)")
 	fs.Parse(args)
 
 	// Check for piped stdin
@@ -192,6 +193,7 @@ func runChat(global GlobalConfig, args []string) {
 		LLMService: llmService,
 		Logger:     logger,
 		System:     system,
+		Verbose:    *verbose,
 	}
 
 	if err := cli.Run(cliConfig); err != nil {

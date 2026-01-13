@@ -42,11 +42,11 @@ func NewMessageRenderer(width int) (*MessageRenderer, error) {
 }
 
 // RenderMessage renders an LLM message to a string for terminal display
-func (r *MessageRenderer) RenderMessage(msg llm.Message) string {
+func (r *MessageRenderer) RenderMessage(msg llm.Message, verbose bool) string {
 	var parts []string
 
 	for _, content := range msg.Content {
-		rendered := r.renderContent(msg.Role, content)
+		rendered := r.renderContent(msg.Role, content, verbose)
 		if rendered != "" {
 			parts = append(parts, rendered)
 		}
@@ -56,15 +56,24 @@ func (r *MessageRenderer) RenderMessage(msg llm.Message) string {
 }
 
 // renderContent renders a single content block
-func (r *MessageRenderer) renderContent(role llm.MessageRole, content llm.Content) string {
+func (r *MessageRenderer) renderContent(role llm.MessageRole, content llm.Content, verbose bool) string {
 	switch content.Type {
 	case llm.ContentTypeText:
 		return r.renderText(role, content.Text)
 	case llm.ContentTypeToolUse:
+		if !verbose {
+			return ""
+		}
 		return r.renderToolUse(content)
 	case llm.ContentTypeToolResult:
+		if !verbose {
+			return ""
+		}
 		return r.renderToolResult(content)
 	case llm.ContentTypeThinking:
+		if !verbose {
+			return ""
+		}
 		return r.renderThinking(content.Text)
 	default:
 		return ""

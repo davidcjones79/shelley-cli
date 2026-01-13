@@ -49,6 +49,7 @@ type Config struct {
 	LLMService llm.Service
 	Logger     *slog.Logger
 	System     []llm.SystemContent
+	Verbose    bool // Show tool execution details
 }
 
 // Model is the Bubble Tea model for the CLI
@@ -84,6 +85,9 @@ type Model struct {
 
 	// Shell integration - store suggested commands
 	suggestedCmds []string
+
+	// Verbosity - show tool details
+	verbose bool
 
 	// Session management
 	sessionName string
@@ -175,6 +179,7 @@ func New(cfg Config) (*Model, error) {
 		promptHistory: []string{},
 		historyIndex:  -1,
 		responseChan:  make(chan responseMsg, 10),
+		verbose:       cfg.Verbose,
 	}
 
 	return m, nil
@@ -341,7 +346,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		} else {
 			// Render and add the message
-			rendered := m.renderer.RenderMessage(msg.message)
+			rendered := m.renderer.RenderMessage(msg.message, m.verbose)
 			if rendered != "" {
 				m.messages = append(m.messages, renderedMessage{
 					role:    msg.message.Role,
@@ -433,7 +438,7 @@ func (m *Model) sendMessage() tea.Cmd {
 		Role:    llm.MessageRoleUser,
 		Content: []llm.Content{{Type: llm.ContentTypeText, Text: text}},
 	}
-	rendered := m.renderer.RenderMessage(userMsg)
+	rendered := m.renderer.RenderMessage(userMsg, true) // Always show user messages
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleUser,
 		content: rendered,
@@ -642,12 +647,25 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 			m.updateViewportContent()
 		}
 		return nil
+	case "/verbose":
+		m.verbose = !m.verbose
+		status := "off"
+		if m.verbose {
+			status = "on"
+		}
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.SystemMessage.Render("Verbose mode: " + status),
+		})
+		m.updateViewportContent()
+		return nil
 	case "/help":
 		helpText := `/run [n]   - Run suggested command (n=index, default=last)
 /save [name] - Save session (auto-names if omitted)
 /load <name> - Load a saved session
 /sessions    - List saved sessions
 /clear       - Clear conversation
+/verbose     - Toggle tool detail visibility
 /stop        - Cancel current operation (or press Escape)
 /help        - Show this help`
 		m.messages = append(m.messages, renderedMessage{
