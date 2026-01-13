@@ -855,7 +855,7 @@ func (m *Model) View() string {
 	}
 
 	// ========== HEADER (always visible at top) ==========
-	title := m.styles.HeaderTitle.Render("Shelley CLI")
+	title := m.styles.HeaderTitle.Render("Shelley CLI (unofficial)")
 	model := m.styles.ModelName.Render(m.config.Model)
 
 	// Calculate padding to right-align the model name
