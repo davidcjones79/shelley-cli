@@ -133,6 +133,9 @@ type Model struct {
 	// Session management (legacy JSON files)
 	sessionName string
 
+	// Available models cache (for number selection)
+	availableModels []string
+
 	// Database conversation (when DB is configured)
 	conversationID string
 	lastGitState   *gitstate.GitState
@@ -1592,6 +1595,9 @@ func (m *Model) listModels() tea.Cmd {
 		return nil
 	}
 
+	// Store available models for number selection
+	m.availableModels = available
+
 	allModels := models.All()
 	modelMap := make(map[string]models.Model)
 	for _, model := range allModels {
@@ -1600,18 +1606,18 @@ func (m *Model) listModels() tea.Cmd {
 
 	var sb strings.Builder
 	sb.WriteString("Available models:\n")
-	for _, id := range available {
+	for i, id := range available {
 		marker := "  "
 		if id == m.config.Model {
 			marker = "→ "
 		}
-		line := fmt.Sprintf("%s%s", marker, id)
+		line := fmt.Sprintf("%s%d. %s", marker, i+1, id)
 		if model, ok := modelMap[id]; ok {
 			line += fmt.Sprintf(" (%s)", model.Provider)
 		}
 		sb.WriteString(line + "\n")
 	}
-	sb.WriteString("\nUse /model <id> to switch models")
+	sb.WriteString("\nUse /model <id> or /model <number> to switch")
 
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleAssistant,
@@ -1630,6 +1636,22 @@ func (m *Model) switchModel(modelID string) tea.Cmd {
 		})
 		m.updateViewportContent()
 		return nil
+	}
+
+	// Check if modelID is a number (index into availableModels)
+	if idx, err := strconv.Atoi(modelID); err == nil {
+		if len(m.availableModels) == 0 {
+			m.availableModels = m.config.ModelManager.GetAvailableModels()
+		}
+		if idx < 1 || idx > len(m.availableModels) {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render(fmt.Sprintf("Invalid model number: %d (use 1-%d)", idx, len(m.availableModels))),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		modelID = m.availableModels[idx-1]
 	}
 
 	// Check if model is available
