@@ -206,7 +206,18 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.describeImage(strings.Join(parts[1:], " "))
 
 	case "/imgresult":
-		return m.injectImageResult()
+		if len(parts) < 2 {
+			return m.injectImageResult(0) // 0 means most recent
+		}
+		idx, err := strconv.Atoi(parts[1])
+		if err != nil {
+			m.showError("Usage: /imgresult [n] - n is the result number from /imglist")
+			return nil
+		}
+		return m.injectImageResult(idx)
+
+	case "/imglist":
+		return m.listImageResults()
 
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
@@ -237,7 +248,8 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /attach <path> - Attach image to next message (.png, .jpg, .gif, .webp)\n")
 	sb.WriteString("  /attachments   - List pending attachments\n")
 	sb.WriteString("  /describe <path> [prompt] - Analyze image with vision model\n")
-	sb.WriteString("  /imgresult     - Inject Mac describe-image result as context\n")
+	sb.WriteString("  /imglist       - List available image results\n")
+	sb.WriteString("  /imgresult [n] - Inject image result as context (default: most recent)\n")
 
 	if m.config.DB != nil {
 		sb.WriteString("\nConversation Management (database enabled):\n")

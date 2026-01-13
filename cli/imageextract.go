@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -290,13 +292,87 @@ type describeImageResultMsg struct {
 	err  error
 }
 
-// injectImageResult reads the Mac describe-image result and injects it into the conversation as context
-func (m *Model) injectImageResult() tea.Cmd {
-	resultFile := "/tmp/shelley-image-result.txt"
+// getImageResultFiles returns all image result files sorted by timestamp (newest first)
+func getImageResultFiles() ([]string, error) {
+	// Check for timestamped files first
+	matches, err := filepath.Glob("/tmp/shelley-image-*.txt")
+	if err != nil {
+		return nil, err
+	}
 	
+	// Filter out the old-style result file from glob if present
+	var files []string
+	for _, f := range matches {
+		if f != "/tmp/shelley-image-result.txt" {
+			files = append(files, f)
+		}
+	}
+	
+	// Sort by filename descending (timestamp in name means lexical = chronological)
+	sort.Sort(sort.Reverse(sort.StringSlice(files)))
+	
+	// Fall back to legacy file if no timestamped files
+	if len(files) == 0 {
+		if _, err := os.Stat("/tmp/shelley-image-result.txt"); err == nil {
+			files = []string{"/tmp/shelley-image-result.txt"}
+		}
+	}
+	
+	return files, nil
+}
+
+// listImageResults shows available image results
+func (m *Model) listImageResults() tea.Cmd {
+	files, err := getImageResultFiles()
+	if err != nil || len(files) == 0 {
+		m.showError("No image results found. Run describe-image on your Mac first.")
+		return nil
+	}
+	
+	var sb strings.Builder
+	sb.WriteString("Image results (newest first):\n")
+	for i, f := range files {
+		if i >= 10 {
+			sb.WriteString(fmt.Sprintf("  ... and %d more\n", len(files)-10))
+			break
+		}
+		// Extract timestamp from filename
+		base := filepath.Base(f)
+		info, _ := os.Stat(f)
+		var timeStr string
+		if info != nil {
+			timeStr = info.ModTime().Format("Jan 2 15:04")
+		}
+		sb.WriteString(fmt.Sprintf("  %d. %s (%s)\n", i+1, base, timeStr))
+	}
+	sb.WriteString("\nUse /imgresult or /imgresult <n> to inject into conversation")
+	m.showSystemMessage(sb.String())
+	return nil
+}
+
+// injectImageResult reads the Mac describe-image result and injects it into the conversation as context
+// If index is provided, uses that specific result (1-indexed), otherwise uses most recent
+func (m *Model) injectImageResult(index int) tea.Cmd {
+	files, err := getImageResultFiles()
+	if err != nil || len(files) == 0 {
+		m.showError("No image results found. Run describe-image on your Mac first.")
+		return nil
+	}
+	
+	// Convert to 0-indexed
+	idx := index - 1
+	if idx < 0 {
+		idx = 0 // Default to most recent
+	}
+	if idx >= len(files) {
+		m.showError(fmt.Sprintf("Invalid index %d. Only %d results available.", index, len(files)))
+		return nil
+	}
+	
+	resultFile := files[idx]
 	data, err := os.ReadFile(resultFile)
 	if err != nil {
-		m.showError("No image result found. Run describe-image on your Mac first.")
+		m.showError("Failed to read image result: " + err.Error())
 		return nil
 	}
 	
@@ -332,6 +408,6 @@ func (m *Model) injectImageResult() tea.Cmd {
 	// Queue the message so it becomes part of the conversation context
 	m.loop.QueueUserMessage(userMsg)
 	
-	m.showSystemMessage("Image description added to conversation context. You can now ask questions about it.")
+	m.showSystemMessage("Image description added to conversation context.")
 	return nil
 }
