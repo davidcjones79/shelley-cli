@@ -89,15 +89,14 @@ func (r *MessageRenderer) renderContent(role llm.MessageRole, content llm.Conten
 	case llm.ContentTypeText:
 		return r.renderText(role, content.Text)
 	case llm.ContentTypeToolUse:
+		// Tool use is shown via streaming ("running..."), skip in non-verbose
 		if !verbose {
 			return ""
 		}
 		return r.renderToolUse(content)
 	case llm.ContentTypeToolResult:
-		if !verbose {
-			return ""
-		}
-		return r.renderToolResult(content)
+		// Always show tool results (summary in non-verbose, full in verbose)
+		return r.renderToolResult(content, verbose)
 	case llm.ContentTypeThinking:
 		if !verbose {
 			return ""
@@ -173,7 +172,8 @@ func (r *MessageRenderer) renderToolUse(content llm.Content) string {
 }
 
 // renderToolResult renders a tool result block with status indicator
-func (r *MessageRenderer) renderToolResult(content llm.Content) string {
+// In verbose mode, shows full output. In non-verbose mode, shows a summary.
+func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) string {
 	var sb strings.Builder
 
 	// Header with status indicator and timing
@@ -215,6 +215,7 @@ func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 
 	// Render the result content
 	var hasContent bool
+	var totalLen int
 	for _, result := range content.ToolResult {
 		// Check for image content in results (show indicator, no inline rendering)
 		if result.MediaType != "" && result.Data != "" {
@@ -228,9 +229,18 @@ func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 
 		if result.Type == llm.ContentTypeText && result.Text != "" {
 			text := strings.TrimSpace(result.Text)
-			// Truncate very long outputs
-			if len(text) > 1000 {
-				text = text[:1000] + "... (truncated)"
+			totalLen += len(text)
+
+			// Truncation limits depend on verbose mode
+			var maxLen int
+			if verbose {
+				maxLen = 1000
+			} else {
+				maxLen = 200
+			}
+
+			if len(text) > maxLen {
+				text = text[:maxLen] + "... (truncated)"
 			}
 			// Linkify file paths in the output
 			text = linkifyPaths(text)
