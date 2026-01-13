@@ -190,7 +190,7 @@ func New(cfg Config) (*Model, error) {
 
 	// Create textarea for input (starts at 1 line, auto-expands)
 	ta := textarea.New()
-	ta.Placeholder = "Type your message... (Enter to send, Ctrl+C to quit)"
+	ta.Placeholder = "Type your message... (Enter to send, Alt+Enter for newline)"
 	ta.Focus()
 	ta.SetHeight(1)
 	ta.SetWidth(80)
@@ -325,6 +325,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyEnter:
+			// Alt+Enter inserts a newline; plain Enter sends
+			if msg.Alt {
+				m.textarea.InsertString("\n")
+				return m, nil
+			}
 			// Send message on Enter
 			text := strings.TrimSpace(m.textarea.Value())
 			if text != "" {
@@ -639,7 +644,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.processing {
 		m.textarea.Placeholder = "Type next message (will be queued)..."
 	} else {
-		m.textarea.Placeholder = "Type your message... (Enter to send, Ctrl+C to quit)"
+		m.textarea.Placeholder = "Type your message... (Enter to send, Alt+Enter for newline)"
 	}
 
 	return m, tea.Batch(cmds...)
