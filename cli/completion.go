@@ -61,6 +61,8 @@ func (m *Model) completeSlashCommand(prefix string) []string {
 		"/run",
 		"/stop",
 		"/cancel",
+		"/quit",
+		"/exit",
 		"/verbose",
 		"/attach",
 		"/image",

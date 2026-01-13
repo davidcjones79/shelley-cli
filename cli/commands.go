@@ -274,6 +274,12 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		})
 		m.updateViewportContent()
 		return nil
+	case "/quit", "/exit", "/q":
+		m.quitting = true
+		if m.loopCancel != nil {
+			m.loopCancel()
+		}
+		return tea.Quit
 	default:
 		m.messages = append(m.messages, renderedMessage{
 			role:    llm.MessageRoleAssistant,
@@ -292,6 +298,7 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /clear         - Clear conversation display\n")
 	sb.WriteString("  /verbose       - Toggle tool detail visibility\n")
 	sb.WriteString("  /stop          - Cancel current operation (or press Escape)\n")
+	sb.WriteString("  /quit          - Exit the CLI\n")
 
 	sb.WriteString("\nImage Attachments:\n")
 	sb.WriteString("  /attach <path> - Attach image to next message (.png, .jpg, .gif, .webp)\n")
