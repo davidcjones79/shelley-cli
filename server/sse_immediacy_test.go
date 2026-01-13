@@ -20,7 +20,7 @@ import (
 )
 
 // flusherRecorder wraps httptest.ResponseRecorder to implement http.Flusher
-// and provide immediate access to written data
+// and provide immediate access to written data in a thread-safe manner
 type flusherRecorder struct {
 	*httptest.ResponseRecorder
 	mu      sync.Mutex
@@ -33,6 +33,13 @@ func newFlusherRecorder() *flusherRecorder {
 		ResponseRecorder: httptest.NewRecorder(),
 		flushed:          make(chan struct{}, 100),
 	}
+}
+
+// Write overrides ResponseRecorder.Write to provide thread-safe access
+func (f *flusherRecorder) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ResponseRecorder.Write(p)
 }
 
 func (f *flusherRecorder) Flush() {
@@ -53,6 +60,13 @@ func (f *flusherRecorder) getChunks() []string {
 	result := make([]string, len(f.chunks))
 	copy(result, f.chunks)
 	return result
+}
+
+// getString returns the current body contents in a thread-safe manner
+func (f *flusherRecorder) getString() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Body.String()
 }
 
 // TestSSEUserMessageAppearsImmediately tests that when a user sends a message,
@@ -126,13 +140,13 @@ func TestSSEUserMessageAppearsImmediately(t *testing.T) {
 		select {
 		case <-sseRecorder.flushed:
 			// Check if user message is now in the stream
-			body := sseRecorder.Body.String()
+			body := sseRecorder.getString()
 			if containsUserMessage(body, "delay: 3") {
 				userMessageFound = true
 			}
 		case <-time.After(50 * time.Millisecond):
 			// Also check current body
-			body := sseRecorder.Body.String()
+			body := sseRecorder.getString()
 			if containsUserMessage(body, "delay: 3") {
 				userMessageFound = true
 			}
@@ -145,7 +159,7 @@ func TestSSEUserMessageAppearsImmediately(t *testing.T) {
 	if !userMessageFound {
 		t.Errorf("BUG: user message did not appear in SSE stream within 500ms (LLM has 3s delay)")
 		t.Log("This likely means notifySubscribers is not being called immediately after recording the user message")
-		t.Logf("SSE body so far: %s", sseRecorder.Body.String())
+		t.Logf("SSE body so far: %s", sseRecorder.getString())
 	} else {
 		t.Log("SUCCESS: user message appeared in SSE stream immediately")
 	}
@@ -365,31 +379,37 @@ func TestSSEUserMessageWithExistingConnection(t *testing.T) {
 
 	// We should receive an update with the user message within 500ms
 	// (well before the 5 second LLM delay)
-	select {
-	case update := <-updates:
-		// Check that the update contains the user message
-		foundUserMsg := false
-		for _, msg := range update.Messages {
-			if msg.Type == string(db.MessageTypeUser) && msg.LlmData != nil {
-				var llmMsg llm.Message
-				if err := json.Unmarshal([]byte(*msg.LlmData), &llmMsg); err == nil {
-					for _, content := range llmMsg.Content {
-						if content.Type == llm.ContentTypeText && strings.Contains(content.Text, "delay: 5") {
-							foundUserMsg = true
-							break
+	// Note: We may receive other updates first (e.g., ConversationListUpdate for slug changes),
+	// so we need to keep checking until we find the user message or timeout.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	foundUserMsg := false
+
+	for time.Now().Before(deadline) && !foundUserMsg {
+		select {
+		case update := <-updates:
+			// Check if this update contains the user message
+			for _, msg := range update.Messages {
+				if msg.Type == string(db.MessageTypeUser) && msg.LlmData != nil {
+					var llmMsg llm.Message
+					if err := json.Unmarshal([]byte(*msg.LlmData), &llmMsg); err == nil {
+						for _, content := range llmMsg.Content {
+							if content.Type == llm.ContentTypeText && strings.Contains(content.Text, "delay: 5") {
+								foundUserMsg = true
+								break
+							}
 						}
 					}
 				}
 			}
+		case <-time.After(50 * time.Millisecond):
+			// Keep waiting
 		}
-		if !foundUserMsg {
-			t.Error("received update but it didn't contain the user message")
-			t.Logf("update had %d messages", len(update.Messages))
-		} else {
-			t.Log("SUCCESS: received user message via subpub immediately")
-		}
-	case <-time.After(500 * time.Millisecond):
+	}
+
+	if !foundUserMsg {
 		t.Error("BUG: did not receive subpub update with user message within 500ms")
 		t.Log("This means notifySubscribers is failing or not being called after user message is recorded")
+	} else {
+		t.Log("SUCCESS: received user message via subpub immediately")
 	}
 }

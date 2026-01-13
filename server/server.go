@@ -45,8 +45,10 @@ type APIMessage struct {
 type StreamResponse struct {
 	Messages          []APIMessage           `json:"messages"`
 	Conversation      generated.Conversation `json:"conversation"`
-	AgentWorking      bool                   `json:"agent_working"`
+	AgentWorking      *bool                  `json:"agent_working,omitempty"`
 	ContextWindowSize uint64                 `json:"context_window_size,omitempty"`
+	// ConversationListUpdate is set when another conversation in the list changed
+	ConversationListUpdate *ConversationListUpdate `json:"conversation_list_update,omitempty"`
 }
 
 // LLMProvider is an interface for getting LLM services
@@ -120,12 +122,13 @@ func extractEndOfTurn(raw string) (bool, bool) {
 	return message.EndOfTurn, true
 }
 
-// calculateContextWindowSize returns the context window usage from the most recent message.
+// calculateContextWindowSize returns the context window usage from the most recent message with non-zero usage.
 // Each API call's input tokens represent the full conversation history sent to the model,
 // so we only need the last message's tokens (not accumulated across all messages).
 // The total input includes regular input tokens plus cached tokens (both read and created).
+// Messages without usage data (user messages, tool messages, etc.) are skipped.
 func calculateContextWindowSize(messages []APIMessage) uint64 {
-	// Find the last message with usage data
+	// Find the last message with non-zero usage data
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 		if msg.UsageData == nil {
@@ -135,16 +138,27 @@ func calculateContextWindowSize(messages []APIMessage) uint64 {
 		if err := json.Unmarshal([]byte(*msg.UsageData), &usage); err != nil {
 			continue
 		}
+		ctxUsed := usage.ContextWindowUsed()
+		if ctxUsed == 0 {
+			continue
+		}
 		// Return total context window used: all input tokens + output tokens
 		// This represents the full context that would be sent for the next turn
-		return usage.ContextWindowUsed()
+		return ctxUsed
 	}
 	return 0
 }
 
-func agentWorking(messages []APIMessage) bool {
+var (
+	truePtr  = ptr(true)
+	falsePtr = ptr(false)
+)
+
+func ptr[T any](v T) *T { return &v }
+
+func agentWorking(messages []APIMessage) *bool {
 	if len(messages) == 0 {
-		return false
+		return falsePtr
 	}
 
 	// Find the last non-gitinfo message (gitinfo messages are passive notifications)
@@ -153,20 +167,23 @@ func agentWorking(messages []APIMessage) bool {
 		lastIdx--
 	}
 	if lastIdx < 0 {
-		return false
+		return falsePtr
 	}
 	last := messages[lastIdx]
 
 	// If the last message is an error, agent is not working
 	if last.Type == string(db.MessageTypeError) {
-		return false
+		return falsePtr
 	}
 
 	if last.Type == string(db.MessageTypeAgent) {
 		if last.EndOfTurn == nil {
-			return true
+			return truePtr
 		}
-		return !*last.EndOfTurn
+		if *last.EndOfTurn {
+			return falsePtr
+		}
+		return truePtr
 	}
 
 	for i := lastIdx; i >= 0; i-- {
@@ -174,18 +191,12 @@ func agentWorking(messages []APIMessage) bool {
 		if msg.Type != string(db.MessageTypeAgent) {
 			continue
 		}
-		if msg.EndOfTurn == nil {
-			return true
-		}
-		if !*msg.EndOfTurn {
-			return true
-		}
 		// Agent ended turn, but newer non-agent messages exist, so agent is working again.
-		return true
+		return truePtr
 	}
 
 	// No agent message found yet but conversation has activity, assume agent is working.
-	return true
+	return truePtr
 }
 
 // isEndOfTurn checks if a database message represents end of turn
@@ -227,6 +238,13 @@ func calculateContextWindowSizeFromMsg(msg *generated.Message) uint64 {
 		return 0
 	}
 	return usage.ContextWindowUsed()
+}
+
+// ConversationListUpdate represents an update to the conversation list
+type ConversationListUpdate struct {
+	Type           string                  `json:"type"` // "update", "delete"
+	Conversation   *generated.Conversation `json:"conversation,omitempty"`
+	ConversationID string                  `json:"conversation_id,omitempty"` // For deletes
 }
 
 // Server manages the HTTP API and active conversations
@@ -600,6 +618,7 @@ func convertToLLMMessage(msg generated.Message) (llm.Message, error) {
 
 // notifySubscribers sends conversation metadata updates (e.g., slug changes) to subscribers.
 // This is used when only the conversation data changes, not the messages.
+// Uses Broadcast instead of Publish to avoid racing with message sequence IDs.
 func (s *Server) notifySubscribers(ctx context.Context, conversationID string) {
 	s.mu.Lock()
 	manager, exists := s.activeConversations[conversationID]
@@ -621,30 +640,20 @@ func (s *Server) notifySubscribers(ctx context.Context, conversationID string) {
 		return
 	}
 
-	// For conversation-only updates, we need to get the latest sequence ID
-	// to properly notify subscribers, but we send an empty message list
-	var latestSequenceID int64
-	err = s.db.Queries(ctx, func(q *generated.Queries) error {
-		messages, err := q.ListMessages(ctx, conversationID)
-		if err != nil {
-			return err
-		}
-		if len(messages) > 0 {
-			latestSequenceID = messages[len(messages)-1].SequenceID
-		}
-		return nil
-	})
-	if err != nil {
-		s.logger.Error("Failed to get latest sequence ID", "conversationID", conversationID, "error", err)
-		return
-	}
-
-	// Publish conversation update with no new messages
+	// Broadcast conversation update with no new messages.
+	// Using Broadcast instead of Publish ensures this metadata-only update
+	// doesn't race with notifySubscribersNewMessage which uses Publish with sequence IDs.
 	streamData := StreamResponse{
 		Messages:     nil, // No new messages, just conversation update
 		Conversation: conversation,
 	}
-	manager.subpub.Publish(latestSequenceID, streamData)
+	manager.subpub.Broadcast(streamData)
+
+	// Also notify conversation list subscribers (e.g., slug change)
+	s.publishConversationListUpdate(ConversationListUpdate{
+		Type:         "update",
+		Conversation: &conversation,
+	})
 }
 
 // notifySubscribersNewMessage sends a single new message to all subscribers.
@@ -674,16 +683,42 @@ func (s *Server) notifySubscribersNewMessage(ctx context.Context, conversationID
 	apiMessages := toAPIMessages([]generated.Message{*newMsg})
 
 	// Publish only the new message
+	agentWorking := falsePtr
+	if !isEndOfTurn(newMsg) {
+		agentWorking = truePtr
+	}
 	streamData := StreamResponse{
 		Messages:     apiMessages,
 		Conversation: conversation,
-		AgentWorking: !isEndOfTurn(newMsg),
+		AgentWorking: agentWorking,
 		// ContextWindowSize: 0 for messages without usage data (user/tool messages).
 		// With omitempty, 0 is omitted from JSON, so the UI keeps its cached value.
 		// Only agent messages have usage data, so context window updates when they arrive.
 		ContextWindowSize: calculateContextWindowSizeFromMsg(newMsg),
 	}
 	manager.subpub.Publish(newMsg.SequenceID, streamData)
+
+	// Also notify conversation list subscribers about the update (updated_at changed)
+	s.publishConversationListUpdate(ConversationListUpdate{
+		Type:         "update",
+		Conversation: &conversation,
+	})
+}
+
+// publishConversationListUpdate broadcasts a conversation list update to ALL active
+// conversation streams. This allows clients to receive updates about other conversations
+// while they're subscribed to their current conversation's stream.
+func (s *Server) publishConversationListUpdate(update ConversationListUpdate) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Broadcast to all active conversation managers
+	for _, manager := range s.activeConversations {
+		streamData := StreamResponse{
+			ConversationListUpdate: &update,
+		}
+		manager.subpub.Broadcast(streamData)
+	}
 }
 
 // Cleanup removes inactive conversation managers

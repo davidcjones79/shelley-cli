@@ -84,7 +84,7 @@ func (t *Timeouts) background() time.Duration {
 func (b *BashTool) Tool() *llm.Tool {
 	return &llm.Tool{
 		Name:        bashName,
-		Description: fmt.Sprintf(strings.TrimSpace(bashDescription), b.getWorkingDir()),
+		Description: strings.TrimSpace(bashDescription),
 		InputSchema: llm.MustSchema(bashInputSchema),
 		Run:         b.Run,
 	}
@@ -97,8 +97,7 @@ func (b *BashTool) getWorkingDir() string {
 
 const (
 	bashName        = "bash"
-	bashDescription = `
-Executes shell commands via bash -c, returning combined stdout/stderr.
+	bashDescription = `Executes shell commands via bash -c, returning combined stdout/stderr.
 Bash state changes (working dir, variables, aliases) don't persist between calls.
 
 With background=true, returns immediately, with output redirected to a file.
@@ -111,8 +110,6 @@ To change the working directory persistently, use the change_dir tool.
 
 IMPORTANT: Keep commands concise. The command input must be less than 60k tokens.
 For complex scripts, write them to a file first and then execute the file.
-
-<pwd>%s</pwd>
 `
 	// If you modify this, update the termui template for prettier rendering.
 	bashInputSchema = `
@@ -141,6 +138,11 @@ type bashInput struct {
 	Command    string `json:"command"`
 	SlowOK     bool   `json:"slow_ok,omitempty"`
 	Background bool   `json:"background,omitempty"`
+}
+
+// BashDisplayData is the display data sent to the UI for bash tool results.
+type BashDisplayData struct {
+	WorkingDir string `json:"workingDir"`
 }
 
 type BackgroundResult struct {
@@ -205,13 +207,15 @@ func (b *BashTool) Run(ctx context.Context, m json.RawMessage) llm.ToolOut {
 
 	timeout := req.timeout(b.Timeouts)
 
+	display := BashDisplayData{WorkingDir: wd}
+
 	// If Background is set to true, use executeBackgroundBash
 	if req.Background {
 		result, err := b.executeBackgroundBash(ctx, req, timeout)
 		if err != nil {
 			return llm.ErrorToolOut(err)
 		}
-		return llm.ToolOut{LLMContent: llm.TextContent(result.XMLish())}
+		return llm.ToolOut{LLMContent: llm.TextContent(result.XMLish()), Display: display}
 	}
 
 	// For foreground commands, use executeBash
@@ -219,7 +223,7 @@ func (b *BashTool) Run(ctx context.Context, m json.RawMessage) llm.ToolOut {
 	if execErr != nil {
 		return llm.ErrorToolOut(execErr)
 	}
-	return llm.ToolOut{LLMContent: llm.TextContent(out)}
+	return llm.ToolOut{LLMContent: llm.TextContent(out), Display: display}
 }
 
 const maxBashOutputLength = 131072
