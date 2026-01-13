@@ -3,12 +3,35 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/glamour"
 	"shelley.exe.dev/llm"
 )
+
+// osc8Link creates an OSC 8 hyperlink for supported terminals
+// Format: \033]8;;URL\033\\TEXT\033]8;;\033\\
+func osc8Link(url, text string) string {
+	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
+}
+
+// filePathRe matches absolute file paths
+var filePathRe = regexp.MustCompile(`(/[a-zA-Z0-9._/-]+)`)
+
+// linkifyPaths converts file paths in text to clickable OSC 8 links
+// Only works in terminals that support OSC 8 (iTerm2, Kitty, etc.)
+func linkifyPaths(text string) string {
+	return filePathRe.ReplaceAllStringFunc(text, func(path string) string {
+		// Only linkify if the path exists
+		if _, err := os.Stat(path); err == nil {
+			return osc8Link("file://"+path, path)
+		}
+		return path
+	})
+}
 
 // MessageRenderer handles rendering of LLM messages to terminal output
 type MessageRenderer struct {
@@ -153,7 +176,7 @@ func (r *MessageRenderer) renderToolUse(content llm.Content) string {
 func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 	var sb strings.Builder
 
-	// Header with status indicator
+	// Header with status indicator and timing
 	var statusIcon string
 	var headerStyle = r.styles.ToolSuccess
 	if content.ToolError {
@@ -161,6 +184,13 @@ func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 		headerStyle = r.styles.ToolError
 	} else {
 		statusIcon = "✓"
+	}
+
+	// Add timing info if available
+	var timing string
+	if content.ToolUseStartTime != nil && content.ToolUseEndTime != nil {
+		d := content.ToolUseEndTime.Sub(*content.ToolUseStartTime)
+		timing = " " + r.styles.ToolInput.Render("("+formatDuration(d)+")")
 	}
 
 	// Output style
@@ -175,9 +205,9 @@ func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 			if displayMap["type"] == "screenshot" {
 				if path, ok := displayMap["path"].(string); ok {
 					// Show path (no inline images in viewport - causes layout issues)
-					sb.WriteString(r.styles.SystemMessage.Render(fmt.Sprintf("🖼️  Screenshot: %s", path)))
+					sb.WriteString(r.styles.SystemMessage.Render(fmt.Sprintf("🖼️  Screenshot: %s", osc8Link("file://"+path, path))))
 					boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
-					return boxStyle.Render(headerStyle.Render(statusIcon) + " " + sb.String())
+					return boxStyle.Render(headerStyle.Render(statusIcon) + timing + " " + sb.String())
 				}
 			}
 		}
@@ -202,6 +232,8 @@ func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 			if len(text) > 1000 {
 				text = text[:1000] + "... (truncated)"
 			}
+			// Linkify file paths in the output
+			text = linkifyPaths(text)
 			if hasContent {
 				sb.WriteString("\n")
 			}
@@ -212,7 +244,7 @@ func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 
 	// Wrap in bordered box with status icon in header
 	boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
-	header := headerStyle.Render(statusIcon)
+	header := headerStyle.Render(statusIcon) + timing
 	if sb.Len() > 0 {
 		return boxStyle.Render(header + " " + sb.String())
 	}

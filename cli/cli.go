@@ -881,6 +881,12 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.switchModel(parts[1])
 	case "/context":
 		return m.showContext()
+	case "/theme":
+		if len(parts) < 2 {
+			// Toggle theme
+			return m.toggleTheme()
+		}
+		return m.setTheme(parts[1])
 
 	// Image attachment
 	case "/attach", "/image":
@@ -952,6 +958,9 @@ func (m *Model) buildHelpText() string {
 		sb.WriteString("  /model <id>    - Switch to a different model\n")
 		sb.WriteString("  /context       - Show context window usage\n")
 	}
+
+	sb.WriteString("\nDisplay:\n")
+	sb.WriteString("  /theme [name]  - Toggle or set theme (dark/light)\n")
 
 	sb.WriteString("\n  /help          - Show this help")
 	sb.WriteString("\n\nTips:\n")
@@ -1958,6 +1967,42 @@ func (m *Model) showContext() tea.Cmd {
 	return nil
 }
 
+// toggleTheme switches between dark and light themes
+func (m *Model) toggleTheme() tea.Cmd {
+	if m.styles.Theme() == ThemeDark {
+		return m.setTheme("light")
+	}
+	return m.setTheme("dark")
+}
+
+// setTheme changes to a specific theme
+func (m *Model) setTheme(themeName string) tea.Cmd {
+	var newStyles *Styles
+	switch themeName {
+	case "dark":
+		newStyles = DarkStyles()
+	case "light":
+		newStyles = LightStyles()
+	default:
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Unknown theme: " + themeName + " (available: dark, light)"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	m.styles = newStyles
+	m.renderer.styles = newStyles
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render("Theme set to: " + themeName),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
 // formatTokens formats token counts with K/M suffixes
 func formatTokens(tokens uint64) string {
 	if tokens >= 1000000 {
@@ -2167,6 +2212,7 @@ func (m *Model) completeSlashCommand(prefix string) []string {
 		"/attach",
 		"/image",
 		"/attachments",
+		"/theme",
 	}
 
 	// Add DB-specific commands if database is configured
