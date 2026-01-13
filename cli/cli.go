@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -28,6 +29,22 @@ import (
 
 // bashCodeBlockRe matches ```bash or ```sh code blocks
 var bashCodeBlockRe = regexp.MustCompile("(?s)```(?:bash|sh|shell|zsh)\\s*\\n(.*?)```")
+
+// imageAttachment holds a pending image to attach to the next message
+type imageAttachment struct {
+	path      string
+	mediaType string
+	data      string // base64 encoded
+}
+
+// supportedImageTypes maps file extensions to MIME types
+var supportedImageTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+}
 
 // Session represents a saved chat session
 type Session struct {
@@ -90,6 +107,9 @@ type Model struct {
 
 	// Message queue for messages sent while processing
 	pendingMessages []string
+
+	// Pending image attachments for next message
+	pendingAttachments []imageAttachment
 
 	// Shell integration - store suggested commands
 	suggestedCmds []string
@@ -466,10 +486,26 @@ func (m *Model) sendMessage() tea.Cmd {
 	// Clear suggested commands for new conversation turn
 	m.suggestedCmds = nil
 
+	// Build message content with text and any pending attachments
+	var content []llm.Content
+
+	// Add pending image attachments first
+	for _, att := range m.pendingAttachments {
+		content = append(content, llm.Content{
+			Type:      llm.ContentTypeText,
+			MediaType: att.mediaType,
+			Data:      att.data,
+		})
+	}
+	m.pendingAttachments = nil // Clear after use
+
+	// Add text content
+	content = append(content, llm.Content{Type: llm.ContentTypeText, Text: text})
+
 	// Add user message to display
 	userMsg := llm.Message{
 		Role:    llm.MessageRoleUser,
-		Content: []llm.Content{{Type: llm.ContentTypeText, Text: text}},
+		Content: content,
 	}
 	rendered := m.renderer.RenderMessage(userMsg, true) // Always show user messages
 	m.messages = append(m.messages, renderedMessage{
@@ -748,6 +784,21 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	case "/archive":
 		return m.archiveConversation()
 
+	// Image attachment
+	case "/attach", "/image":
+		if len(parts) < 2 {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render("Usage: /attach <path-to-image>"),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		return m.attachImage(strings.Join(parts[1:], " "))
+
+	case "/attachments":
+		return m.listAttachments()
+
 	case "/help":
 		helpText := m.buildHelpText()
 		m.messages = append(m.messages, renderedMessage{
@@ -774,6 +825,10 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /clear         - Clear conversation display\n")
 	sb.WriteString("  /verbose       - Toggle tool detail visibility\n")
 	sb.WriteString("  /stop          - Cancel current operation (or press Escape)\n")
+
+	sb.WriteString("\nImage Attachments:\n")
+	sb.WriteString("  /attach <path> - Attach image to next message (.png, .jpg, .gif, .webp)\n")
+	sb.WriteString("  /attachments   - List pending attachments\n")
 
 	if m.config.DB != nil {
 		sb.WriteString("\nConversation Management (database enabled):\n")
@@ -1356,6 +1411,127 @@ func (m *Model) archiveConversation() tea.Cmd {
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleAssistant,
 		content: m.styles.ToolSuccess.Render("Archived conversation: " + archivedID),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// attachImage loads an image file and queues it for the next message
+func (m *Model) attachImage(path string) tea.Cmd {
+	// Expand ~ to home directory
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	}
+
+	// Make path absolute if relative
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(m.config.WorkingDir, path)
+	}
+
+	// Check file exists
+	info, err := os.Stat(path)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("File not found: " + path),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	if info.IsDir() {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Path is a directory, not a file"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Check file size (limit to 10MB)
+	if info.Size() > 10*1024*1024 {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("File too large (max 10MB)"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Check file extension
+	ext := strings.ToLower(filepath.Ext(path))
+	mediaType, ok := supportedImageTypes[ext]
+	if !ok {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Unsupported image type: " + ext + " (supported: .png, .jpg, .jpeg, .gif, .webp)"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Read and encode the file
+	data, err := os.ReadFile(path)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to read file: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Base64 encode
+	encoded := base64.StdEncoding.EncodeToString(data)
+
+	// Add to pending attachments
+	m.pendingAttachments = append(m.pendingAttachments, imageAttachment{
+		path:      path,
+		mediaType: mediaType,
+		data:      encoded,
+	})
+
+	// Show confirmation
+	filename := filepath.Base(path)
+	sizeKB := float64(info.Size()) / 1024
+	msg := fmt.Sprintf("🖼️  Attached: %s (%.1fKB, %s)", filename, sizeKB, mediaType)
+	if len(m.pendingAttachments) > 1 {
+		msg += fmt.Sprintf(" [%d attachments pending]", len(m.pendingAttachments))
+	}
+	msg += "\nType your message and press Enter to send with attachment(s)"
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render(msg),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// listAttachments shows pending attachments
+func (m *Model) listAttachments() tea.Cmd {
+	if len(m.pendingAttachments) == 0 {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.SystemMessage.Render("No pending attachments"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Pending attachments:\n")
+	for i, att := range m.pendingAttachments {
+		sb.WriteString(fmt.Sprintf("  %d. %s (%s)\n", i+1, filepath.Base(att.path), att.mediaType))
+	}
+	sb.WriteString("\nThese will be sent with your next message")
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(sb.String()),
 	})
 	m.updateViewportContent()
 	return nil

@@ -57,6 +57,11 @@ func (r *MessageRenderer) RenderMessage(msg llm.Message, verbose bool) string {
 
 // renderContent renders a single content block
 func (r *MessageRenderer) renderContent(role llm.MessageRole, content llm.Content, verbose bool) string {
+	// Handle image content (has MediaType but uses ContentTypeText)
+	if content.MediaType != "" && content.Data != "" {
+		return r.renderImage(content)
+	}
+
 	switch content.Type {
 	case llm.ContentTypeText:
 		return r.renderText(role, content.Text)
@@ -211,6 +216,22 @@ func (r *MessageRenderer) renderThinking(text string) string {
 		text = text[:200] + "..."
 	}
 	return r.styles.Thinking.Render("(thinking: " + text + ")")
+}
+
+// renderImage renders an image attachment indicator
+func (r *MessageRenderer) renderImage(content llm.Content) string {
+	// Calculate approximate size from base64 data
+	sizeBytes := len(content.Data) * 3 / 4 // base64 is ~4/3 the size
+	var sizeStr string
+	if sizeBytes < 1024 {
+		sizeStr = fmt.Sprintf("%dB", sizeBytes)
+	} else if sizeBytes < 1024*1024 {
+		sizeStr = fmt.Sprintf("%.1fKB", float64(sizeBytes)/1024)
+	} else {
+		sizeStr = fmt.Sprintf("%.1fMB", float64(sizeBytes)/(1024*1024))
+	}
+
+	return r.styles.SystemMessage.Render(fmt.Sprintf("🖼️  [Image: %s, %s]", content.MediaType, sizeStr))
 }
 
 // RenderDivider renders a divider line
