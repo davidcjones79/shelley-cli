@@ -21,8 +21,7 @@ function PatchTool({
   executionTime,
   display,
 }: PatchToolProps) {
-  // Default to collapsed for errors (since agents typically recover), expanded otherwise
-  const [isExpanded, setIsExpanded] = useState(!hasError);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // Extract path from toolInput
   const path =
