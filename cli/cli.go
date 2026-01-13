@@ -187,13 +187,12 @@ func New(cfg Config) (*Model, error) {
 		cfg.Logger = slog.Default()
 	}
 
-	// Create textarea for input
+	// Create textarea for input (2 lines for more space)
 	ta := textarea.New()
-	ta.Placeholder = "Type your message... (Enter to send, Ctrl+C to quit)"
+	ta.Placeholder = "Type your message... (Enter to send, Shift+Enter for newline, Ctrl+C to quit)"
 	ta.Focus()
-	ta.SetHeight(1)
+	ta.SetHeight(2)
 	ta.ShowLineNumbers = false
-	ta.KeyMap.InsertNewline.SetEnabled(false)
 
 	// Create spinner
 	sp := spinner.New()
@@ -404,9 +403,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Calculate heights for each section:
 		// Header: 1 line
-		// Footer: 4 lines (status bar + divider + prompt line + textarea line)
+		// Footer: 5 lines (status bar + divider + prompt line + 2 textarea lines)
 		headerHeight := 1
-		footerHeight := 4
+		footerHeight := 5
 
 		viewportHeight := msg.Height - headerHeight - footerHeight
 		if viewportHeight < 3 {
