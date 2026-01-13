@@ -862,10 +862,26 @@ func (m *Model) initLoop() error {
 func (m *Model) updateTextareaHeight() {
 	text := m.textarea.Value()
 	
-	// Count lines in the text
-	lines := 1
-	if text != "" {
-		lines = strings.Count(text, "\n") + 1
+	// Calculate visual lines needed
+	lines := 0
+	if text == "" {
+		lines = 1
+	} else {
+		// Get textarea width (account for padding)
+		textareaWidth := m.textarea.Width()
+		if textareaWidth < 10 {
+			textareaWidth = 80 // fallback
+		}
+		
+		// Count visual lines: each hard line may wrap into multiple visual lines
+		for _, line := range strings.Split(text, "\n") {
+			if len(line) == 0 {
+				lines++
+			} else {
+				// Calculate how many visual lines this line takes
+				lines += (len(line) + textareaWidth - 1) / textareaWidth
+			}
+		}
 	}
 	
 	// Clamp to 1-10 lines
