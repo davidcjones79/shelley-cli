@@ -207,6 +207,12 @@ func (l *Loop) processLLMRequest(ctx context.Context) error {
 		tools[len(tools)-1] = &lastTool
 	}
 
+	// Set cache flag on system prompt (large, static content)
+	if len(system) > 0 {
+		system = append([]llm.SystemContent(nil), system...)
+		system[len(system)-1].Cache = true
+	}
+
 	// Set cache flag on the last content block of the last user message
 	if len(messages) > 0 {
 		for i := len(messages) - 1; i >= 0; i-- {
