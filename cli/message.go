@@ -12,10 +12,9 @@ import (
 
 // MessageRenderer handles rendering of LLM messages to terminal output
 type MessageRenderer struct {
-	styles        *Styles
-	renderer      *glamour.TermRenderer
-	width         int
-	imageProtocol TerminalImageProtocol
+	styles   *Styles
+	renderer *glamour.TermRenderer
+	width    int
 }
 
 // NewMessageRenderer creates a new message renderer
@@ -36,10 +35,9 @@ func NewMessageRenderer(width int) (*MessageRenderer, error) {
 	}
 
 	return &MessageRenderer{
-		styles:        DefaultStyles(),
-		renderer:      renderer,
-		width:         width,
-		imageProtocol: DetectTerminalImageSupport(),
+		styles:   DefaultStyles(),
+		renderer: renderer,
+		width:    width,
 	}, nil
 }
 
@@ -179,17 +177,7 @@ func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 		if displayMap, ok := content.Display.(map[string]any); ok {
 			if displayMap["type"] == "screenshot" {
 				if path, ok := displayMap["path"].(string); ok {
-					// Try to render inline image from file
-					if r.imageProtocol != TerminalImageNone {
-						maxWidth := (r.width - 10) * 8
-						maxHeight := 300
-						inlineImg := RenderInlineImageFromFile(path, maxWidth, maxHeight, r.imageProtocol)
-						if inlineImg != "" {
-							sb.WriteString(inlineImg)
-							sb.WriteString("\n")
-						}
-					}
-					// Show path as fallback/info
+					// Show path (no inline images in viewport - causes layout issues)
 					sb.WriteString(r.styles.SystemMessage.Render(fmt.Sprintf("🖼️  Screenshot: %s", path)))
 					boxStyle := r.styles.ToolBoxStyle(r.width-4, content.ToolError)
 					return boxStyle.Render(headerStyle.Render(statusIcon) + " " + sb.String())
@@ -201,21 +189,8 @@ func (r *MessageRenderer) renderToolResult(content llm.Content) string {
 	// Render the result content
 	var hasContent bool
 	for _, result := range content.ToolResult {
-		// Check for image content in results
+		// Check for image content in results (show indicator, no inline rendering)
 		if result.MediaType != "" && result.Data != "" {
-			if r.imageProtocol != TerminalImageNone {
-				maxWidth := (r.width - 10) * 8
-				maxHeight := 300
-				inlineImg := RenderInlineImage(result.Data, maxWidth, maxHeight, r.imageProtocol)
-				if inlineImg != "" {
-					if hasContent {
-						sb.WriteString("\n")
-					}
-					sb.WriteString(inlineImg)
-					hasContent = true
-				}
-			}
-			// Show image indicator
 			if hasContent {
 				sb.WriteString("\n")
 			}
@@ -268,6 +243,8 @@ func (r *MessageRenderer) renderThinking(text string) string {
 }
 
 // renderImage renders an image attachment indicator
+// Note: We don't render inline images in the viewport because the viewport
+// can't properly account for their display height, causing layout corruption.
 func (r *MessageRenderer) renderImage(content llm.Content) string {
 	// Calculate approximate size from base64 data
 	sizeBytes := len(content.Data) * 3 / 4 // base64 is ~4/3 the size
@@ -280,26 +257,7 @@ func (r *MessageRenderer) renderImage(content llm.Content) string {
 		sizeStr = fmt.Sprintf("%.1fMB", float64(sizeBytes)/(1024*1024))
 	}
 
-	var result strings.Builder
-
-	// Try to render inline image if terminal supports it
-	if r.imageProtocol != TerminalImageNone {
-		// Limit image display size to fit in viewport
-		// Most terminals use ~80-120 columns, we'll aim for ~60 char width
-		maxWidth := (r.width - 10) * 8 // rough pixels estimate
-		maxHeight := 300               // reasonable height limit
-
-		inlineImage := RenderInlineImage(content.Data, maxWidth, maxHeight, r.imageProtocol)
-		if inlineImage != "" {
-			result.WriteString(inlineImage)
-			result.WriteString("\n")
-		}
-	}
-
-	// Always show the text indicator as well (for accessibility/fallback)
-	result.WriteString(r.styles.SystemMessage.Render(fmt.Sprintf("🖼️  [Image: %s, %s]", content.MediaType, sizeStr)))
-
-	return result.String()
+	return r.styles.SystemMessage.Render(fmt.Sprintf("🖼️  [Image: %s, %s]", content.MediaType, sizeStr))
 }
 
 // RenderDivider renders a divider line
