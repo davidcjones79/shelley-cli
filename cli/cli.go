@@ -350,16 +350,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textarea.CursorEnd()
 			}
 
-		case tea.KeyPgUp:
-			// Page up in viewport
+		case tea.KeyPgUp, tea.KeyCtrlU:
+			// Page/half-page up in viewport
 			if m.viewportReady {
-				m.viewport.ViewUp()
+				m.viewport.HalfViewUp()
 			}
 
-		case tea.KeyPgDown:
-			// Page down in viewport
+		case tea.KeyPgDown, tea.KeyCtrlD:
+			// Page/half-page down in viewport
 			if m.viewportReady {
-				m.viewport.ViewDown()
+				m.viewport.HalfViewDown()
 			}
 		}
 

@@ -138,7 +138,8 @@ You can also drag-drop image files into the terminal, or paste file paths.
 | Escape | Cancel current operation |
 | Tab | Complete file paths and commands |
 | Up/Down | Cycle through prompt history |
-| PgUp/PgDown | Scroll message history |
+| Ctrl+U/D | Scroll message history (half-page) |
+| PgUp/PgDown | Scroll message history (full page) |
 | Ctrl+C | Quit |
 
 ## Examples

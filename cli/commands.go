@@ -73,7 +73,7 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 
 	case "/mouse":
 		m.mouseEnabled = !m.mouseEnabled
-		status := "off (text selection enabled, use PgUp/PgDown to scroll)"
+		status := "off (text selection enabled, use Ctrl+U/D to scroll)"
 		var cmd tea.Cmd
 		if m.mouseEnabled {
 			status = "on (mouse scrolling enabled, text selection disabled)"
@@ -348,7 +348,7 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("\n\nTips:\n")
 	sb.WriteString("  Tab            - Complete file paths and commands\n")
 	sb.WriteString("  Up/Down        - Cycle through prompt history\n")
-	sb.WriteString("  PgUp/PgDown    - Scroll message history")
+	sb.WriteString("  Ctrl+U/D       - Scroll message history (or PgUp/PgDown)")
 	return sb.String()
 }
 
