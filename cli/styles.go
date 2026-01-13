@@ -129,13 +129,13 @@ func DefaultStyles() *Styles {
 func (s *Styles) RolePrefix(role string) string {
 	switch role {
 	case "user":
-		return s.UserMessage.Render("You: ")
+		return s.UserMessage.Render("▶ ")
 	case "assistant":
-		return s.AssistantMessage.Render("Shelley: ")
+		return ""
 	case "system":
-		return s.SystemMessage.Render("System: ")
+		return s.SystemMessage.Render("")
 	default:
-		return role + ": "
+		return ""
 	}
 }
 

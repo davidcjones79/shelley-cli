@@ -105,12 +105,9 @@ func (r *MessageRenderer) renderText(role llm.MessageRole, text string) string {
 	var result strings.Builder
 	switch role {
 	case llm.MessageRoleUser:
-		result.WriteString(r.styles.UserMessage.Render("━━━ You ━━━"))
-		result.WriteString("\n")
+		result.WriteString(r.styles.UserMessage.Render("▶ "))
 		result.WriteString(rendered)
 	case llm.MessageRoleAssistant:
-		result.WriteString(r.styles.AssistantMessage.Render("━━━ Shelley ━━━"))
-		result.WriteString("\n")
 		result.WriteString(rendered)
 	default:
 		result.WriteString(rendered)
