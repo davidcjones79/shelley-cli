@@ -363,6 +363,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.MouseMsg:
+		// Handle mouse wheel scrolling explicitly for Terminal.app compatibility
+		if m.viewportReady {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				m.viewport.LineUp(3)
+			case tea.MouseButtonWheelDown:
+				m.viewport.LineDown(3)
+			}
+		}
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -740,9 +751,16 @@ func (m *Model) updateViewportContent() {
 	
 	// Only update and scroll if content actually changed
 	if newContent != m.lastViewportContent {
+		// Check if user was at bottom before update
+		wasAtBottom := m.viewport.AtBottom()
+		
 		m.lastViewportContent = newContent
 		m.viewport.SetContent(newContent)
-		m.viewport.GotoBottom()
+		
+		// Only auto-scroll if user was at bottom or we're actively streaming
+		if wasAtBottom || m.streamingActive {
+			m.viewport.GotoBottom()
+		}
 	}
 }
 
