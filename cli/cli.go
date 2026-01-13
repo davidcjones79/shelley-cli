@@ -211,6 +211,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 
+		case tea.KeyEscape:
+			// Cancel current operation
+			if m.processing && m.loopCancel != nil {
+				m.loopCancel()
+				m.processing = false
+				m.pendingMessages = nil
+				// Reset loop so next message starts fresh
+				m.loop = nil
+				m.loopCtx, m.loopCancel = nil, nil
+				m.messages = append(m.messages, renderedMessage{
+					role:    llm.MessageRoleAssistant,
+					content: m.styles.SystemMessage.Render("Cancelled"),
+				})
+				m.updateViewportContent()
+			}
+
 		case tea.KeyEnter:
 			// Send message on Enter
 			text := strings.TrimSpace(m.textarea.Value())
@@ -606,12 +622,33 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.loadSession(parts[1])
 	case "/sessions":
 		return m.listSessions()
+	case "/stop", "/cancel":
+		if m.processing && m.loopCancel != nil {
+			m.loopCancel()
+			m.processing = false
+			m.pendingMessages = nil
+			m.loop = nil
+			m.loopCtx, m.loopCancel = nil, nil
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.SystemMessage.Render("Cancelled"),
+			})
+			m.updateViewportContent()
+		} else {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.SystemMessage.Render("Nothing to cancel"),
+			})
+			m.updateViewportContent()
+		}
+		return nil
 	case "/help":
 		helpText := `/run [n]   - Run suggested command (n=index, default=last)
 /save [name] - Save session (auto-names if omitted)
 /load <name> - Load a saved session
 /sessions    - List saved sessions
 /clear       - Clear conversation
+/stop        - Cancel current operation (or press Escape)
 /help        - Show this help`
 		m.messages = append(m.messages, renderedMessage{
 			role:    llm.MessageRoleAssistant,
