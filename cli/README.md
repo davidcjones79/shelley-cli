@@ -188,6 +188,7 @@ Type `/help` in the CLI to see all available commands.
 |---------|-------------|
 | `/attach <path>` | Attach image to next message |
 | `/image <path>` | Same as `/attach` |
+| `/describe <path> [prompt]` | Analyze image with vision model |
 | `/attachments` | List pending attachments |
 
 You can also:
