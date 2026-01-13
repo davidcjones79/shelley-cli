@@ -131,7 +131,7 @@ func DarkStyles() *Styles {
 			Foreground(lipgloss.Color("12")), // Blue
 
 		Thinking: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8")). // Gray
+			Foreground(lipgloss.Color("214")). // Orange/gold - visible
 			Italic(true),
 
 		Divider: lipgloss.NewStyle().
@@ -215,7 +215,7 @@ func LightStyles() *Styles {
 			Foreground(lipgloss.Color("27")), // Blue
 
 		Thinking: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")). // Dark gray
+			Foreground(lipgloss.Color("214")). // Orange/gold - visible
 			Italic(true),
 
 		Divider: lipgloss.NewStyle().

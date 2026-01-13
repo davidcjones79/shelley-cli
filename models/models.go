@@ -402,6 +402,38 @@ func (l *loggingService) UseSimplifiedPatch() bool {
 	return false
 }
 
+// DoStream delegates to the underlying service if it supports streaming
+func (l *loggingService) DoStream(ctx context.Context, request *llm.Request, callback llm.StreamCallback) (*llm.Response, error) {
+	streamer, ok := l.service.(llm.Streamer)
+	if !ok {
+		// Fall back to non-streaming
+		return l.Do(ctx, request)
+	}
+
+	start := time.Now()
+	response, err := streamer.DoStream(ctx, request, callback)
+	duration := time.Since(start)
+
+	// Log the completion
+	if err != nil {
+		l.logger.Error("LLM streaming request failed",
+			"model", l.modelID,
+			"duration_seconds", duration.Seconds(),
+			"error", err,
+		)
+	} else if response != nil && !response.Usage.IsZero() {
+		l.logger.Debug("LLM streaming request completed",
+			"model", l.modelID,
+			"duration_seconds", duration.Seconds(),
+			"input_tokens", response.Usage.InputTokens,
+			"output_tokens", response.Usage.OutputTokens,
+			"cost_usd", response.Usage.CostUSD,
+		)
+	}
+
+	return response, err
+}
+
 // NewManager creates a new Manager with all models configured
 func NewManager(cfg *Config, history *LLMRequestHistory) (*Manager, error) {
 	manager := &Manager{
