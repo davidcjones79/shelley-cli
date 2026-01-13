@@ -412,7 +412,9 @@ func (l *Loop) handleToolCalls(ctx context.Context, content []llm.Content) error
 
 		var toolResultContent []llm.Content
 		if result.Error != nil {
-			l.logger.Error("tool execution failed", "name", c.ToolName, "error", result.Error)
+			// Log at Debug level since command failures (non-zero exit) are expected
+			// and handled by the model - not errors in Shelley itself
+			l.logger.Debug("tool execution failed", "name", c.ToolName, "error", result.Error)
 			toolResultContent = []llm.Content{
 				{Type: llm.ContentTypeText, Text: result.Error.Error()},
 			}
