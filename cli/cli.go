@@ -76,13 +76,14 @@ type Model struct {
 	loopCancel context.CancelFunc
 
 	// UI state
-	textarea      textarea.Model
-	spinner       spinner.Model
-	viewport      viewport.Model
-	renderer      *MessageRenderer
-	styles        *Styles
-	messages      []renderedMessage
-	width, height int
+	textarea       textarea.Model
+	textareaHeight int // current textarea height (for auto-resize)
+	spinner        spinner.Model
+	viewport       viewport.Model
+	renderer       *MessageRenderer
+	styles         *Styles
+	messages       []renderedMessage
+	width, height  int
 	ready         bool
 	viewportReady bool
 	processing    bool
@@ -187,12 +188,14 @@ func New(cfg Config) (*Model, error) {
 		cfg.Logger = slog.Default()
 	}
 
-	// Create textarea for input (2 lines for more space)
+	// Create textarea for input (starts at 1 line, auto-expands)
 	ta := textarea.New()
-	ta.Placeholder = "Type your message... (Enter to send, Shift+Enter for newline, Ctrl+C to quit)"
+	ta.Placeholder = "Type your message... (Enter to send, Ctrl+C to quit)"
 	ta.Focus()
-	ta.SetHeight(2)
+	ta.SetHeight(1)
+	ta.SetWidth(80)
 	ta.ShowLineNumbers = false
+	ta.MaxHeight = 10 // Cap expansion at 10 lines
 
 	// Create spinner
 	sp := spinner.New()
@@ -212,6 +215,7 @@ func New(cfg Config) (*Model, error) {
 	m := &Model{
 		config:         cfg,
 		textarea:       ta,
+		textareaHeight: 1,
 		spinner:        sp,
 		viewport:       vp,
 		renderer:       renderer,
@@ -328,6 +332,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Queue message for later processing
 					m.pendingMessages = append(m.pendingMessages, text)
 					m.textarea.Reset()
+					m.textareaHeight = 1
+					m.textarea.SetHeight(1)
+					m.recalculateViewportHeight()
 					// Show queued feedback
 					m.messages = append(m.messages, renderedMessage{
 						role:    llm.MessageRoleUser,
@@ -401,23 +408,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Calculate heights for each section:
-		// Header: 1 line
-		// Footer: 5 lines (status bar + divider + prompt line + 2 textarea lines)
-		headerHeight := 1
-		footerHeight := 5
-
-		viewportHeight := msg.Height - headerHeight - footerHeight
-		if viewportHeight < 3 {
-			viewportHeight = 3
-		}
-
-		// Resize viewport
-		m.viewport.Width = msg.Width
-		m.viewport.Height = viewportHeight
-
 		// Update textarea width
 		m.textarea.SetWidth(msg.Width - 4)
+
+		// Recalculate viewport height based on current textarea height
+		m.recalculateViewportHeight()
 
 		// Recreate renderer with new width
 		renderer, err := NewMessageRenderer(msg.Width - 4)
@@ -637,6 +632,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearCompletions()
 	}
 
+	// Auto-resize textarea based on content
+	m.updateTextareaHeight()
+
 	// Update placeholder based on state
 	if m.processing {
 		m.textarea.Placeholder = "Type next message (will be queued)..."
@@ -665,6 +663,9 @@ func (m *Model) sendMessage() tea.Cmd {
 	m.currentInput = ""
 
 	m.textarea.Reset()
+	m.textareaHeight = 1
+	m.textarea.SetHeight(1)
+	m.recalculateViewportHeight()
 	m.processing = true
 	m.processStatus = "Preparing request..."
 	m.err = nil
@@ -845,6 +846,49 @@ func (m *Model) initLoop() error {
 	})
 
 	return nil
+}
+
+// updateTextareaHeight adjusts textarea height based on content (1-10 lines)
+func (m *Model) updateTextareaHeight() {
+	text := m.textarea.Value()
+	
+	// Count lines in the text
+	lines := 1
+	if text != "" {
+		lines = strings.Count(text, "\n") + 1
+	}
+	
+	// Clamp to 1-10 lines
+	if lines < 1 {
+		lines = 1
+	}
+	if lines > 10 {
+		lines = 10
+	}
+	
+	// Only update if height changed
+	if lines != m.textareaHeight {
+		m.textareaHeight = lines
+		m.textarea.SetHeight(lines)
+		m.recalculateViewportHeight()
+	}
+}
+
+// recalculateViewportHeight adjusts viewport to account for textarea size
+func (m *Model) recalculateViewportHeight() {
+	// Calculate heights for each section:
+	// Header: 1 line
+	// Footer: 3 lines (status bar + divider + prompt) + textarea height
+	headerHeight := 1
+	footerHeight := 3 + m.textareaHeight
+
+	viewportHeight := m.height - headerHeight - footerHeight
+	if viewportHeight < 3 {
+		viewportHeight = 3
+	}
+
+	m.viewport.Width = m.width
+	m.viewport.Height = viewportHeight
 }
 
 // updateViewportContent rebuilds the viewport content from messages
