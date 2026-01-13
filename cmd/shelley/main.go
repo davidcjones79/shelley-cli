@@ -100,6 +100,9 @@ func runChat(global GlobalConfig, args []string) {
 	prompt := fs.String("prompt", "", "Initial prompt to send (optional, for non-interactive mode)")
 	yesMode := fs.Bool("yes", false, "Auto-accept all tool operations (no confirmations)")
 	verbose := fs.Bool("verbose", false, "Show tool execution details (off by default)")
+	enableBrowser := fs.Bool("browser", false, "Enable browser tools (screenshots, navigation, etc.)")
+	useDB := fs.Bool("sync", false, "Sync conversations with database (enables /conversations, /switch)")
+	conversationID := fs.String("conversation", "", "Resume specific conversation by ID or slug (requires -sync)")
 	fs.Parse(args)
 
 	// Check for piped stdin
@@ -188,12 +191,48 @@ func runChat(global GlobalConfig, args []string) {
 
 	// Interactive CLI mode
 	cliConfig := cli.Config{
-		Model:      modelID,
-		WorkingDir: wd,
-		LLMService: llmService,
-		Logger:     logger,
-		System:     system,
-		Verbose:    *verbose,
+		Model:         modelID,
+		WorkingDir:    wd,
+		LLMService:    llmService,
+		Logger:        logger,
+		System:        system,
+		Verbose:       *verbose,
+		EnableBrowser: *enableBrowser,
+	}
+
+	// Set up database if sync is enabled
+	if *useDB {
+		database, err := db.New(db.Config{DSN: global.DBPath})
+		if err != nil {
+			logger.Error("Failed to open database", "error", err)
+			os.Exit(1)
+		}
+		defer database.Close()
+
+		if err := database.Migrate(context.Background()); err != nil {
+			logger.Error("Failed to migrate database", "error", err)
+			os.Exit(1)
+		}
+
+		cliConfig.DB = database
+
+		// Resolve conversation ID if provided
+		if *conversationID != "" {
+			// Try to find by ID first, then by slug
+			conv, err := database.GetConversationByID(context.Background(), *conversationID)
+			if err != nil {
+				conv, err = database.GetConversationBySlug(context.Background(), *conversationID)
+				if err != nil {
+					logger.Error("Conversation not found", "id", *conversationID)
+					os.Exit(1)
+				}
+			}
+			cliConfig.ConversationID = conv.ConversationID
+			logger.Info("Resuming conversation", "id", conv.ConversationID)
+		}
+	} else if *conversationID != "" {
+		logger.Error("-conversation requires -sync flag")
+		os.Exit(1)
 	}
 
 	if err := cli.Run(cliConfig); err != nil {

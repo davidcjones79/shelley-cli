@@ -19,6 +19,9 @@ import (
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"shelley.exe.dev/claudetool"
+	"shelley.exe.dev/db"
+	"shelley.exe.dev/db/generated"
+	"shelley.exe.dev/gitstate"
 	"shelley.exe.dev/llm"
 	"shelley.exe.dev/loop"
 )
@@ -44,12 +47,17 @@ type SessionMessage struct {
 
 // Config holds configuration for the CLI
 type Config struct {
-	Model      string
-	WorkingDir string
-	LLMService llm.Service
-	Logger     *slog.Logger
-	System     []llm.SystemContent
-	Verbose    bool // Show tool execution details
+	Model         string
+	WorkingDir    string
+	LLMService    llm.Service
+	Logger        *slog.Logger
+	System        []llm.SystemContent
+	Verbose       bool // Show tool execution details
+	EnableBrowser bool // Enable browser tools
+
+	// Database integration (optional - enables conversation sync with web UI)
+	DB             *db.DB
+	ConversationID string // Resume specific conversation
 }
 
 // Model is the Bubble Tea model for the CLI
@@ -89,8 +97,12 @@ type Model struct {
 	// Verbosity - show tool details
 	verbose bool
 
-	// Session management
+	// Session management (legacy JSON files)
 	sessionName string
+
+	// Database conversation (when DB is configured)
+	conversationID string
+	lastGitState   *gitstate.GitState
 
 	// Channels for async communication
 	responseChan chan responseMsg
@@ -169,17 +181,36 @@ func New(cfg Config) (*Model, error) {
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
 
 	m := &Model{
-		config:        cfg,
-		textarea:      ta,
-		spinner:       sp,
-		viewport:      vp,
-		renderer:      renderer,
-		styles:        DefaultStyles(),
-		messages:      []renderedMessage{},
-		promptHistory: []string{},
-		historyIndex:  -1,
-		responseChan:  make(chan responseMsg, 10),
-		verbose:       cfg.Verbose,
+		config:         cfg,
+		textarea:       ta,
+		spinner:        sp,
+		viewport:       vp,
+		renderer:       renderer,
+		styles:         DefaultStyles(),
+		messages:       []renderedMessage{},
+		promptHistory:  []string{},
+		historyIndex:   -1,
+		responseChan:   make(chan responseMsg, 10),
+		verbose:        cfg.Verbose,
+		conversationID: cfg.ConversationID,
+	}
+
+	// If resuming a conversation, load and display history
+	if cfg.DB != nil && cfg.ConversationID != "" {
+		history, err := m.loadHistoryFromDB()
+		if err != nil {
+			cfg.Logger.Warn("Failed to load conversation history", "error", err)
+		} else {
+			for _, msg := range history {
+				rendered := m.renderer.RenderMessage(msg, m.verbose)
+				if rendered != "" {
+					m.messages = append(m.messages, renderedMessage{
+						role:    msg.Role,
+						content: rendered,
+					})
+				}
+			}
+		}
 	}
 
 	return m, nil
@@ -450,6 +481,13 @@ func (m *Model) sendMessage() tea.Cmd {
 	m.updateViewportContent()
 
 	return func() tea.Msg {
+		// Create conversation in database on first message
+		if m.config.DB != nil && m.conversationID == "" {
+			if err := m.createConversation(context.Background()); err != nil {
+				m.config.Logger.Error("Failed to create conversation", "error", err)
+			}
+		}
+
 		// Initialize loop if needed
 		if m.loop == nil {
 			if err := m.initLoop(); err != nil {
@@ -473,15 +511,26 @@ func (m *Model) sendMessage() tea.Cmd {
 func (m *Model) initLoop() error {
 	m.loopCtx, m.loopCancel = context.WithCancel(context.Background())
 
-	// Create toolset
+	// Get initial git state for change detection
+	m.lastGitState = gitstate.GetGitState(m.config.WorkingDir)
+
+	// Create toolset with browser support if enabled
 	toolSetConfig := claudetool.ToolSetConfig{
-		WorkingDir: m.config.WorkingDir,
-		ModelID:    m.config.Model,
+		WorkingDir:    m.config.WorkingDir,
+		ModelID:       m.config.Model,
+		EnableBrowser: m.config.EnableBrowser,
 	}
 	m.toolSet = claudetool.NewToolSet(m.loopCtx, toolSetConfig)
 
 	// Create the loop with message recording callback
 	recordMessage := func(ctx context.Context, message llm.Message, usage llm.Usage) error {
+		// Record to database if configured
+		if m.config.DB != nil && m.conversationID != "" {
+			if err := m.recordMessageToDB(ctx, message, usage); err != nil {
+				m.config.Logger.Error("Failed to record message to DB", "error", err)
+			}
+		}
+
 		// Send to response channel for UI update
 		select {
 		case m.responseChan <- responseMsg{message: message, usage: usage}:
@@ -491,15 +540,28 @@ func (m *Model) initLoop() error {
 		return nil
 	}
 
+	// Load history from database if resuming a conversation
+	var history []llm.Message
+	if m.config.DB != nil && m.conversationID != "" {
+		var err error
+		history, err = m.loadHistoryFromDB()
+		if err != nil {
+			m.config.Logger.Warn("Failed to load history from DB", "error", err)
+		}
+	}
+
 	m.loop = loop.NewLoop(loop.Config{
 		LLM:           m.config.LLMService,
-		History:       []llm.Message{},
+		History:       history,
 		Tools:         m.toolSet.Tools(),
 		RecordMessage: recordMessage,
 		Logger:        m.config.Logger,
 		System:        m.config.System,
 		WorkingDir:    m.config.WorkingDir,
 		GetWorkingDir: m.toolSet.WorkingDir().Get,
+		OnGitStateChange: func(ctx context.Context, state *gitstate.GitState) {
+			m.handleGitStateChange(ctx, state)
+		},
 	})
 
 	return nil
@@ -667,15 +729,27 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		})
 		m.updateViewportContent()
 		return nil
+
+	// Database conversation commands
+	case "/conversations", "/convos":
+		return m.listConversations()
+	case "/switch":
+		if len(parts) < 2 {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render("Usage: /switch <conversation-id>"),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		return m.switchConversation(parts[1])
+	case "/new":
+		return m.newConversation()
+	case "/archive":
+		return m.archiveConversation()
+
 	case "/help":
-		helpText := `/run [n]   - Run suggested command (n=index, default=last)
-/save [name] - Save session (auto-names if omitted)
-/load <name> - Load a saved session
-/sessions    - List saved sessions
-/clear       - Clear conversation
-/verbose     - Toggle tool detail visibility
-/stop        - Cancel current operation (or press Escape)
-/help        - Show this help`
+		helpText := m.buildHelpText()
 		m.messages = append(m.messages, renderedMessage{
 			role:    llm.MessageRoleAssistant,
 			content: m.styles.SystemMessage.Render(helpText),
@@ -690,6 +764,32 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		m.updateViewportContent()
 		return nil
 	}
+}
+
+// buildHelpText generates help text based on available features
+func (m *Model) buildHelpText() string {
+	var sb strings.Builder
+	sb.WriteString("Commands:\n")
+	sb.WriteString("  /run [n]       - Run suggested command (n=index, default=last)\n")
+	sb.WriteString("  /clear         - Clear conversation display\n")
+	sb.WriteString("  /verbose       - Toggle tool detail visibility\n")
+	sb.WriteString("  /stop          - Cancel current operation (or press Escape)\n")
+
+	if m.config.DB != nil {
+		sb.WriteString("\nConversation Management (database enabled):\n")
+		sb.WriteString("  /conversations - List recent conversations\n")
+		sb.WriteString("  /switch <id>   - Switch to conversation by ID or slug\n")
+		sb.WriteString("  /new           - Start a new conversation\n")
+		sb.WriteString("  /archive       - Archive current conversation\n")
+	} else {
+		sb.WriteString("\nSession Management (legacy JSON files):\n")
+		sb.WriteString("  /save [name]   - Save session\n")
+		sb.WriteString("  /load <name>   - Load a saved session\n")
+		sb.WriteString("  /sessions      - List saved sessions\n")
+	}
+
+	sb.WriteString("\n  /help          - Show this help")
+	return sb.String()
 }
 
 // runSuggestedCommand executes a suggested shell command
@@ -942,6 +1042,321 @@ func (m *Model) listSessions() tea.Cmd {
 			content: m.styles.SystemMessage.Render(list),
 		})
 	}
+	m.updateViewportContent()
+	return nil
+}
+
+// recordMessageToDB records a message to the database
+func (m *Model) recordMessageToDB(ctx context.Context, message llm.Message, usage llm.Usage) error {
+	if m.config.DB == nil || m.conversationID == "" {
+		return nil
+	}
+
+	// Determine message type
+	var msgType db.MessageType
+	switch message.Role {
+	case llm.MessageRoleUser:
+		msgType = db.MessageTypeUser
+	case llm.MessageRoleAssistant:
+		msgType = db.MessageTypeAgent
+	default:
+		msgType = db.MessageTypeAgent
+	}
+
+	// Check for tool content
+	for _, content := range message.Content {
+		if content.Type == llm.ContentTypeToolUse || content.Type == llm.ContentTypeToolResult {
+			msgType = db.MessageTypeTool
+			break
+		}
+	}
+
+	_, err := m.config.DB.CreateMessage(ctx, db.CreateMessageParams{
+		ConversationID: m.conversationID,
+		Type:           msgType,
+		LLMData:        message,
+		UsageData:      usage,
+	})
+	return err
+}
+
+// loadHistoryFromDB loads conversation history from the database
+func (m *Model) loadHistoryFromDB() ([]llm.Message, error) {
+	if m.config.DB == nil || m.conversationID == "" {
+		return nil, nil
+	}
+
+	var messages []generated.Message
+	err := m.config.DB.Queries(context.Background(), func(q *generated.Queries) error {
+		var err error
+		messages, err = q.ListMessages(context.Background(), m.conversationID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var history []llm.Message
+	for _, msg := range messages {
+		// Skip system and gitinfo messages
+		if msg.Type == string(db.MessageTypeSystem) || msg.Type == string(db.MessageTypeGitInfo) {
+			continue
+		}
+		if msg.LlmData == nil {
+			continue
+		}
+		var llmMsg llm.Message
+		if err := json.Unmarshal([]byte(*msg.LlmData), &llmMsg); err != nil {
+			continue
+		}
+		history = append(history, llmMsg)
+	}
+	return history, nil
+}
+
+// createConversation creates a new conversation in the database
+func (m *Model) createConversation(ctx context.Context) error {
+	if m.config.DB == nil {
+		return nil
+	}
+
+	cwd := m.config.WorkingDir
+	conv, err := m.config.DB.CreateConversation(ctx, nil, true, &cwd)
+	if err != nil {
+		return err
+	}
+	m.conversationID = conv.ConversationID
+	return nil
+}
+
+// handleGitStateChange handles git state changes for display
+func (m *Model) handleGitStateChange(ctx context.Context, state *gitstate.GitState) {
+	if state == nil || !state.IsRepo {
+		return
+	}
+
+	// Check if state actually changed
+	if m.lastGitState != nil && state.Equal(m.lastGitState) {
+		return
+	}
+	m.lastGitState = state
+
+	// Display git info message
+	gitMsg := fmt.Sprintf("📦 %s", state.String())
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(gitMsg),
+	})
+	m.updateViewportContent()
+
+	// Record to database if configured
+	if m.config.DB != nil && m.conversationID != "" {
+		message := llm.Message{
+			Role:    llm.MessageRoleAssistant,
+			Content: []llm.Content{{Type: llm.ContentTypeText, Text: state.String()}},
+		}
+		m.config.DB.CreateMessage(ctx, db.CreateMessageParams{
+			ConversationID: m.conversationID,
+			Type:           db.MessageTypeGitInfo,
+			LLMData:        message,
+		})
+	}
+}
+
+// listConversations lists recent conversations from the database
+func (m *Model) listConversations() tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -db flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	conversations, err := m.config.DB.ListConversations(context.Background(), 20, 0)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to list conversations: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	if len(conversations) == 0 {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.SystemMessage.Render("No conversations found"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Recent conversations:\n")
+	for _, conv := range conversations {
+		marker := "  "
+		if conv.ConversationID == m.conversationID {
+			marker = "→ "
+		}
+		name := conv.ConversationID
+		if conv.Slug != nil && *conv.Slug != "" {
+			name = *conv.Slug
+		}
+		sb.WriteString(fmt.Sprintf("%s%s (%s)\n", marker, name, conv.UpdatedAt.Format("Jan 2 15:04")))
+	}
+	sb.WriteString("\nUse /switch <id> to switch conversations")
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(sb.String()),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// switchConversation switches to a different conversation
+func (m *Model) switchConversation(conversationID string) tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -db flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Verify conversation exists
+	_, err := m.config.DB.GetConversationByID(context.Background(), conversationID)
+	if err != nil {
+		// Try by slug
+		conv, err2 := m.config.DB.GetConversationBySlug(context.Background(), conversationID)
+		if err2 != nil {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render("Conversation not found: " + conversationID),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		conversationID = conv.ConversationID
+	}
+
+	// Stop current loop
+	if m.loopCancel != nil {
+		m.loopCancel()
+	}
+	if m.toolSet != nil {
+		m.toolSet.Cleanup()
+	}
+	m.loop = nil
+	m.loopCtx = nil
+	m.loopCancel = nil
+	m.toolSet = nil
+
+	// Switch conversation
+	m.conversationID = conversationID
+	m.messages = nil
+	m.totalUsage = llm.Usage{}
+	m.suggestedCmds = nil
+
+	// Load and display history from database
+	history, err := m.loadHistoryFromDB()
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to load history: " + err.Error()),
+		})
+	} else {
+		// Render loaded messages
+		for _, msg := range history {
+			rendered := m.renderer.RenderMessage(msg, m.verbose)
+			if rendered != "" {
+				m.messages = append(m.messages, renderedMessage{
+					role:    msg.Role,
+					content: rendered,
+				})
+			}
+		}
+	}
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render("Switched to conversation: " + conversationID),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// newConversation starts a new conversation
+func (m *Model) newConversation() tea.Cmd {
+	// Stop current loop
+	if m.loopCancel != nil {
+		m.loopCancel()
+	}
+	if m.toolSet != nil {
+		m.toolSet.Cleanup()
+	}
+	m.loop = nil
+	m.loopCtx = nil
+	m.loopCancel = nil
+	m.toolSet = nil
+
+	// Clear state
+	m.conversationID = ""
+	m.messages = nil
+	m.totalUsage = llm.Usage{}
+	m.suggestedCmds = nil
+	m.sessionName = ""
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render("Started new conversation"),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// archiveConversation archives the current conversation
+func (m *Model) archiveConversation() tea.Cmd {
+	if m.config.DB == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Database not configured. Use -db flag to enable conversation sync."),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	if m.conversationID == "" {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("No active conversation to archive"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	_, err := m.config.DB.ArchiveConversation(context.Background(), m.conversationID)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to archive: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	archivedID := m.conversationID
+
+	// Start fresh
+	m.newConversation()
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render("Archived conversation: " + archivedID),
+	})
 	m.updateViewportContent()
 	return nil
 }
