@@ -198,6 +198,7 @@ func runChat(global GlobalConfig, args []string) {
 		System:        system,
 		Verbose:       *verbose,
 		EnableBrowser: *enableBrowser,
+		ModelManager:  manager,
 	}
 
 	// Set up database if sync is enabled
