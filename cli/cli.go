@@ -30,6 +30,10 @@ import (
 // bashCodeBlockRe matches ```bash or ```sh code blocks
 var bashCodeBlockRe = regexp.MustCompile("(?s)```(?:bash|sh|shell|zsh)\\s*\\n(.*?)```")
 
+// slashCommandRe matches slash commands (e.g., /run, /help) but not file paths (e.g., /Users/foo)
+// A slash command is / followed by lowercase letters only, then end-of-string or whitespace
+var slashCommandRe = regexp.MustCompile(`^/[a-z]+(?:\s|$)`)
+
 // imageAttachment holds a pending image to attach to the next message
 type imageAttachment struct {
 	path      string
@@ -469,8 +473,8 @@ func (m *Model) sendMessage() tea.Cmd {
 		return nil
 	}
 
-	// Handle slash commands
-	if strings.HasPrefix(text, "/") {
+	// Handle slash commands (but not file paths like /Users/foo/bar.png)
+	if slashCommandRe.MatchString(text) {
 		return m.handleSlashCommand(text)
 	}
 
