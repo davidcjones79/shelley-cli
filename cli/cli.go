@@ -298,10 +298,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Calculate heights for each section:
 		// Header: 1 line
-		// Footer: 3 lines (status bar + prompt line + textarea line)
-		// Now always 3 since we show input even while processing
+		// Footer: 4 lines (status bar + divider + prompt line + textarea line)
 		headerHeight := 1
-		footerHeight := 3
+		footerHeight := 4
 
 		viewportHeight := msg.Height - headerHeight - footerHeight
 		if viewportHeight < 3 {
@@ -582,6 +581,9 @@ func (m *Model) View() string {
 	viewport := m.viewport.View()
 
 	// ========== FOOTER (status + input) ==========
+	// Horizontal divider line above input
+	divider := m.styles.Divider.Render(strings.Repeat("─", m.width))
+
 	var footer string
 	if m.processing {
 		statusLine := m.spinner.View() + " " + m.styles.Thinking.Render("Agent working...")
@@ -589,9 +591,9 @@ func (m *Model) View() string {
 			statusLine += m.styles.SystemMessage.Render(fmt.Sprintf(" (%d queued)", len(m.pendingMessages)))
 		}
 		// Show input even while processing so user can queue messages
-		footer = statusLine + "\n" + m.renderer.RenderPrompt() + m.textarea.View()
+		footer = statusLine + "\n" + divider + "\n" + m.renderer.RenderPrompt() + m.textarea.View()
 	} else {
-		footer = m.renderStatusBar() + "\n" + m.renderer.RenderPrompt() + m.textarea.View()
+		footer = m.renderStatusBar() + "\n" + divider + "\n" + m.renderer.RenderPrompt() + m.textarea.View()
 	}
 
 	// Join all sections vertically
