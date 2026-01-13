@@ -242,6 +242,33 @@ func runChat(global GlobalConfig, args []string) {
 	}
 }
 
+// buildUserMessageWithImages creates a user message, extracting any embedded image paths
+func buildUserMessageWithImages(text string, maxImageDimension int) llm.Message {
+	cleanText, imageContents, err := server.ExtractImagesFromMessage(text, maxImageDimension)
+	if err != nil {
+		// Fall back to plain text on error
+		return llm.Message{
+			Role:    llm.MessageRoleUser,
+			Content: []llm.Content{{Type: llm.ContentTypeText, Text: text}},
+		}
+	}
+
+	var contents []llm.Content
+	if cleanText != "" {
+		contents = append(contents, llm.Content{Type: llm.ContentTypeText, Text: cleanText})
+	}
+	contents = append(contents, imageContents...)
+
+	if len(contents) == 0 {
+		contents = append(contents, llm.Content{Type: llm.ContentTypeText, Text: text})
+	}
+
+	return llm.Message{
+		Role:    llm.MessageRoleUser,
+		Content: contents,
+	}
+}
+
 func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, system []llm.SystemContent, prompt string, yesMode bool, logger *slog.Logger) {
 	ctx := context.Background()
 
@@ -285,11 +312,8 @@ func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, s
 		GetWorkingDir: toolSet.WorkingDir().Get,
 	})
 
-	// Queue the prompt
-	userMsg := llm.Message{
-		Role:    llm.MessageRoleUser,
-		Content: []llm.Content{{Type: llm.ContentTypeText, Text: prompt}},
-	}
+	// Queue the prompt, extracting any embedded images
+	userMsg := buildUserMessageWithImages(prompt, llmService.MaxImageDimension())
 	loop.QueueUserMessage(userMsg)
 
 	// Process turns until done
