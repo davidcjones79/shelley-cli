@@ -31,3 +31,29 @@ func TestSanitizeSlug(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatTokens(t *testing.T) {
+	tests := []struct {
+		tokens   uint64
+		expected string
+	}{
+		{0, "0"},
+		{500, "500"},
+		{999, "999"},
+		{1000, "1.0k"},
+		{1500, "1.5k"},
+		{10000, "10.0k"},
+		{100000, "100.0k"},
+		{999999, "1000.0k"},
+		{1000000, "1.0M"},
+		{1500000, "1.5M"},
+		{200000000, "200.0M"},
+	}
+
+	for _, tt := range tests {
+		result := formatTokens(tt.tokens)
+		if result != tt.expected {
+			t.Errorf("formatTokens(%d) = %q, want %q", tt.tokens, result, tt.expected)
+		}
+	}
+}

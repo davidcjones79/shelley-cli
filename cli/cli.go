@@ -25,6 +25,7 @@ import (
 	"shelley.exe.dev/gitstate"
 	"shelley.exe.dev/llm"
 	"shelley.exe.dev/loop"
+	"shelley.exe.dev/models"
 )
 
 // bashCodeBlockRe matches ```bash or ```sh code blocks
@@ -75,6 +76,9 @@ type Config struct {
 	System        []llm.SystemContent
 	Verbose       bool // Show tool execution details
 	EnableBrowser bool // Enable browser tools
+
+	// Model manager for switching models (optional)
+	ModelManager *models.Manager
 
 	// Database integration (optional - enables conversation sync with web UI)
 	DB             *db.DB
@@ -665,15 +669,27 @@ func (m *Model) renderStatusBar() string {
 		parts = append(parts, m.styles.ModelName.Render(model))
 	}
 
-	// Token counts
+	// Token counts with context percentage
 	if m.totalUsage.InputTokens > 0 || m.totalUsage.OutputTokens > 0 {
-		tokenStr := fmt.Sprintf("↑%d ↓%d", m.totalUsage.InputTokens, m.totalUsage.OutputTokens)
+		tokenStr := fmt.Sprintf("↑%s ↓%s", formatTokens(m.totalUsage.InputTokens), formatTokens(m.totalUsage.OutputTokens))
+		// Add context percentage if we can calculate it
+		if m.config.LLMService != nil {
+			maxContext := m.config.LLMService.TokenContextWindow()
+			if maxContext > 0 && m.totalUsage.InputTokens > 0 {
+				percent := float64(m.totalUsage.InputTokens) / float64(maxContext) * 100
+				tokenStr += fmt.Sprintf(" (%.0f%%)", percent)
+			}
+		}
 		parts = append(parts, m.styles.TokenCount.Render(tokenStr))
 	}
 
 	// Working directory - aggressively truncate
 	if m.config.WorkingDir != "" {
 		wd := m.config.WorkingDir
+		// Replace home dir with ~
+		if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(wd, home) {
+			wd = "~" + wd[len(home):]
+		}
 		maxLen := 30
 		if len(wd) > maxLen {
 			wd = "..." + wd[len(wd)-maxLen+3:]
@@ -850,6 +866,22 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		}
 		return m.searchConversations(strings.Join(parts[1:], " "))
 
+	// Model commands
+	case "/models":
+		return m.listModels()
+	case "/model":
+		if len(parts) < 2 {
+			m.messages = append(m.messages, renderedMessage{
+				role:    llm.MessageRoleAssistant,
+				content: m.styles.ErrorMessage.Render("Usage: /model <model-id>"),
+			})
+			m.updateViewportContent()
+			return nil
+		}
+		return m.switchModel(parts[1])
+	case "/context":
+		return m.showContext()
+
 	// Image attachment
 	case "/attach", "/image":
 		if len(parts) < 2 {
@@ -912,6 +944,13 @@ func (m *Model) buildHelpText() string {
 		sb.WriteString("  /save [name]   - Save session\n")
 		sb.WriteString("  /load <name>   - Load a saved session\n")
 		sb.WriteString("  /sessions      - List saved sessions\n")
+	}
+
+	if m.config.ModelManager != nil {
+		sb.WriteString("\nModel & Context:\n")
+		sb.WriteString("  /models        - List available models\n")
+		sb.WriteString("  /model <id>    - Switch to a different model\n")
+		sb.WriteString("  /context       - Show context window usage\n")
 	}
 
 	sb.WriteString("\n  /help          - Show this help")
@@ -1772,6 +1811,175 @@ func (m *Model) searchConversations(query string) tea.Cmd {
 	return nil
 }
 
+// listModels lists available models
+func (m *Model) listModels() tea.Cmd {
+	if m.config.ModelManager == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Model manager not configured"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	available := m.config.ModelManager.GetAvailableModels()
+	if len(available) == 0 {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.SystemMessage.Render("No models available"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	allModels := models.All()
+	modelMap := make(map[string]models.Model)
+	for _, model := range allModels {
+		modelMap[model.ID] = model
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Available models:\n")
+	for _, id := range available {
+		marker := "  "
+		if id == m.config.Model {
+			marker = "→ "
+		}
+		line := fmt.Sprintf("%s%s", marker, id)
+		if model, ok := modelMap[id]; ok {
+			line += fmt.Sprintf(" (%s)", model.Provider)
+		}
+		sb.WriteString(line + "\n")
+	}
+	sb.WriteString("\nUse /model <id> to switch models")
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(sb.String()),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// switchModel switches to a different model
+func (m *Model) switchModel(modelID string) tea.Cmd {
+	if m.config.ModelManager == nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Model manager not configured"),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Check if model is available
+	if !m.config.ModelManager.HasModel(modelID) {
+		available := m.config.ModelManager.GetAvailableModels()
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render(fmt.Sprintf("Model %q not available. Available: %s", modelID, strings.Join(available, ", "))),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Get the new service
+	newService, err := m.config.ModelManager.GetService(modelID)
+	if err != nil {
+		m.messages = append(m.messages, renderedMessage{
+			role:    llm.MessageRoleAssistant,
+			content: m.styles.ErrorMessage.Render("Failed to get model: " + err.Error()),
+		})
+		m.updateViewportContent()
+		return nil
+	}
+
+	// Update the config
+	oldModel := m.config.Model
+	m.config.Model = modelID
+	m.config.LLMService = newService
+
+	// If we have an active loop, we need to restart it with the new model
+	// The next message will create a new loop with the updated service
+	if m.loop != nil {
+		if m.loopCancel != nil {
+			m.loopCancel()
+		}
+		m.loop = nil
+		m.loopCtx = nil
+		m.loopCancel = nil
+	}
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.ToolSuccess.Render(fmt.Sprintf("Switched model: %s → %s", oldModel, modelID)),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// showContext shows context window usage information
+func (m *Model) showContext() tea.Cmd {
+	maxContext := 0
+	if m.config.LLMService != nil {
+		maxContext = m.config.LLMService.TokenContextWindow()
+	}
+
+	// Calculate approximate context usage from total usage
+	// Input tokens represent what we've sent to the model
+	usedTokens := m.totalUsage.InputTokens
+
+	var sb strings.Builder
+	sb.WriteString("Context Window:\n")
+	sb.WriteString(fmt.Sprintf("  Model: %s\n", m.config.Model))
+	sb.WriteString(fmt.Sprintf("  Max tokens: %s\n", formatTokensInt(maxContext)))
+	sb.WriteString(fmt.Sprintf("  Input tokens used: %s\n", formatTokens(usedTokens)))
+	sb.WriteString(fmt.Sprintf("  Output tokens used: %s\n", formatTokens(m.totalUsage.OutputTokens)))
+
+	if maxContext > 0 {
+		percent := float64(usedTokens) / float64(maxContext) * 100
+		sb.WriteString(fmt.Sprintf("  Usage: %.1f%%\n", percent))
+
+		// Visual bar
+		barWidth := 40
+		filled := int(percent / 100 * float64(barWidth))
+		if filled > barWidth {
+			filled = barWidth
+		}
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+		sb.WriteString(fmt.Sprintf("  [%s]", bar))
+	}
+
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(sb.String()),
+	})
+	m.updateViewportContent()
+	return nil
+}
+
+// formatTokens formats token counts with K/M suffixes
+func formatTokens(tokens uint64) string {
+	if tokens >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(tokens)/1000000)
+	}
+	if tokens >= 1000 {
+		return fmt.Sprintf("%.1fk", float64(tokens)/1000)
+	}
+	return fmt.Sprintf("%d", tokens)
+}
+
+// formatTokensInt formats int token counts with K/M suffixes (for max context which is int)
+func formatTokensInt(tokens int) string {
+	if tokens >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(tokens)/1000000)
+	}
+	if tokens >= 1000 {
+		return fmt.Sprintf("%.1fk", float64(tokens)/1000)
+	}
+	return fmt.Sprintf("%d", tokens)
+}
+
 // attachImage loads an image file and queues it for the next message
 func (m *Model) attachImage(path string) tea.Cmd {
 	// Expand ~ to home directory
@@ -1980,6 +2188,15 @@ func (m *Model) completeSlashCommand(prefix string) []string {
 			"/save",
 			"/load",
 			"/sessions",
+		)
+	}
+
+	// Add model commands if manager is configured
+	if m.config.ModelManager != nil {
+		commands = append(commands,
+			"/models",
+			"/model",
+			"/context",
 		)
 	}
 
