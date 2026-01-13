@@ -1325,7 +1325,7 @@ function ChatInterface({
       <MessageInput
         key={conversationId || "new"}
         onSend={sendMessage}
-        disabled={sending || loading}
+        disabled={loading}
         autoFocus={true}
         injectedText={diffCommentText}
         onClearInjectedText={() => setDiffCommentText("")}

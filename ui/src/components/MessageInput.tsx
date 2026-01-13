@@ -72,7 +72,7 @@ function MessageInput({
     }
     return "";
   });
-  const [submitting, setSubmitting] = useState(false);
+
   const [uploadsInProgress, setUploadsInProgress] = useState(0);
   const [dragCounter, setDragCounter] = useState(0);
   const [isListening, setIsListening] = useState(false);
@@ -279,26 +279,24 @@ function MessageInput({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (message.trim() && !disabled && !submitting && uploadsInProgress === 0) {
+    if (message.trim() && !disabled && uploadsInProgress === 0) {
       // Stop listening if we were recording
       if (isListening) {
         stopListening();
       }
 
       const messageToSend = message;
-      setSubmitting(true);
+      // Clear immediately to allow queueing next message
+      setMessage("");
+      if (persistKey) {
+        localStorage.removeItem(PERSIST_KEY_PREFIX + persistKey);
+      }
+
       try {
         await onSend(messageToSend);
-        // Only clear on success
-        setMessage("");
-        // Clear persisted draft on successful send
-        if (persistKey) {
-          localStorage.removeItem(PERSIST_KEY_PREFIX + persistKey);
-        }
       } catch {
-        // Keep the message on error so user can retry
-      } finally {
-        setSubmitting(false);
+        // Restore message on error so user can retry
+        setMessage(messageToSend);
       }
     }
   };
@@ -348,7 +346,7 @@ function MessageInput({
   }, [autoFocus]);
 
   const isDisabled = disabled || uploadsInProgress > 0;
-  const canSubmit = message.trim() && !isDisabled && !submitting;
+  const canSubmit = message.trim() && !isDisabled;
 
   const isDraggingOver = dragCounter > 0;
   // Note: injectedText is auto-inserted via useEffect, no manual UI needed
@@ -414,7 +412,7 @@ function MessageInput({
           aria-label="Send message"
           data-testid="send-button"
         >
-          {isDisabled || submitting ? (
+          {isDisabled ? (
             <div className="flex items-center justify-center">
               <div className="spinner spinner-small" style={{ borderTopColor: "white" }}></div>
             </div>
