@@ -289,3 +289,33 @@ type describeImageResultMsg struct {
 	text string
 	err  error
 }
+
+// showLastImageResult displays the result from the Mac describe-image script
+func (m *Model) showLastImageResult() tea.Cmd {
+	resultFile := "/tmp/shelley-image-result.txt"
+	
+	data, err := os.ReadFile(resultFile)
+	if err != nil {
+		m.showError("No image result found. Run describe-image on your Mac first.")
+		return nil
+	}
+	
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		m.showError("Image result file is empty")
+		return nil
+	}
+	
+	// Render as assistant message
+	responseMsg := llm.Message{
+		Role:    llm.MessageRoleAssistant,
+		Content: []llm.Content{{Type: llm.ContentTypeText, Text: content}},
+	}
+	rendered := m.renderer.RenderMessage(responseMsg, false)
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: rendered,
+	})
+	m.updateViewportContent()
+	return nil
+}
