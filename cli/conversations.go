@@ -185,7 +185,7 @@ func (m *Model) switchConversation(conversationID string) tea.Cmd {
 		role:    llm.MessageRoleAssistant,
 		content: m.styles.ToolSuccess.Render("Switched to conversation: " + conversationID),
 	})
-	m.updateViewportContent()
+	m.updateViewportContentAndScroll(true) // Force scroll to bottom after switch
 	return nil
 }
 
@@ -590,6 +590,10 @@ func (m *Model) syncConversation() tea.Cmd {
 		statusMsg = "Synced: no changes"
 	}
 
-	m.showSystemMessage(statusMsg)
+	m.messages = append(m.messages, renderedMessage{
+		role:    llm.MessageRoleAssistant,
+		content: m.styles.SystemMessage.Render(statusMsg),
+	})
+	m.updateViewportContentAndScroll(true) // Force scroll to bottom after sync
 	return nil
 }

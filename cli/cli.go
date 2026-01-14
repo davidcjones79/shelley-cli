@@ -941,6 +941,42 @@ func (m *Model) recalculateViewportHeight() {
 }
 
 // updateViewportContent rebuilds the viewport content from messages
+// Use scrollToBottom=true to force scroll after loading new content
+func (m *Model) updateViewportContentAndScroll(scrollToBottom bool) {
+	var content strings.Builder
+
+	for i, msg := range m.messages {
+		if i > 0 {
+			content.WriteString("\n") // Extra blank line between messages
+		}
+		content.WriteString(msg.content)
+		content.WriteString("\n")
+	}
+
+	// Add streaming text if any
+	if m.streamingText.Len() > 0 {
+		if len(m.messages) > 0 {
+			content.WriteString("\n")
+		}
+		content.WriteString(m.streamingText.String())
+		content.WriteString("\n")
+	}
+
+	newContent := content.String()
+
+	// Only update if content actually changed
+	if newContent != m.lastViewportContent {
+		wasAtBottom := m.viewport.AtBottom()
+		m.lastViewportContent = newContent
+		m.viewport.SetContent(newContent)
+
+		// Scroll to bottom if requested or if user was already there
+		if scrollToBottom || wasAtBottom {
+			m.viewport.GotoBottom()
+		}
+	}
+}
+
 func (m *Model) updateViewportContent() {
 	var content strings.Builder
 
