@@ -188,10 +188,15 @@ func loadImageAsAttachment(path string, maxImageDimension int) (*imageAttachment
 		return nil, err
 	}
 
-	// Detect media type
-	contentType := http.DetectContentType(data)
-	if !strings.HasPrefix(contentType, "image/") {
-		contentType = "image/png" // fallback
+	// Determine media type from file extension first, fall back to detection
+	ext := strings.ToLower(filepath.Ext(path))
+	contentType := supportedImageTypes[ext]
+	if contentType == "" {
+		// Fall back to content detection
+		contentType = http.DetectContentType(data)
+		if !strings.HasPrefix(contentType, "image/") {
+			contentType = "image/png" // fallback
+		}
 	}
 
 	// Resize if needed
