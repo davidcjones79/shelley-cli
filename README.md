@@ -1,45 +1,40 @@
-# Shelley: a coding agent for exe.dev
+# Shelley CLI
 
-> **🆕 This fork adds a CLI interface!** See [cli/README.md](cli/README.md) for installation and usage.
+> A terminal interface for [Shelley](https://github.com/boldsoftware/shelley), the coding agent. This fork adds CLI, file uploader, and `/pick` workflow.
+
+## Quick Install (exe.dev)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh | bash
+source ~/.bashrc
+shelley chat
+```
+
+This installs the CLI with file uploader service. See [cli/README.md](cli/README.md) for full documentation.
+
+## What's Added in This Fork
+
+- **CLI Interface** - Full terminal UI with streaming, tool execution, conversation sync
+- **File Uploader** - Drag-and-drop web UI to get files onto your VM (`shelley uploader`)
+- **`/pick` Command** - Quick workflow to analyze uploaded files
+- **Systemd Service** - Uploader runs persistently at `https://your-vm.exe.xyz:8099/`
+
+---
+
+# About Shelley
 
 Shelley is a mobile-friendly, web-based, multi-conversation, multi-modal,
-multi-model, single-user coding agent built for but not exclusive to
-[exe.dev](https://exe.dev/). It does not come with authorization or sandboxing:
-bring your own.
+multi-model, single-user coding agent built for [exe.dev](https://exe.dev/).
 
-*Mobile-friendly* because ideas can come any time.
-
-*Web-based*, because terminal-based scroll back is punishment for shoplifting in some countries.
-
-*Multi-modal* because screenshots, charts, and graphs are necessary, not to mention delightful.
-
-*Multi-model* to benefit from all the innovation going on.
-
-*Single-user* because it makes sense to bring the agent to the compute.
-
-# Installation
-
-## Pre-Built Binaries (macOS/Linux)
-
-```bash
-curl -Lo shelley "https://github.com/boldsoftware/shelley/releases/latest/download/shelley_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" && chmod +x shelley
-```
-
-The binaries are on the [releases page](https://github.com/boldsoftware/shelley/releases/latest).
-
-## Homebrew (macOS)
-
-```bash
-brew install --cask boldsoftware/tap/shelley
-```
+For the original web UI version, see [boldsoftware/shelley](https://github.com/boldsoftware/shelley).
 
 ## Build from Source
 
 You'll need Go and Node.
 
 ```bash
-git clone https://github.com/boldsoftware/shelley.git
-cd shelley
+git clone https://github.com/davidcjones79/shelley-cli.git
+cd shelley-cli
 make
 ```
 
