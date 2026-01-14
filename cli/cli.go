@@ -407,7 +407,6 @@ func (m *Model) Init() tea.Cmd {
 		m.spinner.Tick,
 		m.waitForResponse(),
 		m.waitForStream(),
-		tea.EnableMouseCellMotion,
 	)
 }
 
@@ -1708,7 +1707,7 @@ func Run(cfg Config) error {
 	}
 	defer model.Cleanup()
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err
 }
