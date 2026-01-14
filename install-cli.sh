@@ -12,7 +12,6 @@ echo "🐡 Installing Shelley CLI..."
 # Check if we're on exe.dev
 if [ ! -d "/exe.dev" ]; then
     echo "⚠️  Warning: This script is designed for exe.dev VMs."
-    echo "   For other environments, see: https://github.com/davidcjones79/shelley-cli/blob/shelley-cli-test/cli/README.md"
     read -p "   Continue anyway? [y/N] " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -44,7 +43,7 @@ fi
 echo "🔨 Building (this may take a minute)..."
 make
 
-# Create config
+# Create config (auto-detected by binary)
 echo "⚙️  Setting up config..."
 mkdir -p ~/.config/shelley
 if [ ! -f ~/.config/shelley/shelley.json ]; then
@@ -56,20 +55,9 @@ if [ ! -f ~/.config/shelley/shelley.json ]; then
 EOF
 fi
 
-# Create wrapper script in ~/.local/bin (takes precedence over /usr/local/bin)
-mkdir -p ~/.local/bin
+# Symlink to /usr/local/bin
 echo "🔗 Installing shelley command..."
-cat > ~/.local/bin/shelley << EOF
-#!/bin/bash
-exec $HOME/shelley-cli/bin/shelley --config $HOME/.config/shelley/shelley.json "\$@"
-EOF
-chmod +x ~/.local/bin/shelley
-
-# Ensure ~/.local/bin is in PATH
-if ! grep -q 'export PATH="\$HOME/.local/bin:\$PATH"' ~/.bashrc 2>/dev/null; then
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-fi
-export PATH="$HOME/.local/bin:$PATH"
+sudo ln -sf ~/shelley-cli/bin/shelley /usr/local/bin/shelley
 
 # Install uploader service
 if [ -d "/exe.dev" ]; then
