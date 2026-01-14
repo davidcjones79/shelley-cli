@@ -267,8 +267,11 @@ Conversations sync to the database **by default**, enabling seamless switching b
 If you have the same conversation open in multiple places (e.g., CLI and web UI, or two terminal sessions), use `/sync` to pull in messages added elsewhere:
 
 ```
-/sync
+/switch          # Switch to most recent conversation (or /switch <id>)
+/sync            # Pull in any new messages
 ```
+
+**Note:** You must `/switch` to a conversation before `/sync` will work. The CLI starts with no active conversation by default.
 
 This reloads all messages from the database and updates the LLM's context, so it knows about the full conversation history. Useful when:
 
