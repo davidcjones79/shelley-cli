@@ -141,13 +141,42 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			line-height: 1.5;
 			color: #555;
 		}
+		.instructions-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			cursor: pointer;
+		}
 		.instructions h3 {
-			margin: 0 0 8px 0;
+			margin: 0;
 			font-size: 13px;
 			font-weight: 600;
 			color: #333;
 			text-transform: uppercase;
 			letter-spacing: 0.5px;
+		}
+		.instructions-arrow {
+			width: 0;
+			height: 0;
+			border-left: 5px solid transparent;
+			border-right: 5px solid transparent;
+			border-top: 6px solid #888;
+			transition: transform 0.2s;
+		}
+		.instructions.collapsed .instructions-arrow {
+			transform: rotate(-90deg);
+		}
+		.instructions-body {
+			margin-top: 12px;
+		}
+		.instructions.collapsed .instructions-body {
+			display: none;
+		}
+		.instructions-body h4 {
+			margin: 12px 0 8px 0;
+			font-size: 12px;
+			font-weight: 600;
+			color: #555;
 		}
 		.instructions code {
 			background: #e5e7eb;
@@ -164,7 +193,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			margin-bottom: 4px;
 		}
 		.instructions p {
-			margin: 0 0 12px 0;
+			margin: 0;
 		}
 		.instructions .supported {
 			margin: 12px 0 0 0;
@@ -377,16 +406,21 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 		</div>
 		<div class="result" id="result"></div>
 		<div class="result-hint" id="result-hint">Click path to copy • Use <code>/pick</code> in Shelley CLI to analyze</div>
-		<div class="instructions">
-			<h3>About</h3>
-			<p>Upload files from your local machine to your exe.dev VM. Perfect for sharing screenshots, images, documents, or code files with the Shelley AI agent running on your VM.</p>
-			<h3>How to use</h3>
-			<ol>
-				<li>Drag and drop files (or click to browse)</li>
-				<li>In Shelley CLI, type <code>/pick</code> to list your uploads</li>
-				<li>Type <code>/pick 1</code> to have Shelley analyze the file</li>
-			</ol>
-			<p class="supported">Supports images, CSV, JSON, Markdown, code files, and more.</p>
+		<div class="instructions collapsed" id="instructions">
+			<div class="instructions-header" onclick="toggleInstructions()">
+				<h3>Help</h3>
+				<span class="instructions-arrow"></span>
+			</div>
+			<div class="instructions-body">
+				<p>Upload files from your local machine to your exe.dev VM. Perfect for sharing screenshots, images, documents, or code files with the Shelley AI agent.</p>
+				<h4>How to use</h4>
+				<ol>
+					<li>Drag and drop files (or click to browse)</li>
+					<li>In Shelley CLI, type <code>/pick</code> to list uploads</li>
+					<li>Type <code>/pick 1</code> to analyze a file</li>
+				</ol>
+				<p class="supported">Supports images, CSV, JSON, Markdown, code files, and more.</p>
+			</div>
 		</div>
 		<div class="upload-dir">Files saved to <code>{{.UploadDir}}</code></div>
 		<div class="recent collapsed" id="recent">
@@ -486,6 +520,10 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 
 		function toggleRecent() {
 			recentSection.classList.toggle('collapsed');
+		}
+
+		function toggleInstructions() {
+			document.getElementById('instructions').classList.toggle('collapsed');
 		}
 
 		async function loadRecent() {
