@@ -196,13 +196,59 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			padding-top: 24px;
 			border-top: 1px solid #e0e0e0;
 		}
+		.recent-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			cursor: pointer;
+			user-select: none;
+		}
+		.recent-toggle {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+		}
 		.recent h3 {
-			margin: 0 0 12px 0;
+			margin: 0;
 			font-size: 13px;
 			font-weight: 600;
 			color: #333;
 			text-transform: uppercase;
 			letter-spacing: 0.5px;
+		}
+		.recent-count {
+			font-size: 11px;
+			color: #888;
+			background: #f0f0f0;
+			padding: 2px 6px;
+			border-radius: 10px;
+		}
+		.recent-arrow {
+			font-size: 12px;
+			color: #888;
+			transition: transform 0.2s;
+		}
+		.recent.collapsed .recent-arrow {
+			transform: rotate(-90deg);
+		}
+		.recent-body {
+			margin-top: 12px;
+		}
+		.recent.collapsed .recent-body {
+			display: none;
+		}
+		.delete-all {
+			font-size: 12px;
+			color: #888;
+			background: none;
+			border: none;
+			cursor: pointer;
+			padding: 4px 8px;
+			border-radius: 4px;
+		}
+		.delete-all:hover {
+			background: #fee2e2;
+			color: #dc2626;
 		}
 		.recent-list {
 			list-style: none;
@@ -323,8 +369,17 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 		</div>
 		<div class="upload-dir">Files saved to <code>{{.UploadDir}}</code></div>
 		<div class="recent" id="recent">
-			<h3>Recent uploads</h3>
-			<ul class="recent-list" id="recent-list"></ul>
+			<div class="recent-header" onclick="toggleRecent()">
+				<div class="recent-toggle">
+					<h3>Recent uploads</h3>
+					<span class="recent-count" id="recent-count">0</span>
+				</div>
+				<span class="recent-arrow">▼</span>
+			</div>
+			<div class="recent-body">
+				<ul class="recent-list" id="recent-list"></ul>
+				<button class="delete-all" id="delete-all" style="display:none" onclick="event.stopPropagation(); deleteAll()">Delete all</button>
+			</div>
 		</div>
 	</div>
 	</div>
@@ -394,10 +449,30 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			}
 		}
 
+		async function deleteAll() {
+			if (!confirm('Delete all uploaded files?')) return;
+			try {
+				await fetch('/files', { method: 'DELETE' });
+				loadRecent();
+			} catch(e) {
+				alert('Failed to delete');
+			}
+		}
+
+		const deleteAllBtn = document.getElementById('delete-all');
+		const recentSection = document.getElementById('recent');
+		const recentCount = document.getElementById('recent-count');
+
+		function toggleRecent() {
+			recentSection.classList.toggle('collapsed');
+		}
+
 		async function loadRecent() {
 			try {
 				const resp = await fetch('/files');
 				const files = await resp.json();
+				recentCount.textContent = files.length;
+				deleteAllBtn.style.display = files.length > 0 ? 'block' : 'none';
 				if (files.length === 0) {
 					recentList.innerHTML = '<li class="recent-empty">No uploads yet</li>';
 					return;
@@ -471,8 +546,21 @@ func RunUploader(port int, uploadDir string) {
 		fmt.Fprint(w, path)
 	})
 
-	// List recent files as JSON
+	// List recent files as JSON, or DELETE all
 	http.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			entries, err := os.ReadDir(uploadDir)
+			if err == nil {
+				for _, entry := range entries {
+					if !entry.IsDir() {
+						os.Remove(filepath.Join(uploadDir, entry.Name()))
+					}
+				}
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		entries, err := os.ReadDir(uploadDir)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
