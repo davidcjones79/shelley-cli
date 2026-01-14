@@ -21,7 +21,7 @@ done
 shift $((OPTIND-1))
 
 IMAGE_PATH="$1"
-PROMPT="${2:-Describe this image in detail.}"
+PROMPT="${2:-Describe this image. Start with a brief one-line summary, then provide details.}"
 
 if [[ -z "$VM_HOST" ]]; then
     echo "Usage: describe-image -v <vmname> <image-path> [prompt]"
