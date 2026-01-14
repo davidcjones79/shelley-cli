@@ -43,9 +43,9 @@ This provides a complete Go web server with HTTP handlers, SQLite database, migr
 <file_uploader>
 If the user wants to upload files (screenshots, images, documents, CSV, code) from their local machine to this VM, offer to start the file uploader:
 
-  shelley uploader -port 8091
+  shelley uploader -port 8099
 
-This starts a web page at https://{{.Hostname}}:8091/ where they can drag and drop files. Files are saved to ~/uploads/.
+This starts a web page at https://{{.Hostname}}:8099/ where they can drag and drop files. Files are saved to ~/uploads/.
 
 After uploading, they can use /pick in Shelley CLI to list and analyze uploads, or you can read files directly from ~/uploads/.
 
