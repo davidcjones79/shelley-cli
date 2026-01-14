@@ -227,8 +227,9 @@ func (r *MessageRenderer) renderToolResult(content llm.Content, verbose bool) st
 		}
 	}
 
-	// In non-verbose mode, show compact status
-	if !verbose {
+	// In non-verbose mode, show compact status (but always show bash output)
+	showBashOutput := toolName == "bash"
+	if !verbose && !showBashOutput {
 		// Always show errors (truncated)
 		if content.ToolError {
 			for _, result := range content.ToolResult {
