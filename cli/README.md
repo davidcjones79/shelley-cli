@@ -182,6 +182,7 @@ Conversations sync to the database by default, so you can switch between CLI and
 | `/archived` | List archived conversations |
 | `/unarchive <id>` | Restore archived conversation |
 | `/delete` | Delete current conversation |
+| `/sync` | Reload messages from database (see below) |
 | `/export [file]` | Export conversation to markdown |
 
 ### Images
@@ -258,6 +259,22 @@ Conversations sync to the database **by default**, enabling seamless switching b
    /conversations     # list all
    /switch my-proj    # switch by slug or ID
    ```
+
+### Syncing External Changes
+
+If you have the same conversation open in multiple places (e.g., CLI and web UI, or two terminal sessions), use `/sync` to pull in messages added elsewhere:
+
+```
+/sync
+```
+
+This reloads all messages from the database and updates the LLM's context, so it knows about the full conversation history. Useful when:
+
+- You're chatting in the web UI and want to continue in terminal
+- Another Shelley instance added messages to the same conversation
+- You want to verify the conversation state matches the database
+
+Aliases: `/refresh`, `/pull`
 
 ### Ephemeral Mode
 
