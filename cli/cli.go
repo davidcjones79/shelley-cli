@@ -980,6 +980,11 @@ func (m *Model) updateViewportContentAndScroll(scrollToBottom bool) {
 func (m *Model) updateViewportContent() {
 	var content strings.Builder
 
+	// Show welcome message if no messages yet
+	if len(m.messages) == 0 && m.streamingText.Len() == 0 {
+		content.WriteString(m.renderWelcome())
+	}
+
 	for i, msg := range m.messages {
 		if i > 0 {
 			content.WriteString("\n") // Extra blank line between messages
@@ -1128,6 +1133,43 @@ func (m *Model) finalizeStreamingText() {
 		})
 	}
 	m.updateViewportContent()
+}
+
+// renderWelcome creates the welcome message shown on startup
+func (m *Model) renderWelcome() string {
+	var sb strings.Builder
+
+	// Use styles for consistent look
+	title := m.styles.HeaderTitle.Render("Welcome to Shelley CLI")
+	sb.WriteString(title)
+	sb.WriteString("\n\n")
+
+	hint := m.styles.SystemMessage.Render
+	cmd := m.styles.ToolName.Render
+
+	sb.WriteString(hint("Quick start:"))
+	sb.WriteString("\n")
+	sb.WriteString("  • Type a message and press Enter to chat\n")
+	sb.WriteString("  • Use " + cmd("/help") + " to see all commands\n")
+	sb.WriteString("\n")
+
+	if m.config.DB != nil {
+		sb.WriteString(hint("Conversations:"))
+		sb.WriteString("\n")
+		sb.WriteString("  • " + cmd("/conversations") + " - list recent conversations\n")
+		sb.WriteString("  • " + cmd("/switch") + " - resume most recent conversation\n")
+		sb.WriteString("  • " + cmd("/switch <n>") + " - resume conversation by number\n")
+		sb.WriteString("  • " + cmd("/new") + " - start a fresh conversation\n")
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(hint("Navigation:"))
+	sb.WriteString("\n")
+	sb.WriteString("  • Up/Down arrows - cycle through prompt history\n")
+	sb.WriteString("  • Tab - complete file paths and commands\n")
+	sb.WriteString("  • Ctrl+U/D or PgUp/PgDown - scroll messages\n")
+
+	return sb.String()
 }
 
 // renderStatusBar creates the status bar with model, tokens, and cwd
