@@ -81,8 +81,14 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			font-size: 14px;
 		}
 		.icon {
-			font-size: 24px;
-			margin-bottom: 4px;
+			margin-bottom: 8px;
+		}
+		.icon svg {
+			width: 32px;
+			height: 32px;
+			stroke: #888;
+			fill: none;
+			stroke-width: 1.5;
 		}
 		.instructions {
 			margin-top: 24px;
@@ -159,7 +165,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			<span class="hostname">{{.Hostname}}</span>
 		</div>
 		<div class="dropzone" id="dropzone">
-			<span class="icon">📁</span>
+			<span class="icon"><svg viewBox="0 0 24 24"><path d="M12 16V8m0 0l-3 3m3-3l3 3M3 16.5V18a2 2 0 002 2h14a2 2 0 002-2v-1.5M3 16.5l3.5-8A2 2 0 018.3 7h7.4a2 2 0 011.8 1.5l3.5 8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
 			<h2>Drop files here</h2>
 			<p>or click to browse</p>
 		</div>
@@ -227,6 +233,7 @@ func RunUploader(port int, uploadDir string) {
 	if hostname == "" {
 		hostname = "vm"
 	}
+	fullHostname := hostname + ".exe.xyz"
 
 	// Parse template
 	tmpl := template.Must(template.New("uploader").Parse(uploaderHTMLTemplate))
@@ -238,7 +245,7 @@ func RunUploader(port int, uploadDir string) {
 		}
 		w.Header().Set("Content-Type", "text/html")
 		tmpl.Execute(w, map[string]string{
-			"Hostname":  hostname,
+			"Hostname":  fullHostname,
 			"UploadDir": uploadDir,
 		})
 	})
