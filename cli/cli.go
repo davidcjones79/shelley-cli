@@ -922,21 +922,10 @@ func (m *Model) sendMessage() tea.Cmd {
 
 	// Auto-switch to Sonnet for image analysis if using expensive model and not explicitly set
 	hasImages := len(m.pendingAttachments) > 0
-	if hasImages && !m.modelExplicitlySet && m.config.Model == ModelOpus {
+	if hasImages && !m.modelExplicitlySet && m.restoreModel == "" && m.config.Model == ModelOpus {
+		// Don't override any temporary model change (e.g., GPT-5 from /pick)
 		if m.config.ModelManager != nil && m.config.ModelManager.HasModel(ModelSonnet) {
-			if newService, err := m.config.ModelManager.GetService(ModelSonnet); err == nil {
-				m.restoreModel = m.config.Model // Save to restore after this turn
-				m.config.Model = ModelSonnet
-				m.config.LLMService = newService
-				// Reset loop to use new model
-				if m.loop != nil {
-					if m.loopCancel != nil {
-						m.loopCancel()
-					}
-					m.loop = nil
-				}
-				m.showSystemMessage("Using Sonnet for image analysis (will restore Opus after)")
-			}
+			m.tempSwitchModel(ModelSonnet, "Using Sonnet for image analysis (will restore Opus after)")
 		}
 	}
 

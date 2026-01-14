@@ -199,6 +199,11 @@ func (m *Model) pickUploadedFile(arg string) tea.Cmd {
 
 	// For images, load directly as attachment to avoid path encoding issues
 	if file.Type == "image" {
+		// If user hasn't explicitly chosen a model, prefer GPT-5 for /pick image
+		if !m.modelExplicitlySet {
+			m.tempSwitchModel("gpt-5", "Using GPT-5 for image analysis from /pick (will restore after)")
+		}
+
 		maxImageDim := m.config.LLMService.MaxImageDimension()
 		att, err := loadImageAsAttachment(file.Path, maxImageDim)
 		if err != nil {

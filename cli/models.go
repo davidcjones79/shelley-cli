@@ -416,3 +416,42 @@ func (m *Model) showStatus() tea.Cmd {
 	m.updateViewportContent()
 	return nil
 }
+
+// tempSwitchModel switches to a target model for the next turn,
+// restoring the previous model after the response completes.
+// If already on the target model, it does nothing.
+func (m *Model) tempSwitchModel(targetModel, reason string) {
+	if m.config.ModelManager == nil {
+		return
+	}
+
+	// If we're already on the target model, nothing to do
+	if m.config.Model == targetModel {
+		return
+	}
+
+	// Only save restoreModel if we don't already have one pending
+	if m.restoreModel == "" {
+		m.restoreModel = m.config.Model
+	}
+
+	svc, err := m.config.ModelManager.GetService(targetModel)
+	if err != nil {
+		return
+	}
+
+	m.config.Model = targetModel
+	m.config.LLMService = svc
+
+	// Reset loop so next turn uses the new model
+	if m.loop != nil {
+		if m.loopCancel != nil {
+			m.loopCancel()
+		}
+		m.loop = nil
+	}
+
+	if reason != "" {
+		m.showSystemMessage(reason)
+	}
+}

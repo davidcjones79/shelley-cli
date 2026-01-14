@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"image"
+	"image/color"
+	"image/jpeg"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -200,5 +204,45 @@ func TestLoadImageAsAttachment(t *testing.T) {
 
 	if att.path != imgPath {
 		t.Errorf("got path = %q, want %q", att.path, imgPath)
+	}
+}
+
+func TestLoadImageAsAttachmentWithResize(t *testing.T) {
+	// Create a larger test image that will be resized
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "test.jpeg")
+	
+	// Create a simple 100x100 JPEG image
+	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	for y := 0; y < 100; y++ {
+		for x := 0; x < 100; x++ {
+			img.Set(x, y, color.RGBA{255, 0, 0, 255}) // Red pixels
+		}
+	}
+	
+	f, err := os.Create(imgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 85}); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+	
+	// Load with resize (50px max dimension - will trigger resize)
+	att, err := loadImageAsAttachment(imgPath, 50)
+	if err != nil {
+		t.Fatalf("loadImageAsAttachment() error = %v", err)
+	}
+	
+	// After resize, media type should still be valid
+	if att.mediaType != "image/jpeg" && att.mediaType != "image/png" {
+		t.Errorf("mediaType = %q, want 'image/jpeg' or 'image/png'", att.mediaType)
+	}
+	
+	// Should have image/ prefix
+	if !strings.HasPrefix(att.mediaType, "image/") {
+		t.Errorf("mediaType = %q, should start with 'image/'", att.mediaType)
 	}
 }
