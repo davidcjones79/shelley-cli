@@ -117,7 +117,7 @@ func (m *Model) listUploadedFiles() tea.Cmd {
 	entries, err := os.ReadDir(uploadsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			m.showSystemMessage(fmt.Sprintf("No uploads directory. Run 'shelley uploader' to start the upload server."))
+			m.showSystemMessage(fmt.Sprintf("No uploads directory. Run 'shelley igor' to summon Igor."))
 		} else {
 			m.showError("Failed to read uploads: " + err.Error())
 		}
@@ -125,7 +125,7 @@ func (m *Model) listUploadedFiles() tea.Cmd {
 	}
 
 	if len(entries) == 0 {
-		m.showSystemMessage("No files in ~/uploads. Drag files to the uploader page.")
+		m.showSystemMessage("No files in ~/uploads. Summon Igor with 'shelley igor'.")
 		return nil
 	}
 

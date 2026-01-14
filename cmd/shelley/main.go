@@ -57,7 +57,7 @@ func main() {
 		fmt.Fprintf(flag.CommandLine.Output(), "  serve [flags]                 Start the web server\n")
 
 		fmt.Fprintf(flag.CommandLine.Output(), "  unpack-template <name> <dir>  Unpack a project template to a directory\n")
-		fmt.Fprintf(flag.CommandLine.Output(), "  uploader [flags]              Start file upload server for drag & drop\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  igor [flags]                  Start Igor file transfer server\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  version                       Print version information as JSON\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "\nUse '%s <command> -h' for command-specific help\n", os.Args[0])
 	}
@@ -87,8 +87,8 @@ func main() {
 
 	case "unpack-template":
 		runUnpackTemplate(args[1:])
-	case "uploader":
-		runUploader(args[1:])
+	case "igor":
+		runIgor(args[1:])
 	case "version":
 		runVersion()
 	default:
@@ -666,8 +666,8 @@ func systemdListener() (net.Listener, error) {
 	return listener, nil
 }
 
-func runUploader(args []string) {
-	fs := flag.NewFlagSet("uploader", flag.ExitOnError)
+func runIgor(args []string) {
+	fs := flag.NewFlagSet("igor", flag.ExitOnError)
 	port := fs.Int("port", 8001, "Port to listen on")
 	dir := fs.String("dir", "", "Upload directory (default: ~/uploads)")
 	fs.Parse(args)
@@ -687,9 +687,9 @@ func runUploader(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Upload server running on :%d\n", *port)
-	fmt.Printf("Files will be saved to %s\n", uploadDir)
-	fmt.Printf("Drag & drop files at http://localhost:%d/\n", *port)
+	fmt.Printf("Igor awaits at :%d\n", *port)
+	fmt.Printf("Files directory: %s\n", uploadDir)
+	fmt.Printf("Open http://localhost:%d/\n", *port)
 
-	server.RunUploader(*port, uploadDir)
+	server.RunIgor(*port, uploadDir)
 }

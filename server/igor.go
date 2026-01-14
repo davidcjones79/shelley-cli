@@ -11,86 +11,120 @@ import (
 	"time"
 )
 
-const uploaderHTMLTemplate = `<!DOCTYPE html>
+const igorHTMLTemplate = `<!DOCTYPE html>
 <html>
 <head>
-	<title>Upload to {{.Hostname}}</title>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Igor - {{.Hostname}}</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 	<style>
 		* { box-sizing: border-box; }
 		body {
-			font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
-			background: #f5f5f5;
-			color: #333;
+			font-family: 'JetBrains Mono', monospace;
+			background: #fafafa;
+			color: #1a1a1a;
 			min-height: 100vh;
 			margin: 0;
 			padding: 0;
+			-webkit-font-smoothing: antialiased;
 		}
 		.navbar {
 			position: fixed;
 			top: 0;
 			left: 0;
 			right: 0;
-			background: #fff;
-			border-bottom: 1px solid #e0e0e0;
-			padding: 12px 24px;
+			background: rgba(250,250,250,0.9);
+			backdrop-filter: blur(10px);
+			border-bottom: 1px solid #e8e8e8;
+			padding: 14px 24px;
 			display: flex;
 			align-items: center;
-			gap: 8px;
+			gap: 10px;
+			z-index: 100;
 		}
 		.navbar-logo {
-			width: 28px;
-			height: 28px;
+			width: 24px;
+			height: 24px;
+			opacity: 0.8;
 		}
 		.navbar-brand {
-			font-size: 16px;
-			font-weight: 600;
-			color: #333;
+			font-size: 13px;
+			font-weight: 500;
+			color: #666;
+			letter-spacing: 0.02em;
 		}
 		.navbar-link {
 			display: flex;
 			align-items: center;
 			gap: 8px;
 			text-decoration: none;
+			transition: opacity 0.15s;
 		}
-		.navbar-link:hover .navbar-brand {
-			color: #666;
+		.navbar-link:hover {
+			opacity: 0.7;
 		}
 		.main {
 			display: flex;
-			justify-content: center;
-			padding-top: 120px;
+			flex-direction: column;
+			align-items: center;
+			padding-top: 100px;
 			padding-bottom: 40px;
+		}
+		.page-title {
+			margin-bottom: 24px;
+			text-align: center;
+		}
+		.page-title h1 {
+			font-size: 28px;
+			font-weight: 600;
+			color: #1a1a1a;
+			margin: 0 0 6px 0;
+			letter-spacing: -0.02em;
+		}
+		.page-title p {
+			font-size: 13px;
+			color: #888;
+			margin: 0;
 		}
 		.container {
 			background: #fff;
 			border: 1px solid #e0e0e0;
-			border-radius: 12px;
-			padding: 40px;
-			box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-			width: 480px;
+			border-radius: 8px;
+			padding: 32px;
+			box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+			width: 460px;
+			max-width: calc(100vw - 32px);
 		}
 		.vm-header {
 			display: flex;
 			align-items: center;
 			gap: 10px;
-			margin-bottom: 24px;
+			margin-bottom: 28px;
 		}
 		.status {
-			width: 10px;
-			height: 10px;
-			background: #22c55e;
+			width: 8px;
+			height: 8px;
+			background: #10b981;
 			border-radius: 50%;
+			box-shadow: 0 0 8px rgba(16,185,129,0.4);
+			animation: heartbeat 2s ease-in-out infinite;
+		}
+		@keyframes heartbeat {
+			0%, 100% { transform: scale(1); opacity: 1; }
+			50% { transform: scale(1.15); opacity: 0.8; }
 		}
 		.hostname {
-			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-			font-size: 18px;
+			font-size: 14px;
 			font-weight: 500;
-			color: #333;
+			color: #1a1a1a;
 			text-decoration: none;
+			letter-spacing: -0.01em;
 		}
 		.hostname:hover {
-			color: #666;
-			text-decoration: underline;
+			color: #10b981;
 		}
 		.dropzone {
 			width: 100%;
@@ -345,6 +379,67 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			background: #fee2e2;
 			color: #dc2626;
 		}
+		.recent-download {
+			width: 24px;
+			height: 24px;
+			border: none;
+			background: none;
+			color: #bbb;
+			cursor: pointer;
+			font-size: 14px;
+			padding: 0;
+			border-radius: 4px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			text-decoration: none;
+		}
+		.recent-download:hover {
+			background: #dbeafe;
+			color: #2563eb;
+		}
+		.recent-copy {
+			width: 24px;
+			height: 24px;
+			border: none;
+			background: none;
+			color: #bbb;
+			cursor: pointer;
+			font-size: 12px;
+			padding: 0;
+			border-radius: 4px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+		.recent-copy:hover {
+			background: #f0f0f0;
+			color: #666;
+		}
+		.toast {
+			position: fixed;
+			top: 80px;
+			left: 50%;
+			transform: translateX(-50%) translateY(-20px);
+			background: #1a1a1a;
+			color: #fff;
+			padding: 12px 24px;
+			border-radius: 8px;
+			font-size: 14px;
+			font-weight: 500;
+			box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+			opacity: 0;
+			transition: all 0.3s ease;
+			pointer-events: none;
+			z-index: 200;
+		}
+		.toast.show {
+			opacity: 1;
+			transform: translateX(-50%) translateY(0);
+		}
+		.toast.success {
+			background: #10b981;
+		}
 		.recent-empty {
 			font-size: 13px;
 			color: #888;
@@ -386,6 +481,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 	</style>
 </head>
 <body>
+	<div class="toast" id="toast"></div>
 	<nav class="navbar">
 		<a href="https://exe.dev/" class="navbar-link">
 			<img class="navbar-logo" src="https://exe.dev/static/exy.png" alt="exe.dev">
@@ -393,15 +489,19 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 		</a>
 	</nav>
 	<div class="main">
+	<div class="page-title">
+		<h1>⚡ Igor</h1>
+		<p>Your faithful laboratory assistant</p>
+	</div>
 	<div class="container">
 		<div class="vm-header">
 			<span class="status"></span>
 			<a class="hostname" href="https://exe.dev/vm/{{.ShortHostname}}">{{.Hostname}}</a>
 		</div>
 		<div class="dropzone" id="dropzone">
-			<span class="icon"><svg viewBox="0 0 24 24"><path d="M12 16V8m0 0l-3 3m3-3l3 3M3 16.5V18a2 2 0 002 2h14a2 2 0 002-2v-1.5M3 16.5l3.5-8A2 2 0 018.3 7h7.4a2 2 0 011.8 1.5l3.5 8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-			<h2>Drop files here</h2>
-			<p>or click to browse</p>
+			<span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+			<h2>Drop files here, Master</h2>
+			<p>Igor will fetch them for you</p>
 		</div>
 		<div class="result" id="result"></div>
 		<div class="result-hint" id="result-hint">Click path to copy • Use <code>/pick</code> in Shelley CLI to analyze</div>
@@ -411,7 +511,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 				<span class="instructions-arrow"></span>
 			</div>
 			<div class="instructions-body">
-				<p>Upload files from your local machine to your exe.dev VM. Perfect for sharing screenshots, images, documents, or code files with the Shelley AI agent.</p>
+				<p>Igor fetches files between your machine and the laboratory. Upload specimens for experiments, retrieve results when ready.</p>
 				<h4>How to use</h4>
 				<ol>
 					<li>Drag and drop files (or click to browse)</li>
@@ -421,11 +521,11 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 				<p class="supported">Supports images, CSV, JSON, Markdown, code files, and more.</p>
 			</div>
 		</div>
-		<div class="upload-dir">Files saved to <code>{{.UploadDir}}</code></div>
-		<div class="recent collapsed" id="recent">
+		<div class="upload-dir">Laboratory storage: <code>{{.UploadDir}}</code></div>
+		<div class="recent" id="recent">
 			<div class="recent-header" onclick="toggleRecent()">
 				<div class="recent-toggle">
-					<h3>Recent uploads</h3>
+					<h3>Specimens</h3>
 					<span class="recent-count" id="recent-count">0</span>
 				</div>
 				<span class="recent-arrow"></span>
@@ -471,7 +571,21 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			result.textContent = paths.join('\n');
 			result.classList.add('show');
 			resultHint.classList.add('show');
+			showToast("\u26a1 It's alive!", 'success');
 			loadRecent();
+		}
+
+		function showToast(message, type = '') {
+			const toast = document.getElementById('toast');
+			toast.textContent = message;
+			toast.className = 'toast show' + (type ? ' ' + type : '');
+			setTimeout(() => { toast.className = 'toast'; }, 2500);
+		}
+
+		function copyPath(filename) {
+			const path = '{{.UploadDir}}/' + filename;
+			navigator.clipboard.writeText(path);
+			showToast('Path copied: ' + path);
 		}
 
 		result.addEventListener('click', () => {
@@ -537,7 +651,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 				recentCount.textContent = files.length;
 				deleteAllBtn.style.display = files.length > 0 ? 'block' : 'none';
 				if (files.length === 0) {
-					recentList.innerHTML = '<li class="recent-empty">No uploads yet</li>';
+					recentList.innerHTML = '<li class="recent-empty">No specimens yet, Master</li>';
 					return;
 				}
 				recentList.innerHTML = files.map(f => {
@@ -547,7 +661,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 						? '<img class="recent-thumb" src="' + fileUrl + '" onclick="showPreview(\'' + fileUrl + '\')">' 
 						: '<span class="recent-icon">' + icon + '</span>';
 					const safeName = escapeHtml(f.name);
-					return '<li class="recent-item">' + thumb + '<span class="recent-name">' + safeName + '</span><span class="recent-meta">' + f.size + '</span><button class="recent-delete" onclick="deleteFile(\'' + encodeURIComponent(f.name) + '\')" title="Delete">&times;</button></li>';
+					return '<li class="recent-item">' + thumb + '<span class="recent-name">' + safeName + '</span><span class="recent-meta">' + f.size + '</span><button class="recent-copy" onclick="copyPath(\'' + escapeHtml(f.name) + '\')" title="Copy path">📋</button><a class="recent-download" href="/download/' + encodeURIComponent(f.name) + '" title="Download">⬇</a><button class="recent-delete" onclick="deleteFile(\'' + encodeURIComponent(f.name) + '\')" title="Delete">&times;</button></li>';
 				}).join('');
 			} catch(e) {
 				recentList.innerHTML = '<li class="recent-empty">Failed to load</li>';
@@ -558,8 +672,8 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 </body>
 </html>`
 
-// RunUploader starts the file upload server
-func RunUploader(port int, uploadDir string) {
+// RunIgor starts the Igor file transfer server
+func RunIgor(port int, uploadDir string) {
 	// Get hostname for display
 	hostname, _ := os.Hostname()
 	if hostname == "" {
@@ -568,7 +682,7 @@ func RunUploader(port int, uploadDir string) {
 	fullHostname := hostname + ".exe.xyz"
 
 	// Parse template
-	tmpl := template.Must(template.New("uploader").Parse(uploaderHTMLTemplate))
+	tmpl := template.Must(template.New("igor").Parse(igorHTMLTemplate))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -667,9 +781,9 @@ func RunUploader(port int, uploadDir string) {
 			}
 		}
 
-		// Limit to 5 most recent
-		if len(files) > 5 {
-			files = files[:5]
+		// Limit to 20 most recent
+		if len(files) > 20 {
+			files = files[:20]
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -682,6 +796,33 @@ func RunUploader(port int, uploadDir string) {
 		}
 		out += "]"
 		w.Write([]byte(out))
+	})
+
+	// Download files (with Content-Disposition to force download)
+	http.HandleFunc("/download/", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Path[len("/download/"):]
+		if name == "" || strings.Contains(name, "..") {
+			http.NotFound(w, r)
+			return
+		}
+		filePath := filepath.Join(uploadDir, name)
+		
+		// Check file exists
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			http.NotFound(w, r)
+			return
+		}
+		
+		// Force download with original filename (strip timestamp prefix if present)
+		downloadName := name
+		if idx := strings.Index(name, "_"); idx > 0 && idx < 12 {
+			// Check if prefix looks like a timestamp
+			if _, err := fmt.Sscanf(name[:idx], "%d", new(int64)); err == nil {
+				downloadName = name[idx+1:]
+			}
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", downloadName))
+		http.ServeFile(w, r, filePath)
 	})
 
 	// Serve individual files (for thumbnails) and handle DELETE
