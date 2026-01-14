@@ -58,7 +58,7 @@ Add the export to your `~/.bashrc` to persist across sessions.
 - **Tool execution** - Runs bash commands, edits files, takes screenshots
 - **Conversation sync** - Share conversations with the Shelley web UI via SQLite
 - **Multi-model support** - Switch between Claude, GPT, and open source models on the fly
-- **Image attachments** - Drag-drop images into terminal or use `/attach`
+- **Image attachments** - Attach local images via `/attach` or use remote image analysis
 - **Tab completion** - Complete file paths and slash commands
 - **Prompt history** - Up/Down arrows cycle through previous prompts
 - **Git integration** - View recent commits and diffs inline
@@ -195,11 +195,21 @@ Conversations sync to the database by default, so you can switch between CLI and
 | `/image <path>` | Same as `/attach` |
 | `/describe <path> [prompt]` | Analyze image with vision model |
 | `/attachments` | List pending attachments |
+| `/imglist` | List available image descriptions from remote analysis |
+| `/imgresult [n]` | Inject image description into conversation |
 
-You can also:
-- Drag-drop image files into the terminal
-- Paste file paths directly in your message
-- Use bracketed paths like `[/path/to/image.png]`
+**Note:** Terminal applications cannot receive drag-and-drop images. For images on your local machine, you have these options:
+
+1. **Switch to web client** - The Shelley web UI supports drag-and-drop. Use `/conversations` to find your conversation ID, then open it in the web UI at the same path.
+
+2. **Use the `describe-image` script** - Download from `scripts/describe-image` to your local Mac. It uploads images to your VM and analyzes them:
+   ```bash
+   # On your local machine:
+   describe-image -v myvm screenshot.png "What's in this image?"
+   ```
+   Then in the CLI, use `/imglist` to see results and `/imgresult` to inject into your conversation.
+
+3. **For images already on the VM** - Use `/attach /path/to/image.png` or include the path in brackets in your message: `[/path/to/image.png]`
 
 Supported formats: PNG, JPG, JPEG, GIF, WEBP
 
