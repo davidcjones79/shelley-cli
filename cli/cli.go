@@ -259,6 +259,10 @@ type Model struct {
 	// Frankenstein easter egg - themed status messages
 	frankenstein bool
 
+	// Consent screen - shown on first launch
+	showConsent   bool
+	consentCursor int // 0 = Yes, 1 = No
+
 	// Database conversation (when DB is configured)
 	conversationID string
 	lastGitState   *gitstate.GitState
@@ -348,6 +352,9 @@ func New(cfg Config) (*Model, error) {
 	// This prevents arrow keys from scrolling (we use them for command history)
 	vp.KeyMap = viewport.KeyMap{}
 
+	// Show consent screen for new conversations (not when resuming)
+	needsConsent := cfg.ConversationID == ""
+
 	m := &Model{
 		config:         cfg,
 		textarea:       ta,
@@ -365,6 +372,7 @@ func New(cfg Config) (*Model, error) {
 		conversationID: cfg.ConversationID,
 		mouseEnabled:   true,
 		frankenstein:   true, // Themed status messages enabled by default
+		showConsent:    needsConsent,
 		toolNames:      make(map[string]string),
 		toolInputs:     make(map[string]json.RawMessage),
 	}
@@ -436,6 +444,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle consent screen input first
+		if m.showConsent {
+			return m.handleConsentInput(msg)
+		}
+
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			m.quitting = true
@@ -1328,6 +1341,139 @@ const exyASCII = `
                       . ... .*-  .:+... .                                  
 `
 
+// renderConsentScreen shows the initial consent/warning screen
+func (m *Model) renderConsentScreen() string {
+	var sb strings.Builder
+
+	// Center the content vertically
+	verticalPadding := (m.height - 18) / 2
+	if verticalPadding < 0 {
+		verticalPadding = 0
+	}
+	for i := 0; i < verticalPadding; i++ {
+		sb.WriteString("\n")
+	}
+
+	// Title
+	title := m.styles.HeaderTitle.Render("Shelley wants to work here")
+	sb.WriteString(centerText(title, m.width))
+	sb.WriteString("\n\n")
+
+	// Working directory - prominently displayed
+	wdStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("39")).
+		Bold(true)
+	wd := wdStyle.Render(m.config.WorkingDir)
+	sb.WriteString(centerText(wd, m.width))
+	sb.WriteString("\n\n")
+
+	// Permission explanation
+	explain := m.styles.SystemMessage.Render("To help you, Shelley needs permission to:")
+	sb.WriteString(centerText(explain, m.width))
+	sb.WriteString("\n\n")
+
+	// Capabilities list
+	bullets := []string{
+		"• Read files in this directory and subdirectories",
+		"• Create, modify, or delete files",
+		"• Execute shell commands (git, npm, make, etc.)",
+	}
+	if m.config.EnableBrowser {
+		bullets = append(bullets, "• Control a browser and take screenshots")
+	}
+
+	for _, bullet := range bullets {
+		sb.WriteString(centerText(bullet, m.width))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+
+	// Selection options
+	yesLabel := "  1. Yes, let's go"
+	noLabel := "  2. No, exit"
+
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("39")).
+		Bold(true)
+	unselectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245"))
+
+	if m.consentCursor == 0 {
+		yesLabel = selectedStyle.Render("❯ 1. Yes, let's go")
+		noLabel = unselectedStyle.Render(noLabel)
+	} else {
+		yesLabel = unselectedStyle.Render(yesLabel)
+		noLabel = selectedStyle.Render("❯ 2. No, exit")
+	}
+
+	sb.WriteString(centerText(yesLabel, m.width))
+	sb.WriteString("\n")
+	sb.WriteString(centerText(noLabel, m.width))
+	sb.WriteString("\n\n")
+
+	// Help text
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
+	help := helpStyle.Render("↑/↓ to select · Enter to confirm · Esc to cancel")
+	sb.WriteString(centerText(help, m.width))
+
+	return sb.String()
+}
+
+// centerText centers text within the given width
+func centerText(text string, width int) string {
+	textWidth := lipgloss.Width(text)
+	if textWidth >= width {
+		return text
+	}
+	padding := (width - textWidth) / 2
+	return strings.Repeat(" ", padding) + text
+}
+
+// handleConsentInput processes key events on the consent screen
+func (m *Model) handleConsentInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlC, tea.KeyEscape:
+		m.quitting = true
+		return m, tea.Quit
+
+	case tea.KeyUp, tea.KeyShiftTab:
+		if m.consentCursor > 0 {
+			m.consentCursor--
+		}
+		return m, nil
+
+	case tea.KeyDown, tea.KeyTab:
+		if m.consentCursor < 1 {
+			m.consentCursor++
+		}
+		return m, nil
+
+	case tea.KeyEnter:
+		if m.consentCursor == 0 {
+			// User accepted
+			m.showConsent = false
+			return m, nil
+		}
+		// User declined
+		m.quitting = true
+		return m, tea.Quit
+
+	case tea.KeyRunes:
+		// Handle number keys
+		if len(msg.Runes) == 1 {
+			switch msg.Runes[0] {
+			case '1', 'y', 'Y':
+				m.showConsent = false
+				return m, nil
+			case '2', 'n', 'N':
+				m.quitting = true
+				return m, tea.Quit
+			}
+		}
+	}
+	return m, nil
+}
+
 // renderWelcome creates the welcome message shown on startup
 func (m *Model) renderWelcome() string {
 	var sb strings.Builder
@@ -1424,6 +1570,11 @@ func (m *Model) View() string {
 
 	if !m.ready {
 		return "Initializing...\n"
+	}
+
+	// Show consent screen if needed
+	if m.showConsent {
+		return m.renderConsentScreen()
 	}
 
 	// ========== HEADER (always visible at top) ==========
