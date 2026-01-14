@@ -56,14 +56,20 @@ if [ ! -f ~/.config/shelley/shelley.json ]; then
 EOF
 fi
 
-# Create wrapper script that includes config
+# Create wrapper script in ~/.local/bin (takes precedence over /usr/local/bin)
+mkdir -p ~/.local/bin
 echo "🔗 Installing shelley command..."
-cat > /tmp/shelley-wrapper << EOF
+cat > ~/.local/bin/shelley << EOF
 #!/bin/bash
 exec $HOME/shelley-cli/bin/shelley --config $HOME/.config/shelley/shelley.json "\$@"
 EOF
-sudo mv /tmp/shelley-wrapper /usr/local/bin/shelley
-sudo chmod +x /usr/local/bin/shelley
+chmod +x ~/.local/bin/shelley
+
+# Ensure ~/.local/bin is in PATH
+if ! grep -q 'export PATH="\$HOME/.local/bin:\$PATH"' ~/.bashrc 2>/dev/null; then
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+fi
+export PATH="$HOME/.local/bin:$PATH"
 
 # Install uploader service
 if [ -d "/exe.dev" ]; then
