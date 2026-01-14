@@ -92,7 +92,7 @@ EOF
 Then add an alias to your `~/.bashrc`:
 
 ```bash
-alias shelley='~/shelley-cli/shelley --config ~/.config/shelley/shelley.json'
+alias shelley='~/shelley-cli/bin/shelley -db ~/.config/shelley/shelley.db -config /exe.dev/shelley.json'
 ```
 
 Now you can simply run:
