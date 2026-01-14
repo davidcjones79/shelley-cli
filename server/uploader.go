@@ -225,7 +225,11 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 		}
 		.recent-arrow {
 			font-size: 12px;
-			color: #888;
+			width: 0;
+			height: 0;
+			border-left: 5px solid transparent;
+			border-right: 5px solid transparent;
+			border-top: 6px solid #888;
 			transition: transform 0.2s;
 		}
 		.recent.collapsed .recent-arrow {
@@ -374,7 +378,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 					<h3>Recent uploads</h3>
 					<span class="recent-count" id="recent-count">0</span>
 				</div>
-				<span class="recent-arrow">▼</span>
+				<span class="recent-arrow"></span>
 			</div>
 			<div class="recent-body">
 				<ul class="recent-list" id="recent-list"></ul>
