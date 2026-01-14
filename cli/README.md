@@ -52,6 +52,24 @@ export ANTHROPIC_API_KEY="your-api-key-here"
 
 Add the export to your `~/.bashrc` to persist across sessions.
 
+### Using Custom API Endpoints
+
+To use custom API endpoints (e.g., Azure OpenAI, local models, or other proxies), set the base URL environment variables:
+
+```bash
+# Anthropic
+export ANTHROPIC_API_KEY="your-api-key"
+export ANTHROPIC_BASE_URL="https://your-proxy.example.com/anthropic"
+
+# OpenAI
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_BASE_URL="https://your-proxy.example.com/openai/v1"
+
+# Fireworks
+export FIREWORKS_API_KEY="your-api-key"
+export FIREWORKS_BASE_URL="https://your-proxy.example.com/fireworks/inference/v1"
+```
+
 ## Features
 
 - **Streaming responses** - See text as it's generated, token by token
