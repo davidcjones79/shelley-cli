@@ -493,10 +493,11 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			lightbox.classList.add('show');
 		}
 
-		async function deleteFile(name) {
+		async function deleteFile(encodedName) {
+			const name = decodeURIComponent(encodedName);
 			if (!confirm('Delete ' + name + '?')) return;
 			try {
-				await fetch('/file/' + encodeURIComponent(name), { method: 'DELETE' });
+				await fetch('/file/' + encodedName, { method: 'DELETE' });
 				loadRecent();
 			} catch(e) {
 				alert('Failed to delete');
@@ -525,6 +526,10 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			document.getElementById('instructions').classList.toggle('collapsed');
 		}
 
+		function escapeHtml(s) {
+			return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+		}
+
 		async function loadRecent() {
 			try {
 				const resp = await fetch('/files');
@@ -541,7 +546,8 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 					const thumb = f.type === 'image' 
 						? '<img class="recent-thumb" src="' + fileUrl + '" onclick="showPreview(\'' + fileUrl + '\')">' 
 						: '<span class="recent-icon">' + icon + '</span>';
-					return '<li class="recent-item">' + thumb + '<span class="recent-name">' + f.name + '</span><span class="recent-meta">' + f.size + '</span><button class="recent-delete" onclick="deleteFile(\'' + f.name.replace(/'/g, "\\'") + '\')" title="Delete">&times;</button></li>';
+					const safeName = escapeHtml(f.name);
+					return '<li class="recent-item">' + thumb + '<span class="recent-name">' + safeName + '</span><span class="recent-meta">' + f.size + '</span><button class="recent-delete" onclick="deleteFile(\'' + encodeURIComponent(f.name) + '\')" title="Delete">&times;</button></li>';
 				}).join('');
 			} catch(e) {
 				recentList.innerHTML = '<li class="recent-empty">Failed to load</li>';
