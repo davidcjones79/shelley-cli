@@ -204,7 +204,7 @@ func loadImageAsAttachment(path string, maxImageDimension int) (*imageAttachment
 		resized, newFormat, _, err := imageutil.ResizeImage(data, maxImageDimension)
 		if err == nil {
 			data = resized
-			contentType = newFormat
+			contentType = "image/" + newFormat // newFormat is "jpeg" or "png"
 		}
 		// If resize fails, just use original
 	}
