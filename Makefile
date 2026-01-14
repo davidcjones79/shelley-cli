@@ -43,7 +43,7 @@ build-linux-x86: ui templates
 # Build UI
 ui:
 	@echo "Building UI..."
-	cd ui && npm install && npm run build
+	cd ui && PATH="/usr/local/bin:/usr/bin:/bin:$$PATH" npm install && PATH="/usr/local/bin:/usr/bin:/bin:$$PATH" npm run build
 
 # Run Go tests
 test-go: ui
