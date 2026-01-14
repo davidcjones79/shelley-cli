@@ -233,7 +233,7 @@ sudo systemctl enable igor
 sudo systemctl start igor
 ```
 
-Then access `https://your-vm.exe.xyz:8001/` anytime (authenticated via exe.dev).
+Then access `https://your-vm.exe.xyz:8099/` anytime (authenticated via exe.dev).
 
 **Manual start:**
 
@@ -241,7 +241,7 @@ Then access `https://your-vm.exe.xyz:8001/` anytime (authenticated via exe.dev).
 shelley igor
 ```
 
-This starts Igor at `http://localhost:8001`. Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
+This starts Igor at `http://localhost:8099`. Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
 
 #### Igor Features
 
@@ -256,7 +256,7 @@ This starts Igor at `http://localhost:8001`. Open it in your browser, drag and d
 #### Command Line Options
 
 ```bash
-shelley igor              # Start on default port 8001
+shelley igor              # Start on default port 8099
 shelley igor -port 8080   # Use custom port
 shelley igor -dir /tmp    # Use custom upload directory
 ```

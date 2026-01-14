@@ -73,7 +73,7 @@ if [ -d "/exe.dev" ]; then
     echo ""
     echo "   Run:  shelley chat"
     echo ""
-    echo "   Igor: https://${HOSTNAME}.exe.xyz:8001/"
+    echo "   Igor: https://${HOSTNAME}.exe.xyz:8099/"
 else
     echo ""
     echo "✅ Shelley CLI installed!"

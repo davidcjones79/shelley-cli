@@ -21,7 +21,7 @@ This installs the CLI with Igor file transfer service. See [cli/README.md](cli/R
   - Mac built-in Terminal - works, but not as well as the others. If mouse scrolling is enabled, selecting text is difficult without first disabling it via `/mouse`
 - **Igor** - Your faithful laboratory assistant for file transfers (`shelley igor`)
 - **`/pick` Command** - Quick workflow to analyze uploaded files
-- **Systemd Service** - Igor runs persistently at `https://your-vm.exe.xyz:8001/`
+- **Systemd Service** - Igor runs persistently at `https://your-vm.exe.xyz:8099/`
 
 ## Keyboard Shortcuts
 

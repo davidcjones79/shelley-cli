@@ -668,7 +668,7 @@ func systemdListener() (net.Listener, error) {
 
 func runIgor(args []string) {
 	fs := flag.NewFlagSet("igor", flag.ExitOnError)
-	port := fs.Int("port", 8001, "Port to listen on")
+	port := fs.Int("port", 8099, "Port to listen on")
 	dir := fs.String("dir", "", "Upload directory (default: ~/uploads)")
 	fs.Parse(args)
 
