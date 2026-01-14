@@ -125,6 +125,7 @@ func (m *Model) switchModel(modelID string) tea.Cmd {
 	oldModel := m.config.Model
 	m.config.Model = modelID
 	m.config.LLMService = newService
+	m.modelExplicitlySet = true // User explicitly chose this model
 
 	// If we have an active loop, we need to restart it with the new model
 	// The next message will create a new loop with the updated service

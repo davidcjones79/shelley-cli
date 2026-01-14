@@ -253,6 +253,10 @@ type Model struct {
 	// Available models cache (for number selection)
 	availableModels []string
 
+	// Track if user explicitly set model (vs using default)
+	// If false and images are attached, we auto-switch to Sonnet
+	modelExplicitlySet bool
+
 	// Last viewport content (to avoid unnecessary updates)
 	lastViewportContent string
 
@@ -891,6 +895,25 @@ func (m *Model) sendMessage() tea.Cmd {
 	}
 	if cleanedText != "" {
 		text = cleanedText
+	}
+
+	// Auto-switch to Sonnet for image analysis if using expensive model and not explicitly set
+	hasImages := len(m.pendingAttachments) > 0
+	if hasImages && !m.modelExplicitlySet && m.config.Model == ModelOpus {
+		if m.config.ModelManager != nil && m.config.ModelManager.HasModel(ModelSonnet) {
+			if newService, err := m.config.ModelManager.GetService(ModelSonnet); err == nil {
+				m.config.Model = ModelSonnet
+				m.config.LLMService = newService
+				// Reset loop to use new model
+				if m.loop != nil {
+					if m.loopCancel != nil {
+						m.loopCancel()
+					}
+					m.loop = nil
+				}
+				m.showSystemMessage("Auto-switched to Sonnet for image analysis (use /model to change)")
+			}
+		}
 	}
 
 	// Build message content with text and any pending attachments
