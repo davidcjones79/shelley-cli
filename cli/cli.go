@@ -981,7 +981,8 @@ func (m *Model) updateViewportContent() {
 	var content strings.Builder
 
 	// Show welcome message if no messages yet
-	if len(m.messages) == 0 && m.streamingText.Len() == 0 {
+	showingWelcome := len(m.messages) == 0 && m.streamingText.Len() == 0
+	if showingWelcome {
 		content.WriteString(m.renderWelcome())
 	}
 
@@ -1009,11 +1010,15 @@ func (m *Model) updateViewportContent() {
 		// Check if user was at bottom before update
 		wasAtBottom := m.viewport.AtBottom()
 		
+		// Detect transition from welcome message to real content
+		wasShowingWelcome := strings.Contains(m.lastViewportContent, "Welcome to Shelley CLI")
+		transitionFromWelcome := wasShowingWelcome && !showingWelcome
+		
 		m.lastViewportContent = newContent
 		m.viewport.SetContent(newContent)
 		
-		// Only auto-scroll if user was already at bottom
-		if wasAtBottom {
+		// Auto-scroll if at bottom OR transitioning from welcome screen
+		if wasAtBottom || transitionFromWelcome {
 			m.viewport.GotoBottom()
 		}
 	}
@@ -1138,6 +1143,9 @@ func (m *Model) finalizeStreamingText() {
 // renderWelcome creates the welcome message shown on startup
 func (m *Model) renderWelcome() string {
 	var sb strings.Builder
+
+	// Add spacing at top
+	sb.WriteString("\n\n")
 
 	// Use styles for consistent look
 	title := m.styles.HeaderTitle.Render("Welcome to Shelley CLI")
