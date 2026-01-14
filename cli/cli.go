@@ -999,10 +999,16 @@ func (m *Model) initLoop() error {
 		}
 
 		// Send to response channel for UI update
-		select {
-		case m.responseChan <- responseMsg{message: message, usage: usage}:
-		default:
-			// Channel full, skip
+		// For EndOfTurn messages, use blocking send to ensure processing state is updated
+		if message.EndOfTurn {
+			m.responseChan <- responseMsg{message: message, usage: usage}
+		} else {
+			// Non-EndOfTurn messages can be dropped if channel is full
+			select {
+			case m.responseChan <- responseMsg{message: message, usage: usage}:
+			default:
+				// Channel full, skip intermediate messages
+			}
 		}
 		return nil
 	}
