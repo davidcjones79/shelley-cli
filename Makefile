@@ -43,7 +43,7 @@ build-linux-x86: ui templates
 # Build UI
 ui:
 	@echo "Building UI..."
-	cd ui && pnpm install --frozen-lockfile && pnpm run build
+	cd ui && pnpm install --frozen-lockfile --ignore-scripts && pnpm rebuild && pnpm run build
 
 # Run Go tests
 test-go: ui
