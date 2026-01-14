@@ -22,9 +22,35 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			color: #333;
 			min-height: 100vh;
 			margin: 0;
+			padding: 0;
+		}
+		.navbar {
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			background: #fff;
+			border-bottom: 1px solid #e0e0e0;
+			padding: 12px 24px;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+		.navbar-logo {
+			width: 28px;
+			height: 28px;
+		}
+		.navbar-brand {
+			font-size: 16px;
+			font-weight: 600;
+			color: #333;
+		}
+		.main {
+			min-height: 100vh;
 			display: flex;
 			align-items: center;
 			justify-content: center;
+			padding-top: 60px;
 		}
 		.container {
 			background: #fff;
@@ -34,15 +60,11 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 			max-width: 480px;
 		}
-		.header {
+		.vm-header {
 			display: flex;
 			align-items: center;
 			gap: 10px;
 			margin-bottom: 24px;
-		}
-		.logo {
-			width: 32px;
-			height: 32px;
 		}
 		.status {
 			width: 10px;
@@ -163,9 +185,13 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 	</style>
 </head>
 <body>
+	<nav class="navbar">
+		<img class="navbar-logo" src="https://exe.dev/static/exy.png" alt="exe.dev">
+		<span class="navbar-brand">exe.dev</span>
+	</nav>
+	<div class="main">
 	<div class="container">
-		<div class="header">
-			<img class="logo" src="https://exe.dev/static/exy.png" alt="exe.dev">
+		<div class="vm-header">
 			<span class="status"></span>
 			<span class="hostname">{{.Hostname}}</span>
 		</div>
@@ -185,6 +211,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			</ol>
 		</div>
 		<div class="upload-dir">Files saved to <code>{{.UploadDir}}</code></div>
+	</div>
 	</div>
 	<input type="file" id="fileInput" multiple>
 	<script>
