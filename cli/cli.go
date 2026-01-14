@@ -364,6 +364,7 @@ func New(cfg Config) (*Model, error) {
 		verbose:        cfg.Verbose,
 		conversationID: cfg.ConversationID,
 		mouseEnabled:   true,
+		frankenstein:   true, // Themed status messages enabled by default
 		toolNames:      make(map[string]string),
 		toolInputs:     make(map[string]json.RawMessage),
 	}
@@ -1328,6 +1329,9 @@ func (m *Model) renderWelcome() string {
 	sb.WriteString("  • Up/Down arrows - cycle through prompt history\n")
 	sb.WriteString("  • Tab - complete file paths and commands\n")
 	sb.WriteString("  • Ctrl+U/D or PgUp/PgDown - scroll messages\n")
+	sb.WriteString("\n")
+
+	sb.WriteString(hint("Tip:") + " Use " + cmd("/frankenstein") + " to toggle themed status messages\n")
 
 	return sb.String()
 }
