@@ -147,6 +147,14 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 		.instructions li {
 			margin-bottom: 4px;
 		}
+		.instructions p {
+			margin: 0 0 12px 0;
+		}
+		.instructions .supported {
+			margin: 12px 0 0 0;
+			font-size: 13px;
+			color: #888;
+		}
 		.result {
 			margin-top: 16px;
 			padding: 12px 16px;
@@ -203,12 +211,15 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 		<div class="result" id="result"></div>
 		<div class="result-hint" id="result-hint">Click path to copy • Use <code>/pick</code> in Shelley CLI to analyze</div>
 		<div class="instructions">
+			<h3>About</h3>
+			<p>Upload files from your local machine to your exe.dev VM. Perfect for sharing screenshots, images, documents, or code files with the Shelley AI agent running on your VM.</p>
 			<h3>How to use</h3>
 			<ol>
-				<li>Drop files here to upload to your VM</li>
-				<li>In Shelley CLI, type <code>/pick</code> to list uploads</li>
-				<li>Type <code>/pick 1</code> to analyze the first file</li>
+				<li>Drag and drop files (or click to browse)</li>
+				<li>In Shelley CLI, type <code>/pick</code> to list your uploads</li>
+				<li>Type <code>/pick 1</code> to have Shelley analyze the file</li>
 			</ol>
+			<p class="supported">Supports images, CSV, JSON, Markdown, code files, and more.</p>
 		</div>
 		<div class="upload-dir">Files saved to <code>{{.UploadDir}}</code></div>
 	</div>
