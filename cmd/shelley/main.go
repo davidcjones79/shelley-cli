@@ -102,8 +102,9 @@ func runChat(global GlobalConfig, args []string) {
 	yesMode := fs.Bool("yes", false, "Auto-accept all tool operations (no confirmations)")
 	verbose := fs.Bool("verbose", false, "Show tool execution details")
 	enableBrowser := fs.Bool("browser", false, "Enable browser tools (screenshots, navigation, etc.)")
-	useDB := fs.Bool("sync", false, "Sync conversations with database (enables /conversations, /switch)")
-	conversationID := fs.String("conversation", "", "Resume specific conversation by ID or slug (requires -sync)")
+	useDB := fs.Bool("sync", true, "Sync conversations with database (enables /conversations, /switch)")
+	noSync := fs.Bool("no-sync", false, "Disable database sync (ephemeral conversation)")
+	conversationID := fs.String("conversation", "", "Resume specific conversation by ID or slug")
 	fs.Parse(args)
 
 	// Check for piped stdin
@@ -202,8 +203,8 @@ func runChat(global GlobalConfig, args []string) {
 		ModelManager:  manager,
 	}
 
-	// Set up database if sync is enabled
-	if *useDB {
+	// Set up database if sync is enabled (default: true, unless -no-sync)
+	if *useDB && !*noSync {
 		database, err := db.New(db.Config{DSN: global.DBPath})
 		if err != nil {
 			logger.Error("Failed to open database", "error", err)
@@ -233,7 +234,7 @@ func runChat(global GlobalConfig, args []string) {
 			logger.Info("Resuming conversation", "id", conv.ConversationID)
 		}
 	} else if *conversationID != "" {
-		logger.Error("-conversation requires -sync flag")
+		logger.Error("-conversation requires sync (don't use -no-sync)")
 		os.Exit(1)
 	}
 

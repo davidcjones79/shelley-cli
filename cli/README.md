@@ -70,8 +70,8 @@ Add the export to your `~/.bashrc` to persist across sessions.
 Usage: shelley chat [flags]
 
 Flags:
-  -sync              Sync conversations with database (enables /conversations, /switch)
-  -conversation ID   Resume specific conversation by ID or slug (requires -sync)
+  -conversation ID   Resume specific conversation by ID or slug
+  -no-sync           Disable database sync (ephemeral conversation)
   -browser           Enable browser tools (screenshots, navigation, etc.)
   -verbose           Show tool execution details (commands, inputs, outputs)
   -yes               Auto-accept all tool operations (no confirmation prompts)
@@ -81,14 +81,14 @@ Flags:
 ### Examples
 
 ```bash
-# Basic interactive chat
+# Basic interactive chat (syncs to database by default)
 shelley chat
 
-# With conversation persistence (syncs to web UI)
-shelley chat -sync
-
 # Resume a specific conversation
-shelley chat -sync -conversation my-project
+shelley chat -conversation my-project
+
+# Ephemeral conversation (not saved to database)
+shelley chat -no-sync
 
 # See all tool details
 shelley chat -verbose
@@ -167,7 +167,9 @@ Type `/help` in the CLI to see all available commands.
 | `/context` | Show context window usage |
 | `/usage` | Show token usage and estimated cost |
 
-### Conversations (requires `-sync` flag)
+### Conversations
+
+Conversations sync to the database by default, so you can switch between CLI and web UI seamlessly.
 
 | Command | Description |
 |---------|-------------|
@@ -233,22 +235,35 @@ Use `-yes` flag to skip all confirmations (for trusted automation).
 
 ## Conversation Sync
 
-With the `-sync` flag, conversations are stored in SQLite and can be:
+Conversations sync to the database **by default**, enabling seamless switching between CLI and web UI.
 
-1. **Continued later** - Use `/switch` to resume any conversation
-2. **Shared with web UI** - The same database is used by `shelley serve`
-3. **Searched** - Use `/search` to find conversations by content
+### CLI ↔ Web UI Workflow
 
+1. **Start in CLI, continue in web:**
+   ```bash
+   shelley chat
+   # ... have a conversation ...
+   # Check the conversation ID with /status or /conversations
+   ```
+   Then open the web UI (`shelley serve`) - your conversation is there.
+
+2. **Start in web, continue in CLI:**
+   ```bash
+   # Find the conversation ID/slug in the web UI, then:
+   shelley chat -conversation my-project
+   ```
+
+3. **Switch conversations from CLI:**
+   ```
+   /conversations     # list all
+   /switch my-proj    # switch by slug or ID
+   ```
+
+### Ephemeral Mode
+
+For throwaway conversations that don't need to be saved:
 ```bash
-# Start a synced conversation
-shelley chat -sync
-
-# Later, resume it
-shelley chat -sync -conversation my-project-name
-
-# Or switch from within the CLI
-/conversations     # list all
-/switch my-proj    # switch by slug
+shelley chat -no-sync
 ```
 
 ## Available Models
