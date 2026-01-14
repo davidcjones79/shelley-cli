@@ -17,6 +17,12 @@ if [ ! -d "/exe.dev" ]; then
     fi
 fi
 
+# Ensure pnpm is installed
+if ! command -v pnpm &> /dev/null; then
+    echo "📦 Installing pnpm..."
+    npm install -g pnpm
+fi
+
 # Clone or update repo
 if [ -d "$HOME/shelley-cli" ]; then
     echo "📦 Updating existing shelley-cli..."
