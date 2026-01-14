@@ -58,7 +58,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 		.main {
 			display: flex;
 			justify-content: center;
-			padding-top: 80px;
+			padding-top: 120px;
 			padding-bottom: 40px;
 		}
 		.container {
