@@ -173,8 +173,10 @@ Conversations sync to the database by default, so you can switch between CLI and
 
 | Command | Description |
 |---------|-------------|
-| `/conversations` | List recent conversations |
-| `/switch <id>` | Switch to conversation by ID or slug |
+| `/conversations` | List recent conversations (numbered) |
+| `/switch` | Switch to most recent conversation |
+| `/switch <n>` | Switch by number from `/conversations` list |
+| `/switch <id>` | Switch by conversation ID or slug |
 | `/new` | Start a new conversation |
 | `/search <query>` | Search conversations by content |
 | `/rename <slug>` | Rename current conversation |
