@@ -187,40 +187,7 @@ func (m *Model) pickUploadedFile(arg string) tea.Cmd {
 
 	// If we don't have a cached list, refresh it
 	if len(m.uploadedFiles) == 0 {
-		uploadsDir := getUploadsDir()
-		entries, err := os.ReadDir(uploadsDir)
-		if err != nil {
-			m.showError("Failed to read uploads: " + err.Error())
-			return nil
-		}
-
-		var files []uploadedFile
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			info, err := entry.Info()
-			if err != nil {
-				continue
-			}
-			name := entry.Name()
-			files = append(files, uploadedFile{
-				Path:    filepath.Join(uploadsDir, name),
-				Name:    name,
-				Size:    info.Size(),
-				ModTime: info.ModTime(),
-				Type:    detectFileType(name),
-			})
-		}
-
-		sort.Slice(files, func(i, j int) bool {
-			return files[i].ModTime.After(files[j].ModTime)
-		})
-
-		if len(files) > 10 {
-			files = files[:10]
-		}
-		m.uploadedFiles = files
+		m.refreshUploadedFiles()
 	}
 
 	if num > len(m.uploadedFiles) {
@@ -230,11 +197,22 @@ func (m *Model) pickUploadedFile(arg string) tea.Cmd {
 
 	file := m.uploadedFiles[num-1]
 
-	// Build prompt based on file type
+	// For images, load directly as attachment to avoid path encoding issues
+	if file.Type == "image" {
+		maxImageDim := m.config.LLMService.MaxImageDimension()
+		att, err := loadImageAsAttachment(file.Path, maxImageDim)
+		if err != nil {
+			m.showError(fmt.Sprintf("Failed to load image: %v", err))
+			return nil
+		}
+		m.pendingAttachments = append(m.pendingAttachments, *att)
+		m.textarea.SetValue(fmt.Sprintf("Please analyze this image (%s) and describe what you see.", file.Name))
+		return m.sendMessage()
+	}
+
+	// For non-image files, use the file path in the prompt
 	var prompt string
 	switch file.Type {
-	case "image":
-		prompt = fmt.Sprintf("Please analyze this image and describe what you see: %s", file.Path)
 	case "csv":
 		prompt = fmt.Sprintf("Please read and summarize this CSV file. Show the structure and key insights: %s", file.Path)
 	case "markdown":
@@ -247,7 +225,43 @@ func (m *Model) pickUploadedFile(arg string) tea.Cmd {
 		prompt = fmt.Sprintf("Please read and summarize this file: %s", file.Path)
 	}
 
-	// Set textarea content and send
 	m.textarea.SetValue(prompt)
 	return m.sendMessage()
+}
+
+// refreshUploadedFiles updates the cached list of uploaded files
+func (m *Model) refreshUploadedFiles() {
+	uploadsDir := getUploadsDir()
+	entries, err := os.ReadDir(uploadsDir)
+	if err != nil {
+		return
+	}
+
+	var files []uploadedFile
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		name := entry.Name()
+		files = append(files, uploadedFile{
+			Path:    filepath.Join(uploadsDir, name),
+			Name:    name,
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
+			Type:    detectFileType(name),
+		})
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].ModTime.After(files[j].ModTime)
+	})
+
+	if len(files) > 10 {
+		files = files[:10]
+	}
+	m.uploadedFiles = files
 }
