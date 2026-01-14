@@ -195,7 +195,7 @@ If you prefer working in the terminal but need a quick way to get files (screens
 shelley uploader
 ```
 
-This starts a web server at `http://localhost:8000` (or `https://your-vm.exe.xyz:8000` on exe.dev). Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
+This starts a web server at `http://localhost:8099` (or `https://your-vm.exe.xyz:8099` on exe.dev). Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
 
 | Command | Description |
 |---------|-------------|
@@ -204,7 +204,7 @@ This starts a web server at `http://localhost:8000` (or `https://your-vm.exe.xyz
 | `/pick <n>` | Analyze file n with Shelley |
 
 **Workflow:**
-1. Run `shelley uploader` (or add `-port 8001` for a custom port)
+1. Run `shelley uploader` (or add `-port 8080` for a custom port)
 2. Open the uploader URL in your browser
 3. Drag and drop files (screenshots, CSVs, code, etc.)
 4. In Shelley CLI, type `/pick` to see uploads
