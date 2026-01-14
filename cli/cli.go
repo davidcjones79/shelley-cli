@@ -686,7 +686,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				nextMsg := m.pendingMessages[0]
 				m.pendingMessages = m.pendingMessages[1:]
 				m.textarea.SetValue(nextMsg)
-				return m, m.sendMessage()
+				// Must continue listening for responses and streams after sending
+				m.sendMessage()
+				return m, tea.Batch(m.waitForResponse(), m.waitForStream())
 			}
 		}
 
