@@ -4,6 +4,9 @@
 #
 set -e
 
+# Ensure standard paths are available
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+
 echo "🐡 Installing Shelley CLI..."
 
 # Check if we're on exe.dev
