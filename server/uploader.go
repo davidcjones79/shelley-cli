@@ -56,11 +56,10 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			color: #666;
 		}
 		.main {
-			min-height: 100vh;
 			display: flex;
-			align-items: center;
 			justify-content: center;
-			padding-top: 60px;
+			padding-top: 80px;
+			padding-bottom: 40px;
 		}
 		.container {
 			background: #fff;
