@@ -17,16 +17,6 @@ if [ ! -d "/exe.dev" ]; then
     fi
 fi
 
-# Ensure pnpm is installed (use standalone installer - no sudo needed)
-if ! command -v pnpm &> /dev/null; then
-    echo "📦 Installing pnpm..."
-    curl -fsSL https://get.pnpm.io/install.sh | sh -
-fi
-
-# Ensure PATH includes pnpm and standard locations
-export PNPM_HOME="$HOME/.local/share/pnpm"
-export PATH="$PNPM_HOME:/usr/local/bin:/usr/bin:/bin:$PATH"
-
 # Clone or update repo
 if [ -d "$HOME/shelley-cli" ]; then
     echo "📦 Updating existing shelley-cli..."
