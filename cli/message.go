@@ -122,19 +122,16 @@ func (r *MessageRenderer) renderText(role llm.MessageRole, text string) string {
 	// Trim whitespace that glamour adds
 	rendered = strings.TrimSpace(rendered)
 
-	// Format with role label on its own line for better readability
-	var result strings.Builder
+	// Format with role-specific styling
 	switch role {
 	case llm.MessageRoleUser:
-		result.WriteString(r.styles.UserMessage.Render("▶ "))
-		result.WriteString(rendered)
+		// User messages: green with ▶ prefix
+		return r.styles.UserMessage.Render("▶ " + rendered)
 	case llm.MessageRoleAssistant:
-		result.WriteString(rendered)
+		return rendered
 	default:
-		result.WriteString(rendered)
+		return rendered
 	}
-
-	return result.String()
 }
 
 // renderToolUse renders a tool use block

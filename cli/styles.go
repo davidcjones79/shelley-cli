@@ -63,7 +63,7 @@ func DarkStyles() *Styles {
 		theme: ThemeDark,
 
 		UserMessage: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")). // White
+			Foreground(lipgloss.Color("10")). // Green - distinct from assistant's cyan
 			Bold(true),
 
 		AssistantMessage: lipgloss.NewStyle().
@@ -147,7 +147,7 @@ func LightStyles() *Styles {
 		theme: ThemeLight,
 
 		UserMessage: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("0")). // Black
+			Foreground(lipgloss.Color("22")). // Dark green - distinct from assistant's cyan
 			Bold(true),
 
 		AssistantMessage: lipgloss.NewStyle().
