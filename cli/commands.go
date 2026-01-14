@@ -232,6 +232,16 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	case "/imglist":
 		return m.listImageResults()
 
+	case "/pick":
+		if len(parts) > 1 {
+			// /pick <number> - directly pick a file
+			return m.pickUploadedFile(parts[1])
+		}
+		return m.listUploadedFiles()
+
+	case "/uploads":
+		return m.listUploadedFiles()
+
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
 		return nil
@@ -299,6 +309,10 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /cwd [path]    - Show or change working directory\n")
 	sb.WriteString("  /status        - Show session status\n")
 	sb.WriteString("  /export [file] - Export conversation to markdown\n")
+
+	sb.WriteString("\nFiles:\n")
+	sb.WriteString("  /pick [n]      - List uploads or pick file n to analyze\n")
+	sb.WriteString("  /uploads       - List files in ~/uploads\n")
 
 	sb.WriteString("\nGit:\n")
 	sb.WriteString("  /git           - List recent commits\n")

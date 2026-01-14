@@ -241,6 +241,9 @@ type Model struct {
 	// Recent conversations cache (for numbered selection)
 	recentConversations []string
 
+	// Uploaded files cache (for /pick command)
+	uploadedFiles []uploadedFile
+
 	// Verbosity - show tool details
 	verbose bool
 
