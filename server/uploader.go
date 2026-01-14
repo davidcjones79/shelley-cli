@@ -16,70 +16,77 @@ const uploaderHTML = `<!DOCTYPE html>
 	<style>
 		* { box-sizing: border-box; }
 		body {
-			font-family: -apple-system, system-ui, sans-serif;
-			background: #0f1629;
-			color: #eee;
+			font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+			background: #f5f5f5;
+			color: #333;
 			min-height: 100vh;
 			margin: 0;
 			display: flex;
 			align-items: center;
 			justify-content: center;
 		}
+		.container {
+			background: #fff;
+			border: 1px solid #e0e0e0;
+			border-radius: 12px;
+			padding: 48px;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+		}
 		.dropzone {
-			width: 90vw;
-			max-width: 800px;
-			height: 400px;
-			background: #1a2744;
-			border: 3px dashed #5b6eae;
-			border-radius: 24px;
+			width: 400px;
+			height: 200px;
+			background: #fafafa;
+			border: 2px dashed #d0d0d0;
+			border-radius: 8px;
 			display: flex;
 			flex-direction: column;
 			align-items: center;
 			justify-content: center;
-			gap: 12px;
-			transition: all 0.2s;
+			gap: 8px;
+			transition: all 0.15s;
 			cursor: pointer;
 		}
 		.dropzone:hover, .dropzone.drag-over {
-			border-color: #7b8eee;
-			background: #1e2d52;
+			border-color: #999;
+			background: #f0f0f0;
 		}
 		.dropzone h2 {
 			margin: 0;
 			font-weight: 500;
-			font-size: 28px;
-			color: #fff;
+			font-size: 16px;
+			color: #333;
 		}
 		.dropzone p {
 			margin: 0;
-			color: #8899bb;
-			font-size: 18px;
+			color: #888;
+			font-size: 14px;
 		}
 		.icon {
-			font-size: 32px;
-			margin-bottom: 8px;
+			font-size: 24px;
+			margin-bottom: 4px;
 		}
 		.result {
-			margin-top: 24px;
-			padding: 16px 24px;
-			background: #1a2744;
-			border-radius: 12px;
-			font-family: monospace;
-			font-size: 14px;
+			margin-top: 16px;
+			padding: 12px 16px;
+			background: #f5f5f5;
+			border: 1px solid #e0e0e0;
+			border-radius: 8px;
+			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+			font-size: 13px;
 			cursor: pointer;
 			display: none;
 			white-space: pre-wrap;
 			word-break: break-all;
-			border: 1px solid #2a3754;
+			color: #555;
 		}
-		.result:hover { background: #1e2d52; }
+		.result:hover { background: #eee; }
 		.result.show { display: block; }
-		.copied { color: #6c6; }
+		.copied { color: #22863a; }
 		input[type="file"] { display: none; }
 	</style>
 </head>
 <body>
-	<div>
+	<div class="container">
 		<div class="dropzone" id="dropzone">
 			<span class="icon">📁</span>
 			<h2>Drop files here</h2>
