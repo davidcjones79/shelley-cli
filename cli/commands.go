@@ -72,6 +72,15 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		m.showSystemMessage("Mouse mode: " + status)
 		return cmd
 
+	case "/frankenstein":
+		m.frankenstein = !m.frankenstein
+		if m.frankenstein {
+			m.showSystemMessage("🧪 Frankenstein mode enabled - status messages now honor Mary Shelley's legacy")
+		} else {
+			m.showSystemMessage("Frankenstein mode disabled - back to standard status messages")
+		}
+		return nil
+
 	// Database conversation commands
 	case "/conversations", "/convos":
 		return m.listConversations()
