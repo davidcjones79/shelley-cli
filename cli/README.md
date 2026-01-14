@@ -198,7 +198,7 @@ Conversations sync to the database by default, so you can switch between CLI and
 | `/imglist` | List available image descriptions from remote analysis |
 | `/imgresult [n]` | Inject image description into conversation |
 
-**Note:** Terminal applications cannot receive drag-and-drop images. For images on your local machine, you have these options:
+**Note:** Drag-and-drop only works if you're running the CLI locally on your computer (not recommended for exe.dev workflows). When SSHed into a remote VM, you have these options for working with local images:
 
 1. **Switch to web client** - The Shelley web UI supports drag-and-drop. Use `/conversations` to find your conversation ID, then open it in the web UI at the same path.
 
