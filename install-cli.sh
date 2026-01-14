@@ -56,13 +56,14 @@ if [ ! -f ~/.config/shelley/shelley.json ]; then
 EOF
 fi
 
-# Add alias if not already present
-if ! grep -q 'alias shelley=' ~/.bashrc 2>/dev/null; then
-    echo "📝 Adding shelley alias to ~/.bashrc..."
-    echo '' >> ~/.bashrc
-    echo '# Shelley CLI' >> ~/.bashrc
-    echo 'alias shelley="~/shelley-cli/bin/shelley --config ~/.config/shelley/shelley.json"' >> ~/.bashrc
-fi
+# Create wrapper script that includes config
+echo "🔗 Installing shelley command..."
+cat > /tmp/shelley-wrapper << EOF
+#!/bin/bash
+exec $HOME/shelley-cli/bin/shelley --config $HOME/.config/shelley/shelley.json "\$@"
+EOF
+sudo mv /tmp/shelley-wrapper /usr/local/bin/shelley
+sudo chmod +x /usr/local/bin/shelley
 
 # Install uploader service
 if [ -d "/exe.dev" ]; then
@@ -76,12 +77,12 @@ if [ -d "/exe.dev" ]; then
     echo ""
     echo "✅ Shelley CLI installed!"
     echo ""
-    echo "   Run:  source ~/.bashrc && shelley chat"
+    echo "   Run:  shelley chat"
     echo ""
     echo "   File uploader: https://${HOSTNAME}.exe.xyz:8099/"
 else
     echo ""
     echo "✅ Shelley CLI installed!"
     echo ""
-    echo "   Run:  source ~/.bashrc && shelley chat"
+    echo "   Run:  shelley chat"
 fi
