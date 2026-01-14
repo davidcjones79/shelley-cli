@@ -1331,6 +1331,7 @@ func (m *Model) recordMessageToDB(ctx context.Context, message llm.Message, usag
 }
 
 // loadHistoryFromDB loads conversation history from the database
+// It also calculates total token usage from the conversation
 func (m *Model) loadHistoryFromDB() ([]llm.Message, error) {
 	if m.config.DB == nil || m.conversationID == "" {
 		return nil, nil
@@ -1347,8 +1348,17 @@ func (m *Model) loadHistoryFromDB() ([]llm.Message, error) {
 	}
 
 	var history []llm.Message
+	var totalUsage llm.Usage
 	for _, msg := range messages {
-		// Skip system and gitinfo messages
+		// Sum up usage from all messages
+		if msg.UsageData != nil {
+			var usage llm.Usage
+			if err := json.Unmarshal([]byte(*msg.UsageData), &usage); err == nil {
+				totalUsage.Add(usage)
+			}
+		}
+		
+		// Skip system and gitinfo messages for history
 		if msg.Type == string(db.MessageTypeSystem) || msg.Type == string(db.MessageTypeGitInfo) {
 			continue
 		}
@@ -1361,6 +1371,10 @@ func (m *Model) loadHistoryFromDB() ([]llm.Message, error) {
 		}
 		history = append(history, llmMsg)
 	}
+	
+	// Update the model's total usage with historical data
+	m.totalUsage = totalUsage
+	
 	return history, nil
 }
 
