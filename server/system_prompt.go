@@ -22,10 +22,14 @@ type SystemPromptData struct {
 	IsSudoAvailable  bool
 	Hostname         string // For exe.dev, the public hostname (e.g., "vmname.exe.xyz")
 	ShelleyDBPath    string // Path to the shelley database
+	IsCLI            bool   // True when running in CLI mode (not web UI)
 }
 
 // DBPath is the path to the shelley database, set at startup
 var DBPath string
+
+// IsCLIMode indicates whether Shelley is running in CLI mode
+var IsCLIMode bool
 
 type GitInfo struct {
 	Root string
@@ -115,6 +119,9 @@ func collectSystemData(workingDir string) (*SystemPromptData, error) {
 			data.ShelleyDBPath = DBPath
 		}
 	}
+
+	// Set CLI mode flag
+	data.IsCLI = IsCLIMode
 
 	return data, nil
 }

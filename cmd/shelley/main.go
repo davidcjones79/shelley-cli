@@ -161,7 +161,8 @@ func runChat(global GlobalConfig, args []string) {
 		wd = "/"
 	}
 
-	// Generate system prompt
+	// Generate system prompt (mark as CLI mode for uploader hint)
+	server.IsCLIMode = true
 	systemPrompt, err := server.GenerateSystemPrompt(wd)
 	if err != nil {
 		logger.Warn("Failed to generate system prompt", "error", err)
