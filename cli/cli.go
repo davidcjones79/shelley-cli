@@ -86,6 +86,31 @@ type Model struct {
 	width, height  int
 	ready         bool
 	viewportReady bool
+	// State machine for async message processing:
+	//
+	//   IDLE (processing=false)
+	//     |
+	//     | User submits message (Enter key)
+	//     v
+	//   PROCESSING (processing=true, streamingActive=false)
+	//     |
+	//     | First streamMsg received
+	//     v
+	//   STREAMING (processing=true, streamingActive=true)
+	//     |                                      |
+	//     | streamMsg events continue            | Tool use detected (ContentStart with tool)
+	//     | (text accumulates in streamingText)  v
+	//     |                                    TOOL_RUNNING (currentToolName set)
+	//     |                                      |
+	//     | <------ Tool completes (ContentStop) |
+	//     |                                      |
+	//     | responseMsg{EndOfTurn: true}
+	//     v
+	//   IDLE (processing=false)
+	//
+	// Cancellation: Escape or Ctrl+C calls loopCancel(), sets processing=false
+	// Message queueing: User can type while processing; messages go to pendingMessages
+	//
 	processing    bool
 	processStatus string // Current processing status (e.g., "Sending request...", "Receiving...")
 	err           error
