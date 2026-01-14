@@ -17,7 +17,7 @@ const uploaderHTML = `<!DOCTYPE html>
 		* { box-sizing: border-box; }
 		body {
 			font-family: -apple-system, system-ui, sans-serif;
-			background: #1a1a2e;
+			background: #0f1629;
 			color: #eee;
 			min-height: 100vh;
 			margin: 0;
@@ -26,37 +26,53 @@ const uploaderHTML = `<!DOCTYPE html>
 			justify-content: center;
 		}
 		.dropzone {
-			width: 80vw;
-			max-width: 500px;
-			height: 300px;
-			border: 3px dashed #4a4a6a;
-			border-radius: 20px;
+			width: 90vw;
+			max-width: 800px;
+			height: 400px;
+			background: #1a2744;
+			border: 3px dashed #5b6eae;
+			border-radius: 24px;
 			display: flex;
 			flex-direction: column;
 			align-items: center;
 			justify-content: center;
+			gap: 12px;
 			transition: all 0.2s;
 			cursor: pointer;
 		}
 		.dropzone:hover, .dropzone.drag-over {
-			border-color: #6c6cff;
-			background: rgba(108, 108, 255, 0.1);
+			border-color: #7b8eee;
+			background: #1e2d52;
 		}
-		.dropzone h2 { margin: 0 0 10px 0; font-weight: 400; }
-		.dropzone p { margin: 0; color: #888; font-size: 14px; }
+		.dropzone h2 {
+			margin: 0;
+			font-weight: 500;
+			font-size: 28px;
+			color: #fff;
+		}
+		.dropzone p {
+			margin: 0;
+			color: #8899bb;
+			font-size: 18px;
+		}
+		.icon {
+			font-size: 32px;
+			margin-bottom: 8px;
+		}
 		.result {
-			margin-top: 20px;
-			padding: 15px 20px;
-			background: #2a2a4a;
-			border-radius: 10px;
+			margin-top: 24px;
+			padding: 16px 24px;
+			background: #1a2744;
+			border-radius: 12px;
 			font-family: monospace;
 			font-size: 14px;
 			cursor: pointer;
 			display: none;
 			white-space: pre-wrap;
 			word-break: break-all;
+			border: 1px solid #2a3754;
 		}
-		.result:hover { background: #3a3a5a; }
+		.result:hover { background: #1e2d52; }
 		.result.show { display: block; }
 		.copied { color: #6c6; }
 		input[type="file"] { display: none; }
@@ -65,7 +81,8 @@ const uploaderHTML = `<!DOCTYPE html>
 <body>
 	<div>
 		<div class="dropzone" id="dropzone">
-			<h2>📁 Drop files here</h2>
+			<span class="icon">📁</span>
+			<h2>Drop files here</h2>
 			<p>or click to browse</p>
 		</div>
 		<div class="result" id="result"></div>
