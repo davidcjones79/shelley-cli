@@ -27,12 +27,6 @@ if ! command -v node &> /dev/null; then
     sudo apt-get install -y nodejs
 fi
 
-# Remove system shelley if present (we'll use our build)
-if [ -f /usr/local/bin/shelley ]; then
-    echo "🧹 Removing old shelley..."
-    sudo rm /usr/local/bin/shelley
-fi
-
 # Clone or update repo
 if [ -d "$HOME/shelley-cli" ]; then
     echo "📦 Updating existing shelley-cli..."
