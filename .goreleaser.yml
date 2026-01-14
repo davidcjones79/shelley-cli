@@ -45,23 +45,20 @@ changelog:
 
 release:
   github:
-    owner: boldsoftware
-    name: shelley
+    owner: davidcjones79
+    name: shelley-cli
   draft: false
   prerelease: auto
 
-homebrew_casks:
-  - name: shelley
-    binaries:
-      - shelley
-    repository:
-      owner: boldsoftware
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Casks
-    homepage: https://github.com/boldsoftware/shelley
-    description: "A mobile-friendly, web-based, multi-modal coding agent"
-    hooks:
-      post:
-        install: |
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{caskroom_path}"]
+# homebrew_casks disabled - no tap configured for this fork
+# homebrew_casks:
+#   - name: shelley
+#     binaries:
+#       - shelley
+#     repository:
+#       owner: davidcjones79
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+#     directory: Casks
+#     homepage: https://github.com/davidcjones79/shelley-cli
+#     description: "A terminal interface for Shelley, the coding agent"
