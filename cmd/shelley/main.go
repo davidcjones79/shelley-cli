@@ -101,7 +101,7 @@ func runChat(global GlobalConfig, args []string) {
 	prompt := fs.String("prompt", "", "Initial prompt to send (optional, for non-interactive mode)")
 	yesMode := fs.Bool("yes", false, "Auto-accept all tool operations (no confirmations)")
 	verbose := fs.Bool("verbose", false, "Show tool execution details")
-	enableBrowser := fs.Bool("browser", false, "Enable browser tools (screenshots, navigation, etc.)")
+	disableBrowser := fs.Bool("no-browser", false, "Disable browser tools (screenshots, navigation, etc.)")
 	useDB := fs.Bool("sync", true, "Sync conversations with database (enables /conversations, /switch)")
 	noSync := fs.Bool("no-sync", false, "Disable database sync (ephemeral conversation)")
 	conversationID := fs.String("conversation", "", "Resume specific conversation by ID or slug")
@@ -200,7 +200,7 @@ func runChat(global GlobalConfig, args []string) {
 		Logger:        logger,
 		System:        system,
 		Verbose:       *verbose,
-		EnableBrowser: *enableBrowser,
+		EnableBrowser: !*disableBrowser,
 		ModelManager:  manager,
 	}
 
