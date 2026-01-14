@@ -77,8 +77,8 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		return m.listConversations()
 	case "/switch":
 		if len(parts) < 2 {
-			m.showError("Usage: /switch <conversation-id>")
-			return nil
+			// No arg: switch to most recent
+			return m.switchConversation("")
 		}
 		return m.switchConversation(parts[1])
 	case "/new":
@@ -258,7 +258,7 @@ func (m *Model) buildHelpText() string {
 		sb.WriteString("  /sync          - Reload messages from database (picks up external changes)\n")
 		sb.WriteString("  /conversations - List recent conversations\n")
 		sb.WriteString("  /search <q>    - Search conversations by content\n")
-		sb.WriteString("  /switch <id>   - Switch to conversation by ID or slug\n")
+		sb.WriteString("  /switch [n]    - Switch to conversation (by number, ID, or most recent)\n")
 		sb.WriteString("  /new           - Start a new conversation\n")
 		sb.WriteString("  /rename <slug> - Rename current conversation\n")
 		sb.WriteString("  /archive       - Archive current conversation\n")

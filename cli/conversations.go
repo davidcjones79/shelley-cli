@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,18 +41,24 @@ func (m *Model) listConversations() tea.Cmd {
 		return nil
 	}
 
+	// Cache conversation IDs for numbered selection
+	m.recentConversations = nil
+	for _, conv := range conversations {
+		m.recentConversations = append(m.recentConversations, conv.ConversationID)
+	}
+
 	var sb strings.Builder
 	sb.WriteString("Recent conversations:\n")
-	for _, conv := range conversations {
+	for i, conv := range conversations {
 		marker := "  "
 		if conv.ConversationID == m.conversationID {
-			marker = "\u2192 "
+			marker = "→ "
 		}
 		name := conv.ConversationID
 		if conv.Slug != nil && *conv.Slug != "" {
 			name = *conv.Slug
 		}
-		line := fmt.Sprintf("%s%s (%s)", marker, name, conv.UpdatedAt.Format("Jan 2 15:04"))
+		line := fmt.Sprintf("%s%2d. %s (%s)", marker, i+1, name, conv.UpdatedAt.Format("Jan 2 15:04"))
 		if conv.Cwd != nil && *conv.Cwd != "" {
 			cwd := *conv.Cwd
 			if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(cwd, home) {
@@ -61,7 +68,7 @@ func (m *Model) listConversations() tea.Cmd {
 		}
 		sb.WriteString(line + "\n")
 	}
-	sb.WriteString("\nUse /switch <id> to switch, /search <query> to search")
+	sb.WriteString("\nUse /switch <number> or /switch <id> to switch")
 
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleAssistant,
@@ -72,25 +79,58 @@ func (m *Model) listConversations() tea.Cmd {
 }
 
 // switchConversation switches to a different conversation
+// conversationID can be:
+// - empty string: switch to most recent conversation
+// - a number (1-20): select from recent conversations list
+// - a conversation ID or slug
 func (m *Model) switchConversation(conversationID string) tea.Cmd {
 	if m.config.DB == nil {
-		m.messages = append(m.messages, renderedMessage{
-			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Database not configured. Use -db flag to enable conversation sync."),
-		})
-		m.updateViewportContent()
+		m.showError("Database not configured. Use -db flag to enable conversation sync.")
 		return nil
 	}
 
+	// Handle empty arg: switch to most recent
+	if conversationID == "" {
+		conversations, err := m.config.DB.ListConversations(context.Background(), 1, 0)
+		if err != nil || len(conversations) == 0 {
+			m.showError("No conversations found")
+			return nil
+		}
+		// Skip if already on the most recent
+		if conversations[0].ConversationID == m.conversationID {
+			m.showSystemMessage("Already on most recent conversation")
+			return nil
+		}
+		conversationID = conversations[0].ConversationID
+	}
+
+	// Handle numeric selection from /conversations list
+	if num, err := strconv.Atoi(conversationID); err == nil && num >= 1 && num <= 20 {
+		if len(m.recentConversations) == 0 {
+			// No cached list, fetch it
+			conversations, err := m.config.DB.ListConversations(context.Background(), 20, 0)
+			if err != nil {
+				m.showError("Failed to list conversations: " + err.Error())
+				return nil
+			}
+			m.recentConversations = nil
+			for _, conv := range conversations {
+				m.recentConversations = append(m.recentConversations, conv.ConversationID)
+			}
+		}
+		if num > len(m.recentConversations) {
+			m.showError(fmt.Sprintf("Invalid selection: %d (only %d conversations)", num, len(m.recentConversations)))
+			return nil
+		}
+		conversationID = m.recentConversations[num-1]
+	}
+
+	// Look up by ID or slug
 	_, err := m.config.DB.GetConversationByID(context.Background(), conversationID)
 	if err != nil {
 		conv, err2 := m.config.DB.GetConversationBySlug(context.Background(), conversationID)
 		if err2 != nil {
-			m.messages = append(m.messages, renderedMessage{
-				role:    llm.MessageRoleAssistant,
-				content: m.styles.ErrorMessage.Render("Conversation not found: " + conversationID),
-			})
-			m.updateViewportContent()
+			m.showError("Conversation not found: " + conversationID)
 			return nil
 		}
 		conversationID = conv.ConversationID

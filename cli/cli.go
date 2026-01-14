@@ -111,6 +111,9 @@ type Model struct {
 	// Shell integration - store suggested commands
 	suggestedCmds []string
 
+	// Recent conversations cache (for numbered selection)
+	recentConversations []string
+
 	// Verbosity - show tool details
 	verbose bool
 
