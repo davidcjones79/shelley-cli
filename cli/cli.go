@@ -118,10 +118,10 @@ func randomFrankensteinStatus() string {
 
 // getWorkingStatus returns a status message, either Frankenstein-themed or standard
 func (m *Model) getWorkingStatus() string {
-	if m.config.BoringStatus {
-		return "Working..."
+	if m.frankenstein {
+		return randomFrankensteinStatus()
 	}
-	return randomFrankensteinStatus()
+	return "Working..."
 }
 
 // bashCodeBlockRe matches ```bash or ```sh code blocks
@@ -156,7 +156,7 @@ type Config struct {
 	System        []llm.SystemContent
 	Verbose       bool // Show tool execution details
 	EnableBrowser bool // Enable browser tools
-	BoringStatus  bool // Use standard status messages instead of Frankenstein-themed
+	Frankenstein  bool // Enable Frankenstein-themed status messages (easter egg)
 
 	// Model manager for switching models (optional)
 	ModelManager *models.Manager
@@ -255,6 +255,9 @@ type Model struct {
 
 	// Mouse mode enabled (for scrolling, but prevents text selection)
 	mouseEnabled bool
+
+	// Frankenstein easter egg - themed status messages
+	frankenstein bool
 
 	// Database conversation (when DB is configured)
 	conversationID string
@@ -685,10 +688,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case llm.StreamEventTextDelta:
 			// Accumulate text and update display
 			m.streamingActive = true
-			if m.config.BoringStatus {
-				m.processStatus = "Receiving..."
-			} else {
+			if m.frankenstein {
 				m.processStatus = "It's alive!"
+			} else {
+				m.processStatus = "Receiving..."
 			}
 			m.streamingText.WriteString(msg.event.Text)
 			m.updateStreamingDisplay()
@@ -711,10 +714,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.toolNames[msg.event.ToolUseID] = msg.event.ToolName
 			}
 			// Update status to show which tool is running
-			if m.config.BoringStatus {
-				m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
-			} else {
+			if m.frankenstein {
 				m.processStatus = fmt.Sprintf("The creature runs %s...", msg.event.ToolName)
+			} else {
+				m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
 			}
 			// Show tool starting indicator (verbose: boxed, non-verbose: inline)
 			toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
