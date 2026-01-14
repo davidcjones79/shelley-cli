@@ -68,7 +68,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			border-radius: 12px;
 			padding: 40px;
 			box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-			max-width: 480px;
+			width: 480px;
 		}
 		.vm-header {
 			display: flex;
