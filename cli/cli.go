@@ -341,6 +341,9 @@ func New(cfg Config) (*Model, error) {
 	// Create viewport (will be properly sized on WindowSizeMsg)
 	vp := viewport.New(80, 20)
 	vp.Style = lipgloss.NewStyle().Padding(0, 1)
+	// Disable viewport's built-in key bindings - we handle scrolling manually
+	// This prevents arrow keys from scrolling (we use them for command history)
+	vp.KeyMap = viewport.KeyMap{}
 
 	m := &Model{
 		config:         cfg,
