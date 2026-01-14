@@ -257,6 +257,9 @@ type Model struct {
 	// If false and images are attached, we auto-switch to Sonnet
 	modelExplicitlySet bool
 
+	// Model to restore after temporary switch (e.g., after image analysis)
+	restoreModel string
+
 	// Last viewport content (to avoid unnecessary updates)
 	lastViewportContent string
 
@@ -691,6 +694,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if we should stop processing
 		if msg.message.EndOfTurn || msg.err != nil {
 			m.processing = false
+
+			// Restore model if we temporarily switched for image analysis
+			if m.restoreModel != "" {
+				if m.config.ModelManager != nil {
+					if svc, err := m.config.ModelManager.GetService(m.restoreModel); err == nil {
+						m.config.Model = m.restoreModel
+						m.config.LLMService = svc
+						// Reset loop to use restored model
+						if m.loop != nil {
+							if m.loopCancel != nil {
+								m.loopCancel()
+							}
+							m.loop = nil
+						}
+						m.showSystemMessage("Restored model: " + m.restoreModel)
+					}
+				}
+				m.restoreModel = ""
+			}
+
 			// Process any pending messages
 			if len(m.pendingMessages) > 0 {
 				nextMsg := m.pendingMessages[0]
@@ -902,6 +925,7 @@ func (m *Model) sendMessage() tea.Cmd {
 	if hasImages && !m.modelExplicitlySet && m.config.Model == ModelOpus {
 		if m.config.ModelManager != nil && m.config.ModelManager.HasModel(ModelSonnet) {
 			if newService, err := m.config.ModelManager.GetService(ModelSonnet); err == nil {
+				m.restoreModel = m.config.Model // Save to restore after this turn
 				m.config.Model = ModelSonnet
 				m.config.LLMService = newService
 				// Reset loop to use new model
@@ -911,7 +935,7 @@ func (m *Model) sendMessage() tea.Cmd {
 					}
 					m.loop = nil
 				}
-				m.showSystemMessage("Auto-switched to Sonnet for image analysis (use /model to change)")
+				m.showSystemMessage("Using Sonnet for image analysis (will restore Opus after)")
 			}
 		}
 	}
