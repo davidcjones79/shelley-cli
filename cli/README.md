@@ -6,6 +6,21 @@ A terminal interface for [Shelley](https://github.com/boldsoftware/shelley), the
 
 On exe.dev VMs, Shelley CLI works out of the box with the built-in LLM gateway - no API keys needed.
 
+**One-liner install:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/davidcjones79/shelley-cli/shelley-cli-test/install-cli.sh | bash
+```
+
+Then run:
+
+```bash
+source ~/.bashrc
+shelley chat
+```
+
+**Manual install:**
+
 ```bash
 # Clone and build
 git clone https://github.com/davidcjones79/shelley-cli.git
