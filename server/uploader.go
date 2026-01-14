@@ -239,11 +239,38 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			color: #888;
 		}
 		.recent-thumb {
-			width: 32px;
-			height: 32px;
+			width: 48px;
+			height: 48px;
 			object-fit: cover;
-			border-radius: 4px;
+			border-radius: 6px;
 			background: #f0f0f0;
+			border: 1px solid #e0e0e0;
+			cursor: pointer;
+		}
+		.recent-thumb:hover {
+			opacity: 0.8;
+		}
+		/* Lightbox for full preview */
+		.lightbox {
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			background: rgba(0,0,0,0.9);
+			display: none;
+			align-items: center;
+			justify-content: center;
+			z-index: 1000;
+			cursor: pointer;
+		}
+		.lightbox.show {
+			display: flex;
+		}
+		.lightbox img {
+			max-width: 90vw;
+			max-height: 90vh;
+			border-radius: 8px;
 		}
 	</style>
 </head>
@@ -284,6 +311,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 	</div>
 	</div>
 	<input type="file" id="fileInput" multiple>
+	<div class="lightbox" id="lightbox"><img id="lightbox-img" src=""></div>
 	<script>
 		const dropzone = document.getElementById('dropzone');
 		const result = document.getElementById('result');
@@ -328,6 +356,16 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 
 		// Recent uploads
 		const recentList = document.getElementById('recent-list');
+		const lightbox = document.getElementById('lightbox');
+		const lightboxImg = document.getElementById('lightbox-img');
+
+		lightbox.addEventListener('click', () => lightbox.classList.remove('show'));
+
+		function showPreview(src) {
+			lightboxImg.src = src;
+			lightbox.classList.add('show');
+		}
+
 		async function loadRecent() {
 			try {
 				const resp = await fetch('/files');
@@ -338,7 +376,10 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 				}
 				recentList.innerHTML = files.map(f => {
 					const icon = f.type === 'image' ? '🖼️' : f.type === 'csv' ? '📊' : f.type === 'code' ? '💻' : '📄';
-					const thumb = f.type === 'image' ? '<img class="recent-thumb" src="/file/' + encodeURIComponent(f.name) + '">' : '<span class="recent-icon">' + icon + '</span>';
+					const fileUrl = '/file/' + encodeURIComponent(f.name);
+					const thumb = f.type === 'image' 
+						? '<img class="recent-thumb" src="' + fileUrl + '" onclick="showPreview(\'' + fileUrl + '\')">' 
+						: '<span class="recent-icon">' + icon + '</span>';
 					return '<li class="recent-item">' + thumb + '<span class="recent-name">' + f.name + '</span><span class="recent-meta">' + f.size + '</span></li>';
 				}).join('');
 			} catch(e) {
