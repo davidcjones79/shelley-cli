@@ -1342,91 +1342,98 @@ const exyASCII = `
 `
 
 // renderConsentScreen shows the initial consent/warning screen
+// Frankenstein accent color - bright lime for decorative elements
+const frankensteinAccent = lipgloss.Color("#919831")
+
 func (m *Model) renderConsentScreen() string {
 	var sb strings.Builder
 
-	// Center the content vertically
-	verticalPadding := (m.height - 18) / 2
+	// Accent style for decorative elements only
+	accentStyle := lipgloss.NewStyle().Foreground(frankensteinAccent)
+
+	// Build the content first, then wrap in a border
+	var content strings.Builder
+
+	// Title - uses accent color
+	title := accentStyle.Bold(true).Render("Shelley wants to work here")
+	content.WriteString(title)
+	content.WriteString("\n\n")
+
+	// Working directory - bold, default terminal color
+	wd := lipgloss.NewStyle().Bold(true).Render(m.config.WorkingDir)
+	content.WriteString(wd)
+	content.WriteString("\n\n")
+
+	// Permission explanation - default color
+	content.WriteString("To help you, Shelley needs permission to:")
+	content.WriteString("\n\n")
+
+	// Capabilities list - default color, accent bullets
+	bullets := []string{
+		"Read files in this directory and subdirectories",
+		"Create, modify, or delete files",
+		"Execute shell commands (git, npm, make, etc.)",
+	}
+	if m.config.EnableBrowser {
+		bullets = append(bullets, "Control a browser and take screenshots")
+	}
+
+	bulletChar := accentStyle.Render("•")
+	for _, bullet := range bullets {
+		content.WriteString(fmt.Sprintf("%s %s\n", bulletChar, bullet))
+	}
+	content.WriteString("\n")
+
+	// Selection options
+	arrow := accentStyle.Render("❯")
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+
+	if m.consentCursor == 0 {
+		content.WriteString(fmt.Sprintf("%s 1. Yes, let's go\n", arrow))
+		content.WriteString(dimStyle.Render("  2. No, exit") + "\n")
+	} else {
+		content.WriteString(dimStyle.Render("  1. Yes, let's go") + "\n")
+		content.WriteString(fmt.Sprintf("%s 2. No, exit\n", arrow))
+	}
+	content.WriteString("\n")
+
+	// Help text - dim
+	help := dimStyle.Render("↑/↓ to select · Enter to confirm · Esc to cancel")
+	content.WriteString(help)
+
+	// Wrap content in a border box with accent color
+	boxStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(frankensteinAccent).
+		Padding(1, 3)
+
+	box := boxStyle.Render(content.String())
+
+	// Center the box vertically and horizontally
+	boxHeight := lipgloss.Height(box)
+	boxWidth := lipgloss.Width(box)
+
+	verticalPadding := (m.height - boxHeight) / 2
 	if verticalPadding < 0 {
 		verticalPadding = 0
 	}
+
+	horizontalPadding := (m.width - boxWidth) / 2
+	if horizontalPadding < 0 {
+		horizontalPadding = 0
+	}
+
 	for i := 0; i < verticalPadding; i++ {
 		sb.WriteString("\n")
 	}
 
-	// Title
-	title := m.styles.HeaderTitle.Render("Shelley wants to work here")
-	sb.WriteString(centerText(title, m.width))
-	sb.WriteString("\n\n")
-
-	// Working directory - prominently displayed
-	wdStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("39")).
-		Bold(true)
-	wd := wdStyle.Render(m.config.WorkingDir)
-	sb.WriteString(centerText(wd, m.width))
-	sb.WriteString("\n\n")
-
-	// Permission explanation
-	explain := m.styles.SystemMessage.Render("To help you, Shelley needs permission to:")
-	sb.WriteString(centerText(explain, m.width))
-	sb.WriteString("\n\n")
-
-	// Capabilities list
-	bullets := []string{
-		"• Read files in this directory and subdirectories",
-		"• Create, modify, or delete files",
-		"• Execute shell commands (git, npm, make, etc.)",
+	// Add horizontal padding to each line of the box
+	padding := strings.Repeat(" ", horizontalPadding)
+	for _, line := range strings.Split(box, "\n") {
+		sb.WriteString(padding + line + "\n")
 	}
-	if m.config.EnableBrowser {
-		bullets = append(bullets, "• Control a browser and take screenshots")
-	}
-
-	for _, bullet := range bullets {
-		sb.WriteString(centerText(bullet, m.width))
-		sb.WriteString("\n")
-	}
-	sb.WriteString("\n")
-
-	// Selection options
-	yesLabel := "  1. Yes, let's go"
-	noLabel := "  2. No, exit"
-
-	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("39")).
-		Bold(true)
-	unselectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("245"))
-
-	if m.consentCursor == 0 {
-		yesLabel = selectedStyle.Render("❯ 1. Yes, let's go")
-		noLabel = unselectedStyle.Render(noLabel)
-	} else {
-		yesLabel = unselectedStyle.Render(yesLabel)
-		noLabel = selectedStyle.Render("❯ 2. No, exit")
-	}
-
-	sb.WriteString(centerText(yesLabel, m.width))
-	sb.WriteString("\n")
-	sb.WriteString(centerText(noLabel, m.width))
-	sb.WriteString("\n\n")
-
-	// Help text
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
-	help := helpStyle.Render("↑/↓ to select · Enter to confirm · Esc to cancel")
-	sb.WriteString(centerText(help, m.width))
 
 	return sb.String()
-}
-
-// centerText centers text within the given width
-func centerText(text string, width int) string {
-	textWidth := lipgloss.Width(text)
-	if textWidth >= width {
-		return text
-	}
-	padding := (width - textWidth) / 2
-	return strings.Repeat(" ", padding) + text
 }
 
 // handleConsentInput processes key events on the consent screen
