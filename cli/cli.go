@@ -1298,40 +1298,40 @@ func (m *Model) renderWelcome() string {
 	var sb strings.Builder
 
 	// Add spacing at top
-	sb.WriteString("\n\n")
+	sb.WriteString("\n")
 
 	// Use styles for consistent look
-	title := m.styles.HeaderTitle.Render("Welcome to Shelley CLI")
+	title := m.styles.HeaderTitle.Render("Ready to bring your code to life?")
 	sb.WriteString(title)
 	sb.WriteString("\n\n")
 
 	hint := m.styles.SystemMessage.Render
 	cmd := m.styles.ToolName.Render
 
-	sb.WriteString(hint("Quick start:"))
+	// Show working directory prominently
+	sb.WriteString(m.styles.WorkingDir.Render(m.config.WorkingDir))
+	sb.WriteString("\n\n")
+
+	sb.WriteString(hint("I can help you by:"))
+	sb.WriteString("\n")
+	sb.WriteString("  • Reading and understanding your codebase\n")
+	sb.WriteString("  • Creating, editing, and organizing files\n")
+	sb.WriteString("  • Running shell commands (git, tests, builds, etc.)\n")
+	if m.config.EnableBrowser {
+		sb.WriteString("  • Taking screenshots and browsing the web\n")
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString(hint("Getting started:"))
 	sb.WriteString("\n")
 	sb.WriteString("  • Type a message and press Enter to chat\n")
 	sb.WriteString("  • Use " + cmd("/help") + " to see all commands\n")
-	sb.WriteString("\n")
-
 	if m.config.DB != nil {
-		sb.WriteString(hint("Conversations:"))
-		sb.WriteString("\n")
-		sb.WriteString("  • " + cmd("/conversations") + " - list recent conversations\n")
-		sb.WriteString("  • " + cmd("/switch") + " - resume most recent conversation\n")
-		sb.WriteString("  • " + cmd("/switch <n>") + " - resume conversation by number\n")
-		sb.WriteString("  • " + cmd("/new") + " - start a fresh conversation\n")
-		sb.WriteString("\n")
+		sb.WriteString("  • Use " + cmd("/switch") + " to resume a previous conversation\n")
 	}
-
-	sb.WriteString(hint("Navigation:"))
-	sb.WriteString("\n")
-	sb.WriteString("  • Up/Down arrows - cycle through prompt history\n")
-	sb.WriteString("  • Tab - complete file paths and commands\n")
-	sb.WriteString("  • Ctrl+U/D or PgUp/PgDown - scroll messages\n")
 	sb.WriteString("\n")
 
-	sb.WriteString(hint("Tip:") + " Use " + cmd("/frankenstein") + " to toggle themed status messages\n")
+	sb.WriteString(hint("Tip:") + " " + cmd("/frankenstein") + " toggles themed status messages\n")
 
 	return sb.String()
 }
