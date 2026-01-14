@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -190,6 +191,60 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			border-radius: 4px;
 			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 		}
+		.recent {
+			margin-top: 24px;
+			padding-top: 24px;
+			border-top: 1px solid #e0e0e0;
+		}
+		.recent h3 {
+			margin: 0 0 12px 0;
+			font-size: 13px;
+			font-weight: 600;
+			color: #333;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+		.recent-list {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
+		.recent-item {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 8px 0;
+			border-bottom: 1px solid #f0f0f0;
+		}
+		.recent-item:last-child {
+			border-bottom: none;
+		}
+		.recent-icon {
+			font-size: 16px;
+		}
+		.recent-name {
+			flex: 1;
+			font-size: 13px;
+			color: #333;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.recent-meta {
+			font-size: 12px;
+			color: #888;
+		}
+		.recent-empty {
+			font-size: 13px;
+			color: #888;
+		}
+		.recent-thumb {
+			width: 32px;
+			height: 32px;
+			object-fit: cover;
+			border-radius: 4px;
+			background: #f0f0f0;
+		}
 	</style>
 </head>
 <body>
@@ -222,6 +277,10 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			<p class="supported">Supports images, CSV, JSON, Markdown, code files, and more.</p>
 		</div>
 		<div class="upload-dir">Files saved to <code>{{.UploadDir}}</code></div>
+		<div class="recent" id="recent">
+			<h3>Recent uploads</h3>
+			<ul class="recent-list" id="recent-list"></ul>
+		</div>
 	</div>
 	</div>
 	<input type="file" id="fileInput" multiple>
@@ -257,6 +316,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			result.textContent = paths.join('\n');
 			result.classList.add('show');
 			resultHint.classList.add('show');
+			loadRecent();
 		}
 
 		result.addEventListener('click', () => {
@@ -265,6 +325,27 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			result.textContent = 'Copied!';
 			setTimeout(() => { result.textContent = orig; }, 1000);
 		});
+
+		// Recent uploads
+		const recentList = document.getElementById('recent-list');
+		async function loadRecent() {
+			try {
+				const resp = await fetch('/files');
+				const files = await resp.json();
+				if (files.length === 0) {
+					recentList.innerHTML = '<li class="recent-empty">No uploads yet</li>';
+					return;
+				}
+				recentList.innerHTML = files.map(f => {
+					const icon = f.type === 'image' ? '🖼️' : f.type === 'csv' ? '📊' : f.type === 'code' ? '💻' : '📄';
+					const thumb = f.type === 'image' ? '<img class="recent-thumb" src="/file/' + encodeURIComponent(f.name) + '">' : '<span class="recent-icon">' + icon + '</span>';
+					return '<li class="recent-item">' + thumb + '<span class="recent-name">' + f.name + '</span><span class="recent-meta">' + f.size + '</span></li>';
+				}).join('');
+			} catch(e) {
+				recentList.innerHTML = '<li class="recent-empty">Failed to load</li>';
+			}
+		}
+		loadRecent();
 	</script>
 </body>
 </html>`
@@ -321,5 +402,98 @@ func RunUploader(port int, uploadDir string) {
 		fmt.Fprint(w, path)
 	})
 
+	// List recent files as JSON
+	http.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
+		entries, err := os.ReadDir(uploadDir)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("[]"))
+			return
+		}
+
+		type fileInfo struct {
+			Name    string
+			Size    string
+			Type    string
+			ModTime time.Time
+		}
+		var files []fileInfo
+
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			name := entry.Name()
+			files = append(files, fileInfo{
+				Name:    name,
+				Size:    formatFileSize(info.Size()),
+				Type:    detectType(name),
+				ModTime: info.ModTime(),
+			})
+		}
+
+		// Sort by modification time (newest first)
+		for i := 0; i < len(files)-1; i++ {
+			for j := i + 1; j < len(files); j++ {
+				if files[j].ModTime.After(files[i].ModTime) {
+					files[i], files[j] = files[j], files[i]
+				}
+			}
+		}
+
+		// Limit to 5 most recent
+		if len(files) > 5 {
+			files = files[:5]
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		out := "["
+		for i, f := range files {
+			if i > 0 {
+				out += ","
+			}
+			out += fmt.Sprintf(`{"name":%q,"size":%q,"type":%q}`, f.Name, f.Size, f.Type)
+		}
+		out += "]"
+		w.Write([]byte(out))
+	})
+
+	// Serve individual files (for thumbnails)
+	http.HandleFunc("/file/", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Path[len("/file/"):]
+		if name == "" || strings.Contains(name, "..") {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, filepath.Join(uploadDir, name))
+	})
+
 	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+}
+
+func formatFileSize(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%dB", bytes)
+	} else if bytes < 1024*1024 {
+		return fmt.Sprintf("%.1fKB", float64(bytes)/1024)
+	}
+	return fmt.Sprintf("%.1fMB", float64(bytes)/(1024*1024))
+}
+
+func detectType(name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp":
+		return "image"
+	case ".csv":
+		return "csv"
+	case ".go", ".py", ".js", ".ts", ".rs", ".c", ".cpp", ".java":
+		return "code"
+	default:
+		return "file"
+	}
 }
