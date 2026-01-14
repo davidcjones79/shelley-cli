@@ -38,6 +38,22 @@ If the user wants to create a new Go web application or service, you can use the
   mkdir -p /path/to/project && shelley unpack-template go /path/to/project
 This provides a complete Go web server with HTTP handlers, SQLite database, migrations, and systemd service configuration. After unpacking, initialize a git repository with `git init` and make an initial commit.
 </project_templates>
+
+<file_uploader>
+If the user wants to upload files (screenshots, images, documents, CSV, code) from their local machine to this VM, offer to start the file uploader:
+
+  shelley uploader -port 8000
+
+This starts a web page at https://{{.Hostname}}:8000/ where they can drag and drop files. Files are saved to ~/uploads/.
+
+After uploading, they can use /pick in Shelley CLI to list and analyze uploads, or you can read files directly from ~/uploads/.
+
+Offer this when the user asks about:
+- Uploading files or screenshots
+- Sharing images or documents
+- Getting files from their local machine to the VM
+- Analyzing a screenshot or image they have locally
+</file_uploader>
 </exe_dev>
 {{end}}
 {{if .Codebase}}
