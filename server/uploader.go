@@ -368,7 +368,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			<p class="supported">Supports images, CSV, JSON, Markdown, code files, and more.</p>
 		</div>
 		<div class="upload-dir">Files saved to <code>{{.UploadDir}}</code></div>
-		<div class="recent" id="recent">
+		<div class="recent collapsed" id="recent">
 			<div class="recent-header" onclick="toggleRecent()">
 				<div class="recent-toggle">
 					<h3>Recent uploads</h3>
