@@ -1034,10 +1034,7 @@ function ChatInterface({
 
   const renderMessages = () => {
     if (messages.length === 0) {
-      // Include port in URL for exe.dev proxy (ports 3000-9999 are accessible)
-      const port = window.location.port;
-      const portSuffix = port && port !== "80" && port !== "443" ? `:${port}` : "";
-      const proxyURL = `https://${hostname}${portSuffix}/`;
+      const proxyURL = `https://${hostname}/`;
       return (
         <div className="empty-state">
           <div className="empty-state-content">
