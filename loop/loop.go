@@ -125,6 +125,14 @@ func (l *Loop) GetHistory() []llm.Message {
 	return historyCopy
 }
 
+// SetHistory replaces the conversation history. This is useful for syncing
+// with external changes (e.g., messages added via web UI).
+func (l *Loop) SetHistory(history []llm.Message) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.history = history
+}
+
 // Go runs the conversation loop until the context is canceled
 func (l *Loop) Go(ctx context.Context) error {
 	if l.llm == nil {

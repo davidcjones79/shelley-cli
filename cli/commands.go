@@ -122,6 +122,8 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 			return nil
 		}
 		return m.searchConversations(strings.Join(parts[1:], " "))
+	case "/sync", "/refresh", "/pull":
+		return m.syncConversation()
 
 	// Model commands
 	case "/models":
@@ -253,6 +255,7 @@ func (m *Model) buildHelpText() string {
 
 	if m.config.DB != nil {
 		sb.WriteString("\nConversation Management (database enabled):\n")
+		sb.WriteString("  /sync          - Reload messages from database (picks up external changes)\n")
 		sb.WriteString("  /conversations - List recent conversations\n")
 		sb.WriteString("  /search <q>    - Search conversations by content\n")
 		sb.WriteString("  /switch <id>   - Switch to conversation by ID or slug\n")
