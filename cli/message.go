@@ -91,11 +91,8 @@ func (r *MessageRenderer) renderContent(role llm.MessageRole, content llm.Conten
 	case llm.ContentTypeText:
 		return r.renderText(role, content.Text)
 	case llm.ContentTypeToolUse:
-		// Tool use is shown via streaming ("running..."), skip in non-verbose
-		if !verbose {
-			return ""
-		}
-		return r.renderToolUse(content)
+		// Always show tool use (compact in non-verbose, full in verbose)
+		return r.renderToolUse(content, verbose)
 	case llm.ContentTypeToolResult:
 		// Always show tool results (summary in non-verbose, full in verbose)
 		return r.renderToolResult(content, verbose)
@@ -140,35 +137,29 @@ func (r *MessageRenderer) renderText(role llm.MessageRole, text string) string {
 	return result.String()
 }
 
-// renderToolUse renders a tool use block with bordered box
-func (r *MessageRenderer) renderToolUse(content llm.Content) string {
-	// Header with tool name and running status
-	header := r.styles.ToolName.Render(content.ToolName) +
-		" " + r.styles.ToolRunning.Render("running...")
+// renderToolUse renders a tool use block
+// In non-verbose mode, shows a compact single line
+// In verbose mode, shows a bordered box with details
+func (r *MessageRenderer) renderToolUse(content llm.Content, verbose bool) string {
+	toolName := content.ToolName
+	inputSummary := r.formatToolInputSummary(toolName, content.ToolInput)
 
-	// For simple tools, just show the header
-	// For tools with complex input, show a compact summary
-	var inputSummary string
-	if len(content.ToolInput) > 0 {
-		var input map[string]any
-		if err := json.Unmarshal(content.ToolInput, &input); err == nil {
-			// Show first key-value pair as summary
-			for k, v := range input {
-				if str, ok := v.(string); ok {
-					if len(str) > 50 {
-						str = str[:50] + "..."
-					}
-					inputSummary = r.styles.ToolInput.Render(k + ": " + str)
-				}
-				break
-			}
+	// Non-verbose: compact single line like "⏳ bash: ls -la"
+	if !verbose {
+		line := r.styles.ToolRunning.Render("⏳") + " " + r.styles.ToolName.Render(toolName)
+		if inputSummary != "" {
+			line += " " + r.styles.ToolInput.Render(inputSummary)
 		}
+		return line
 	}
 
-	// Wrap in bordered box
+	// Verbose: bordered box with full details
+	header := r.styles.ToolName.Render(toolName) +
+		" " + r.styles.ToolRunning.Render("running...")
+
 	boxStyle := r.styles.ToolBoxStyle(r.width-4, false)
 	if inputSummary != "" {
-		return boxStyle.Render(header + " " + inputSummary)
+		return boxStyle.Render(header + " " + r.styles.ToolInput.Render(inputSummary))
 	}
 	return boxStyle.Render(header)
 }
