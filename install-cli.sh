@@ -21,9 +21,11 @@ fi
 if ! command -v pnpm &> /dev/null; then
     echo "📦 Installing pnpm..."
     curl -fsSL https://get.pnpm.io/install.sh | sh -
-    export PNPM_HOME="$HOME/.local/share/pnpm"
-    export PATH="$PNPM_HOME:$PATH"
 fi
+
+# Ensure PATH includes pnpm and standard locations
+export PNPM_HOME="$HOME/.local/share/pnpm"
+export PATH="$PNPM_HOME:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # Clone or update repo
 if [ -d "$HOME/shelley-cli" ]; then
