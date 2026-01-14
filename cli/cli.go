@@ -1362,6 +1362,10 @@ func (m *Model) renderConsentScreen() string {
 	}
 	content.WriteString("\n")
 
+	// Unofficial fork notice - dim, italic
+	content.WriteString(dimStyle.Italic(true).Render("This is an unofficial fork with a CLI interface."))
+	content.WriteString("\n\n")
+
 	// Help text - dim
 	help := dimStyle.Render("↑/↓ to select · Enter to confirm · Esc to cancel")
 	content.WriteString(help)
