@@ -20,6 +20,13 @@ if [ ! -d "/exe.dev" ]; then
     fi
 fi
 
+# Install Node.js if not present
+if ! command -v node &> /dev/null; then
+    echo "📦 Installing Node.js..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+fi
+
 # Clone or update repo
 if [ -d "$HOME/shelley-cli" ]; then
     echo "📦 Updating existing shelley-cli..."
