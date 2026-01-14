@@ -57,6 +57,8 @@ func (m *Model) handleTabCompletion() tea.Cmd {
 func (m *Model) completeSlashCommand(prefix string) []string {
 	commands := []string{
 		"/help",
+		"/keys",
+		"/shortcuts",
 		"/clear",
 		"/run",
 		"/stop",

@@ -245,6 +245,9 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
 		return nil
+	case "/keys", "/shortcuts", "/?":
+		m.showSystemMessage(m.buildKeysText())
+		return nil
 	case "/quit", "/exit", "/q":
 		m.quitting = true
 		if m.loopCancel != nil {
@@ -320,6 +323,7 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /git diff <f>  - Show diff for file\n")
 
 	sb.WriteString("\n  /help          - Show this help")
+	sb.WriteString("\n  /keys          - Show keyboard shortcuts")
 	sb.WriteString("\n\nTips:\n")
 	sb.WriteString("  Tab            - Complete file paths and commands\n")
 	sb.WriteString("  Up/Down        - Cycle through prompt history\n")
@@ -328,6 +332,31 @@ func (m *Model) buildHelpText() string {
 	// Show web UI link
 	sb.WriteString("\nWeb UI: ")
 	sb.WriteString(m.getWebUIURL())
+	return sb.String()
+}
+
+// buildKeysText generates keyboard shortcuts help text
+func (m *Model) buildKeysText() string {
+	var sb strings.Builder
+	sb.WriteString("Keyboard Shortcuts:\n")
+	sb.WriteString("\nInput:\n")
+	sb.WriteString("  Enter          - Send message\n")
+	sb.WriteString("  Ctrl+J         - Insert newline (multi-line input)\n")
+	sb.WriteString("  Escape         - Clear input / Cancel operation\n")
+	sb.WriteString("  Tab            - Complete file paths and commands\n")
+	sb.WriteString("  Up / Down      - Cycle through prompt history\n")
+	sb.WriteString("\nScrolling:\n")
+	sb.WriteString("  Ctrl+U         - Scroll up half page\n")
+	sb.WriteString("  Ctrl+D         - Scroll down half page\n")
+	sb.WriteString("  PgUp           - Scroll up full page\n")
+	sb.WriteString("  PgDown         - Scroll down full page\n")
+	sb.WriteString("  Home           - Scroll to top\n")
+	sb.WriteString("  End            - Scroll to bottom\n")
+	sb.WriteString("  Mouse wheel    - Scroll (when mouse mode enabled)\n")
+	sb.WriteString("\nControl:\n")
+	sb.WriteString("  Ctrl+C         - Quit\n")
+	sb.WriteString("  Escape         - Cancel current operation (while processing)\n")
+	sb.WriteString("\nToggle mouse mode with /mouse")
 	return sb.String()
 }
 
