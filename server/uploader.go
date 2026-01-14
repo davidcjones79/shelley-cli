@@ -234,6 +234,24 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			font-size: 12px;
 			color: #888;
 		}
+		.recent-delete {
+			width: 24px;
+			height: 24px;
+			border: none;
+			background: none;
+			color: #bbb;
+			cursor: pointer;
+			font-size: 16px;
+			padding: 0;
+			border-radius: 4px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+		.recent-delete:hover {
+			background: #fee2e2;
+			color: #dc2626;
+		}
 		.recent-empty {
 			font-size: 13px;
 			color: #888;
@@ -366,6 +384,16 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			lightbox.classList.add('show');
 		}
 
+		async function deleteFile(name) {
+			if (!confirm('Delete ' + name + '?')) return;
+			try {
+				await fetch('/file/' + encodeURIComponent(name), { method: 'DELETE' });
+				loadRecent();
+			} catch(e) {
+				alert('Failed to delete');
+			}
+		}
+
 		async function loadRecent() {
 			try {
 				const resp = await fetch('/files');
@@ -380,7 +408,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 					const thumb = f.type === 'image' 
 						? '<img class="recent-thumb" src="' + fileUrl + '" onclick="showPreview(\'' + fileUrl + '\')">' 
 						: '<span class="recent-icon">' + icon + '</span>';
-					return '<li class="recent-item">' + thumb + '<span class="recent-name">' + f.name + '</span><span class="recent-meta">' + f.size + '</span></li>';
+					return '<li class="recent-item">' + thumb + '<span class="recent-name">' + f.name + '</span><span class="recent-meta">' + f.size + '</span><button class="recent-delete" onclick="deleteFile(\'' + f.name.replace(/'/g, "\\'") + '\')" title="Delete">&times;</button></li>';
 				}).join('');
 			} catch(e) {
 				recentList.innerHTML = '<li class="recent-empty">Failed to load</li>';
@@ -503,14 +531,25 @@ func RunUploader(port int, uploadDir string) {
 		w.Write([]byte(out))
 	})
 
-	// Serve individual files (for thumbnails)
+	// Serve individual files (for thumbnails) and handle DELETE
 	http.HandleFunc("/file/", func(w http.ResponseWriter, r *http.Request) {
 		name := r.URL.Path[len("/file/"):]
 		if name == "" || strings.Contains(name, "..") {
 			http.NotFound(w, r)
 			return
 		}
-		http.ServeFile(w, r, filepath.Join(uploadDir, name))
+		filePath := filepath.Join(uploadDir, name)
+
+		if r.Method == "DELETE" {
+			if err := os.Remove(filePath); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		http.ServeFile(w, r, filePath)
 	})
 
 	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
