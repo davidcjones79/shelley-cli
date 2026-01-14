@@ -15,7 +15,7 @@ This installs the CLI with file uploader service. See [cli/README.md](cli/README
 ## What's Added in This Fork
 
 - **CLI Interface** - Full terminal UI with streaming, tool execution, conversation sync. Tested with:
-  - [iTerm2](https://iterm2.com/downloads.html) (Mac) - works best
+  - [iTerm2](https://iterm2.com/downloads.html) (Mac) - works best, most tested
   - [Windows Terminal](https://aka.ms/terminal) (Windows)
   - [Alacritty](https://alacritty.org/) (Windows/Mac)
   - Mac built-in Terminal - works, but not as well as the others. If mouse scrolling is enabled, selecting text is difficult without first disabling it via `/mouse`
