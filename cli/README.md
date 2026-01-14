@@ -187,6 +187,31 @@ Conversations sync to the database by default, so you can switch between CLI and
 | `/sync` | Reload messages from database (see below) |
 | `/export [file]` | Export conversation to markdown |
 
+### File Uploads
+
+If you prefer working in the terminal but need a quick way to get files (screenshots, images, documents) from your local machine to your VM, use the built-in uploader:
+
+```bash
+shelley uploader
+```
+
+This starts a web server at `http://localhost:8000` (or `https://your-vm.exe.xyz:8000` on exe.dev). Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
+
+| Command | Description |
+|---------|-------------|
+| `/uploads` | List files in ~/uploads |
+| `/pick` | List recent uploads (numbered) |
+| `/pick <n>` | Analyze file n with Shelley |
+
+**Workflow:**
+1. Run `shelley uploader` (or add `-port 8001` for a custom port)
+2. Open the uploader URL in your browser
+3. Drag and drop files (screenshots, CSVs, code, etc.)
+4. In Shelley CLI, type `/pick` to see uploads
+5. Type `/pick 1` to have Shelley analyze the most recent file
+
+For images, `/pick` loads them directly as attachments. For text files (CSV, JSON, Markdown, code), Shelley reads and analyzes the content.
+
 ### Images
 
 | Command | Description |
@@ -200,16 +225,18 @@ Conversations sync to the database by default, so you can switch between CLI and
 
 **Note:** Drag-and-drop only works if you're running the CLI locally on your computer (not recommended for exe.dev workflows). When SSHed into a remote VM, you have these options for working with local images:
 
-1. **Switch to web client** - The Shelley web UI supports drag-and-drop. Use `/conversations` to find your conversation ID, then open it in the web UI at the same path.
+1. **Use the uploader** (recommended) - Run `shelley uploader`, drag files to the web page, then use `/pick` in the CLI. See [File Uploads](#file-uploads) above.
 
-2. **Use the `describe-image` script** - Download from `scripts/describe-image` to your local Mac. It uploads images to your VM and analyzes them:
+2. **Switch to web client** - The Shelley web UI supports drag-and-drop. Use `/conversations` to find your conversation ID, then open it in the web UI at the same path.
+
+3. **Use the `describe-image` script** - Download from `scripts/describe-image` to your local Mac. It uploads images to your VM and analyzes them:
    ```bash
    # On your local machine:
    describe-image -v myvm screenshot.png "What's in this image?"
    ```
    Then in the CLI, use `/imglist` to see results and `/imgresult` to inject into your conversation.
 
-3. **For images already on the VM** - Use `/attach /path/to/image.png` or include the path in brackets in your message: `[/path/to/image.png]`
+4. **For images already on the VM** - Use `/attach /path/to/image.png` or include the path in brackets in your message: `[/path/to/image.png]`
 
 Supported formats: PNG, JPG, JPEG, GIF, WEBP
 
