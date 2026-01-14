@@ -9,7 +9,7 @@ On exe.dev VMs, Shelley CLI works out of the box with the built-in LLM gateway -
 **One-liner install:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidcjones79/shelley-cli/shelley-cli-test/install-cli.sh | bash
+curl -fsSL https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh | bash
 ```
 
 Then run:
@@ -25,7 +25,6 @@ shelley chat
 # Clone and build
 git clone https://github.com/davidcjones79/shelley-cli.git
 cd shelley-cli
-git checkout shelley-cli-test
 make
 
 # Create config file
@@ -53,7 +52,6 @@ You'll need Go 1.21+ and Node.js 18+ installed, plus API keys from [Anthropic](h
 # Clone and build
 git clone https://github.com/davidcjones79/shelley-cli.git
 cd shelley-cli
-git checkout shelley-cli-test
 make
 
 # Set your API key

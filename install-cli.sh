@@ -22,13 +22,12 @@ if [ -d "$HOME/shelley-cli" ]; then
     echo "📦 Updating existing shelley-cli..."
     cd ~/shelley-cli
     git fetch origin
-    git checkout shelley-cli-test
-    git pull origin shelley-cli-test
+    git checkout main
+    git pull origin main
 else
     echo "📦 Cloning shelley-cli..."
     git clone https://github.com/davidcjones79/shelley-cli.git ~/shelley-cli
     cd ~/shelley-cli
-    git checkout shelley-cli-test
 fi
 
 # Build
