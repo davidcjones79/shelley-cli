@@ -164,6 +164,9 @@ type Config struct {
 	// Database integration (optional - enables conversation sync with web UI)
 	DB             *db.DB
 	ConversationID string // Resume specific conversation
+
+	// Web UI info (for help text)
+	WebUIPort int // Port where web UI is served (default 9000)
 }
 
 // Model is the Bubble Tea model for the CLI

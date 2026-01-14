@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -307,8 +309,29 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("\n\nTips:\n")
 	sb.WriteString("  Tab            - Complete file paths and commands\n")
 	sb.WriteString("  Up/Down        - Cycle through prompt history\n")
-	sb.WriteString("  Ctrl+U/D       - Scroll message history (or PgUp/PgDown)")
+	sb.WriteString("  Ctrl+U/D       - Scroll message history (or PgUp/PgDown)\n")
+
+	// Show web UI link
+	sb.WriteString("\nWeb UI: ")
+	sb.WriteString(m.getWebUIURL())
 	return sb.String()
+}
+
+// getWebUIURL returns the URL for the Shelley web UI
+func (m *Model) getWebUIURL() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "localhost"
+	}
+	// Add .exe.xyz suffix if no dots (exe.dev convention)
+	if !strings.Contains(hostname, ".") {
+		hostname = hostname + ".exe.xyz"
+	}
+	port := m.config.WebUIPort
+	if port == 0 {
+		port = 9000 // default Shelley port
+	}
+	return fmt.Sprintf("https://%s:%d/", hostname, port)
 }
 
 // runSuggestedCommand executes a suggested shell command
