@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -9,10 +10,10 @@ import (
 	"time"
 )
 
-const uploaderHTML = `<!DOCTYPE html>
+const uploaderHTMLTemplate = `<!DOCTYPE html>
 <html>
 <head>
-	<title>Upload to VM</title>
+	<title>Upload to {{.Hostname}}</title>
 	<style>
 		* { box-sizing: border-box; }
 		body {
@@ -29,12 +30,30 @@ const uploaderHTML = `<!DOCTYPE html>
 			background: #fff;
 			border: 1px solid #e0e0e0;
 			border-radius: 12px;
-			padding: 48px;
+			padding: 40px;
 			box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+			max-width: 480px;
+		}
+		.header {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			margin-bottom: 24px;
+		}
+		.status {
+			width: 10px;
+			height: 10px;
+			background: #22c55e;
+			border-radius: 50%;
+		}
+		.hostname {
+			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+			font-size: 18px;
+			font-weight: 500;
 		}
 		.dropzone {
-			width: 400px;
-			height: 200px;
+			width: 100%;
+			height: 180px;
 			background: #fafafa;
 			border: 2px dashed #d0d0d0;
 			border-radius: 8px;
@@ -65,11 +84,42 @@ const uploaderHTML = `<!DOCTYPE html>
 			font-size: 24px;
 			margin-bottom: 4px;
 		}
+		.instructions {
+			margin-top: 24px;
+			padding: 16px;
+			background: #f9fafb;
+			border-radius: 8px;
+			font-size: 14px;
+			line-height: 1.5;
+			color: #555;
+		}
+		.instructions h3 {
+			margin: 0 0 8px 0;
+			font-size: 13px;
+			font-weight: 600;
+			color: #333;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+		.instructions code {
+			background: #e5e7eb;
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+			font-size: 13px;
+		}
+		.instructions ol {
+			margin: 0;
+			padding-left: 20px;
+		}
+		.instructions li {
+			margin-bottom: 4px;
+		}
 		.result {
 			margin-top: 16px;
 			padding: 12px 16px;
-			background: #f5f5f5;
-			border: 1px solid #e0e0e0;
+			background: #f0fdf4;
+			border: 1px solid #bbf7d0;
 			border-radius: 8px;
 			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 			font-size: 13px;
@@ -77,27 +127,59 @@ const uploaderHTML = `<!DOCTYPE html>
 			display: none;
 			white-space: pre-wrap;
 			word-break: break-all;
-			color: #555;
+			color: #166534;
 		}
-		.result:hover { background: #eee; }
+		.result:hover { background: #dcfce7; }
 		.result.show { display: block; }
-		.copied { color: #22863a; }
+		.result-hint {
+			font-size: 12px;
+			color: #888;
+			margin-top: 8px;
+			display: none;
+		}
+		.result-hint.show { display: block; }
 		input[type="file"] { display: none; }
+		.upload-dir {
+			margin-top: 16px;
+			font-size: 12px;
+			color: #888;
+		}
+		.upload-dir code {
+			background: #f3f4f6;
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+		}
 	</style>
 </head>
 <body>
 	<div class="container">
+		<div class="header">
+			<span class="status"></span>
+			<span class="hostname">{{.Hostname}}</span>
+		</div>
 		<div class="dropzone" id="dropzone">
 			<span class="icon">📁</span>
 			<h2>Drop files here</h2>
 			<p>or click to browse</p>
 		</div>
 		<div class="result" id="result"></div>
+		<div class="result-hint" id="result-hint">Click path to copy • Use <code>/pick</code> in Shelley CLI to analyze</div>
+		<div class="instructions">
+			<h3>How to use</h3>
+			<ol>
+				<li>Drop files here to upload to your VM</li>
+				<li>In Shelley CLI, type <code>/pick</code> to list uploads</li>
+				<li>Type <code>/pick 1</code> to analyze the first file</li>
+			</ol>
+		</div>
+		<div class="upload-dir">Files saved to <code>{{.UploadDir}}</code></div>
 	</div>
 	<input type="file" id="fileInput" multiple>
 	<script>
 		const dropzone = document.getElementById('dropzone');
 		const result = document.getElementById('result');
+		const resultHint = document.getElementById('result-hint');
 		const fileInput = document.getElementById('fileInput');
 
 		dropzone.addEventListener('click', () => fileInput.click());
@@ -125,12 +207,14 @@ const uploaderHTML = `<!DOCTYPE html>
 			}
 			result.textContent = paths.join('\n');
 			result.classList.add('show');
+			resultHint.classList.add('show');
 		}
 
 		result.addEventListener('click', () => {
 			navigator.clipboard.writeText(result.textContent);
-			result.classList.add('copied');
-			setTimeout(() => result.classList.remove('copied'), 500);
+			const orig = result.textContent;
+			result.textContent = 'Copied!';
+			setTimeout(() => { result.textContent = orig; }, 1000);
 		});
 	</script>
 </body>
@@ -138,13 +222,25 @@ const uploaderHTML = `<!DOCTYPE html>
 
 // RunUploader starts the file upload server
 func RunUploader(port int, uploadDir string) {
+	// Get hostname for display
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "vm"
+	}
+
+	// Parse template
+	tmpl := template.Must(template.New("uploader").Parse(uploaderHTMLTemplate))
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(uploaderHTML))
+		tmpl.Execute(w, map[string]string{
+			"Hostname":  hostname,
+			"UploadDir": uploadDir,
+		})
 	})
 
 	http.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
