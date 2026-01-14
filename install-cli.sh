@@ -17,10 +17,12 @@ if [ ! -d "/exe.dev" ]; then
     fi
 fi
 
-# Ensure pnpm is installed
+# Ensure pnpm is installed (use standalone installer - no sudo needed)
 if ! command -v pnpm &> /dev/null; then
     echo "📦 Installing pnpm..."
-    npm install -g pnpm
+    curl -fsSL https://get.pnpm.io/install.sh | sh -
+    export PNPM_HOME="$HOME/.local/share/pnpm"
+    export PATH="$PNPM_HOME:$PATH"
 fi
 
 # Clone or update repo
