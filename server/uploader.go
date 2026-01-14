@@ -46,6 +46,15 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			font-weight: 600;
 			color: #333;
 		}
+		.navbar-link {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			text-decoration: none;
+		}
+		.navbar-link:hover .navbar-brand {
+			color: #666;
+		}
 		.main {
 			min-height: 100vh;
 			display: flex;
@@ -77,6 +86,12 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 			font-size: 18px;
 			font-weight: 500;
+			color: #333;
+			text-decoration: none;
+		}
+		.hostname:hover {
+			color: #666;
+			text-decoration: underline;
 		}
 		.dropzone {
 			width: 100%;
@@ -344,14 +359,16 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 </head>
 <body>
 	<nav class="navbar">
-		<img class="navbar-logo" src="https://exe.dev/static/exy.png" alt="exe.dev">
-		<span class="navbar-brand">exe.dev</span>
+		<a href="https://exe.dev/" class="navbar-link">
+			<img class="navbar-logo" src="https://exe.dev/static/exy.png" alt="exe.dev">
+			<span class="navbar-brand">exe.dev</span>
+		</a>
 	</nav>
 	<div class="main">
 	<div class="container">
 		<div class="vm-header">
 			<span class="status"></span>
-			<span class="hostname">{{.Hostname}}</span>
+			<a class="hostname" href="https://exe.dev/vm/{{.ShortHostname}}">{{.Hostname}}</a>
 		</div>
 		<div class="dropzone" id="dropzone">
 			<span class="icon"><svg viewBox="0 0 24 24"><path d="M12 16V8m0 0l-3 3m3-3l3 3M3 16.5V18a2 2 0 002 2h14a2 2 0 002-2v-1.5M3 16.5l3.5-8A2 2 0 018.3 7h7.4a2 2 0 011.8 1.5l3.5 8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
@@ -517,8 +534,9 @@ func RunUploader(port int, uploadDir string) {
 		}
 		w.Header().Set("Content-Type", "text/html")
 		tmpl.Execute(w, map[string]string{
-			"Hostname":  fullHostname,
-			"UploadDir": uploadDir,
+			"Hostname":      fullHostname,
+			"ShortHostname": hostname,
+			"UploadDir":     uploadDir,
 		})
 	})
 
