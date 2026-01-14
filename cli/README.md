@@ -178,6 +178,7 @@ Type `/help` in the CLI to see all available commands.
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all commands |
+| `/keys` | Show keyboard shortcuts |
 | `/clear` | Clear conversation display |
 | `/stop` | Cancel current operation |
 | `/quit` | Exit the CLI (also `/exit`, `/q`) |
