@@ -1038,6 +1038,15 @@ function ChatInterface({
       return (
         <div className="empty-state">
           <div className="empty-state-content">
+            <p className="text-sm" style={{ marginBottom: "0.75rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
+              This is an unofficial fork of Shelley with a CLI interface.
+              See <a
+                href="https://github.com/anthropics/shelley"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "inherit", textDecoration: "underline" }}
+              >upstream</a> for the official version.
+            </p>
             <p className="text-base" style={{ marginBottom: "1rem", lineHeight: "1.6" }}>
               Shelley is an agent, running on <strong>{hostname}</strong>. You can ask Shelley to do
               stuff. If you build a web site with Shelley, you can use exe.dev&apos;s proxy features
