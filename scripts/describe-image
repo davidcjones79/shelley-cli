@@ -1,0 +1,64 @@
+#!/bin/bash
+# describe-image: Analyze an image on exe.dev VM using LLM gateway
+# Usage: describe-image [-v vm] /path/to/image.png [prompt]
+
+set -e
+
+# Parse -v flag for VM
+VM_HOST="${EXE_DEV_HOST:-}"
+while getopts "v:" opt; do
+    case $opt in
+        v) 
+            # Append .exe.xyz only if not already a full hostname
+            if [[ "$OPTARG" == *.* ]]; then
+                VM_HOST="$OPTARG"
+            else
+                VM_HOST="$OPTARG.exe.xyz"
+            fi
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+IMAGE_PATH="$1"
+PROMPT="${2:-Describe this image in detail.}"
+
+if [[ -z "$VM_HOST" ]]; then
+    echo "Usage: describe-image -v <vmname> <image-path> [prompt]"
+    echo "   or: export EXE_DEV_HOST=<vmname>.exe.xyz"
+    exit 1
+fi
+
+if [[ -z "$IMAGE_PATH" ]]; then
+    echo "Usage: describe-image -v <vmname> <image-path> [prompt]"
+    exit 1
+fi
+
+if [[ ! -f "$IMAGE_PATH" ]]; then
+    echo "File not found: $IMAGE_PATH"
+    exit 1
+fi
+
+# Detect actual image type and use correct extension
+MIME_TYPE=$(file -b --mime-type "$IMAGE_PATH")
+case "$MIME_TYPE" in
+    image/jpeg) EXT="jpg" ;;
+    image/png)  EXT="png" ;;
+    image/gif)  EXT="gif" ;;
+    image/webp) EXT="webp" ;;
+    *) echo "Unsupported image type: $MIME_TYPE"; exit 1 ;;
+esac
+
+# Generate unique filename with PID and timestamp
+TIMESTAMP=$(date +%s)
+REMOTE_IMG="/tmp/describe-img-$$-${TIMESTAMP}.${EXT}"
+REMOTE_RESULT="/tmp/shelley-image-${TIMESTAMP}.txt"
+
+echo "Uploading image ($MIME_TYPE) to $VM_HOST..."
+scp -o BatchMode=yes -q "$IMAGE_PATH" "${VM_HOST}:${REMOTE_IMG}"
+
+echo "Analyzing with vision model..."
+ssh -tt -o BatchMode=yes "$VM_HOST" "cd /home/exedev/shelley-cli && ./bin/shelley -config /exe.dev/shelley.json -model claude-sonnet-4.5 chat -yes -prompt \"$PROMPT [$REMOTE_IMG]\" 2>&1 | grep -v '^time=' | grep -v '^\[Tool' | tee '$REMOTE_RESULT'; rm -f '$REMOTE_IMG'"
+
+echo "---"
+echo "Use /imglist and /imgresult in Shelley CLI to inject into conversation"
