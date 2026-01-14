@@ -1,0 +1,21 @@
+[Unit]
+Description=Shelley File Uploader
+After=network.target
+
+[Service]
+Type=exec
+User=exedev
+Group=exedev
+WorkingDirectory=/home/exedev
+ExecStart=/usr/local/bin/shelley uploader -port 8099
+Restart=on-failure
+RestartSec=5
+Environment=HOME=/home/exedev
+Environment=USER=exedev
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shelley-uploader
+
+[Install]
+WantedBy=multi-user.target

@@ -189,13 +189,26 @@ Conversations sync to the database by default, so you can switch between CLI and
 
 ### File Uploads
 
-If you prefer working in the terminal but need a quick way to get files (screenshots, images, documents) from your local machine to your VM, use the built-in uploader:
+If you prefer working in the terminal but need a quick way to get files (screenshots, images, documents) from your local machine to your VM, use the built-in uploader.
+
+**On exe.dev (recommended):** Install as a service so it's always available:
+
+```bash
+sudo cp ~/shelley-cli/shelley-uploader.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable shelley-uploader
+sudo systemctl start shelley-uploader
+```
+
+Then access `https://your-vm.exe.xyz:8099/` anytime (authenticated via exe.dev).
+
+**Manual start:**
 
 ```bash
 shelley uploader
 ```
 
-This starts a web server at `http://localhost:8099` (or `https://your-vm.exe.xyz:8099` on exe.dev). Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
+This starts a web server at `http://localhost:8099`. Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
 
 | Command | Description |
 |---------|-------------|
