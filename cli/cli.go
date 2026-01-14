@@ -1293,12 +1293,27 @@ func (m *Model) finalizeStreamingText() {
 	m.updateViewportContent()
 }
 
+// exyASCII is the exe.dev mascot with hardhat
+const exyASCII = `       .-------.
+      / ======= \
+     |  /     \  |
+      \/   ^   \/
+     .-----------.
+    /   O     O   \
+   |       >       |
+    \    '---'    /
+     '-----------'`
+
 // renderWelcome creates the welcome message shown on startup
 func (m *Model) renderWelcome() string {
 	var sb strings.Builder
 
 	// Add spacing at top
 	sb.WriteString("\n")
+
+	// Show exy mascot
+	sb.WriteString(m.styles.SystemMessage.Render(exyASCII))
+	sb.WriteString("\n\n")
 
 	// Use styles for consistent look
 	title := m.styles.HeaderTitle.Render("Ready to bring your code to life?")
