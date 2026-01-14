@@ -227,7 +227,7 @@ func New(cfg Config) (*Model, error) {
 		promptHistory:  []string{},
 		historyIndex:   -1,
 		responseChan:   make(chan responseMsg, 10),
-		streamChan:     make(chan llm.StreamEvent, 100),
+		streamChan:     make(chan llm.StreamEvent, 1000),
 		verbose:        cfg.Verbose,
 		conversationID: cfg.ConversationID,
 		mouseEnabled:   true,

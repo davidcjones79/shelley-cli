@@ -116,7 +116,8 @@ func runChat(global GlobalConfig, args []string) {
 		}
 	}
 
-	logger := setupLogging(global.Debug)
+	// Use WARN level for chat mode to keep UI clean (unless debug is on)
+	logger := setupLoggingWithLevel(global.Debug, slog.LevelWarn)
 
 	// Build LLM configuration
 	llmConfig := buildLLMConfig(logger, global.ConfigPath, global.TerminalURL, global.DefaultModel)
@@ -389,7 +390,11 @@ func runServe(global GlobalConfig, args []string) {
 }
 
 func setupLogging(debug bool) *slog.Logger {
-	logLevel := slog.LevelInfo
+	return setupLoggingWithLevel(debug, slog.LevelInfo)
+}
+
+func setupLoggingWithLevel(debug bool, defaultLevel slog.Level) *slog.Logger {
+	logLevel := defaultLevel
 	if debug {
 		logLevel = slog.LevelDebug
 	}
