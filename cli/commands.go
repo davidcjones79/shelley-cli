@@ -230,6 +230,9 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	case "/imglist":
 		return m.listImageResults()
 
+	case "/asciiexy":
+		m.showSystemMessage(exyASCII)
+		return nil
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
 		return nil
