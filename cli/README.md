@@ -59,6 +59,7 @@ Add the export to your `~/.bashrc` to persist across sessions.
 - **Conversation sync** - Share conversations with the Shelley web UI via SQLite
 - **Multi-model support** - Switch between Claude, GPT, and open source models on the fly
 - **Image attachments** - Attach local images via `/attach` or use remote image analysis
+- **File uploader** - Drag-and-drop files from your local machine via web UI, then `/pick` to analyze
 - **Tab completion** - Complete file paths and slash commands
 - **Prompt history** - Up/Down arrows cycle through previous prompts
 - **Git integration** - View recent commits and diffs inline
