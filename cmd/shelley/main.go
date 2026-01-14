@@ -42,7 +42,7 @@ func main() {
 	defaultModelID := models.Default().ID
 	flag.StringVar(&global.DBPath, "db", "shelley.db", "Path to SQLite database file")
 	flag.BoolVar(&global.Debug, "debug", false, "Enable debug logging")
-	flag.StringVar(&global.Model, "model", defaultModelID, "LLM model to use (use 'predictable' for testing)")
+	flag.StringVar(&global.Model, "model", "", "LLM model to use (default: from config or claude-opus-4.5)")
 	flag.BoolVar(&global.PredictableOnly, "predictable-only", false, "Use only the predictable service, ignoring all other models")
 	flag.StringVar(&global.ConfigPath, "config", "", "Path to shelley.json configuration file (optional)")
 	flag.StringVar(&global.DefaultModel, "default-model", defaultModelID, "Default model for web UI")
@@ -142,9 +142,14 @@ func runChat(global GlobalConfig, args []string) {
 	}
 
 	// Determine which model to use
+	// Priority: command-line flag > config file > hardcoded default
 	modelID := global.Model
 	if modelID == "" {
-		modelID = models.Default().ID
+		if llmConfig.DefaultModel != "" {
+			modelID = llmConfig.DefaultModel
+		} else {
+			modelID = models.Default().ID
+		}
 	}
 
 	llmService, err := manager.GetService(modelID)
