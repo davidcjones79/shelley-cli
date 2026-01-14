@@ -67,7 +67,7 @@ func DarkStyles() *Styles {
 			Bold(true),
 
 		AssistantMessage: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")). // Green
+			Foreground(lipgloss.Color("14")). // Cyan
 			Bold(true),
 
 		SystemMessage: lipgloss.NewStyle().
@@ -79,14 +79,14 @@ func DarkStyles() *Styles {
 			Bold(true),
 
 		ToolName: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")). // Green
+			Foreground(lipgloss.Color("14")). // Cyan
 			Bold(true),
 
 		ToolInput: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8")), // Gray
 
 		ToolOutput: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")), // Green
+			Foreground(lipgloss.Color("7")), // Light gray (default text)
 
 		ToolError: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("9")), // Red
@@ -96,11 +96,11 @@ func DarkStyles() *Styles {
 			Italic(true),
 
 		ToolSuccess: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")). // Green
+			Foreground(lipgloss.Color("10")). // Green - success is appropriate
 			Bold(true),
 
 		Prompt: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")). // Green
+			Foreground(lipgloss.Color("14")). // Cyan
 			Bold(true),
 
 		InputCursor: lipgloss.NewStyle().
@@ -110,7 +110,7 @@ func DarkStyles() *Styles {
 			Bold(true),
 
 		HeaderTitle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")). // Green
+			Foreground(lipgloss.Color("15")). // White
 			Bold(true),
 
 		StatusBar: lipgloss.NewStyle().
@@ -119,16 +119,16 @@ func DarkStyles() *Styles {
 			Padding(0, 1),
 
 		Spinner: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")), // Green
+			Foreground(lipgloss.Color("14")), // Cyan
 
 		TokenCount: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("11")), // Yellow
 
 		ModelName: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")), // Green
+			Foreground(lipgloss.Color("13")), // Magenta
 
 		WorkingDir: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")), // Green
+			Foreground(lipgloss.Color("12")), // Blue
 
 		Thinking: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("214")). // Orange/gold - visible
@@ -151,7 +151,7 @@ func LightStyles() *Styles {
 			Bold(true),
 
 		AssistantMessage: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")). // Dark green
+			Foreground(lipgloss.Color("30")). // Dark cyan
 			Bold(true),
 
 		SystemMessage: lipgloss.NewStyle().
@@ -163,14 +163,14 @@ func LightStyles() *Styles {
 			Bold(true),
 
 		ToolName: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")). // Green
+			Foreground(lipgloss.Color("30")). // Dark cyan
 			Bold(true),
 
 		ToolInput: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")), // Dark gray
 
 		ToolOutput: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")), // Dark green
+			Foreground(lipgloss.Color("0")), // Black (default text)
 
 		ToolError: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("160")), // Dark red
@@ -180,11 +180,11 @@ func LightStyles() *Styles {
 			Italic(true),
 
 		ToolSuccess: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")). // Dark green
+			Foreground(lipgloss.Color("22")). // Dark green - success is appropriate
 			Bold(true),
 
 		Prompt: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")). // Green
+			Foreground(lipgloss.Color("30")). // Dark cyan
 			Bold(true),
 
 		InputCursor: lipgloss.NewStyle().
@@ -194,7 +194,7 @@ func LightStyles() *Styles {
 			Bold(true),
 
 		HeaderTitle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")). // Green
+			Foreground(lipgloss.Color("0")). // Black
 			Bold(true),
 
 		StatusBar: lipgloss.NewStyle().
@@ -203,16 +203,16 @@ func LightStyles() *Styles {
 			Padding(0, 1),
 
 		Spinner: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")), // Green
+			Foreground(lipgloss.Color("30")), // Dark cyan
 
 		TokenCount: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("136")), // Dark yellow/orange
 
 		ModelName: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")), // Green
+			Foreground(lipgloss.Color("90")), // Dark magenta
 
 		WorkingDir: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("22")), // Green
+			Foreground(lipgloss.Color("24")), // Dark blue
 
 		Thinking: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("214")). // Orange/gold - visible
