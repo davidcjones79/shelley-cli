@@ -14,10 +14,45 @@ This installs the CLI with file uploader service. See [cli/README.md](cli/README
 
 ## What's Added in This Fork
 
-- **CLI Interface** - Full terminal UI with streaming, tool execution, conversation sync
+- **CLI Interface** - Full terminal UI with streaming, tool execution, conversation sync. Tested with:
+  - [iTerm2](https://iterm2.com/downloads.html) (Mac) - works best
+  - [Windows Terminal](https://aka.ms/terminal) (Windows)
+  - [Alacritty](https://alacritty.org/) (Windows/Mac)
+  - Mac built-in Terminal - works, but not as well as the others. If mouse scrolling is enabled, selecting text is difficult without first disabling it via `/mouse`
 - **File Uploader** - Drag-and-drop web UI to get files onto your VM (`shelley uploader`)
 - **`/pick` Command** - Quick workflow to analyze uploaded files
 - **Systemd Service** - Uploader runs persistently at `https://your-vm.exe.xyz:8099/`
+
+## Keyboard Shortcuts
+
+### Input
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send message |
+| `Ctrl+J` | Insert newline (for multi-line input) |
+| `Escape` | Clear input / Cancel current operation |
+| `Tab` | Complete file paths and commands |
+| `Up` / `Down` | Cycle through prompt history |
+
+### Scrolling
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+U` | Scroll up half page |
+| `Ctrl+D` | Scroll down half page |
+| `PgUp` | Scroll up full page |
+| `PgDown` | Scroll down full page |
+| `Home` | Scroll to top |
+| `End` | Scroll to bottom |
+| Mouse wheel | Scroll (when mouse mode enabled) |
+
+### Control
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+C` | Quit |
+| `Escape` | Cancel current operation (while processing) |
 
 ---
 
