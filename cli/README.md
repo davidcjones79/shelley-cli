@@ -90,7 +90,7 @@ export FIREWORKS_BASE_URL="https://your-proxy.example.com/fireworks/inference/v1
 - **Conversation sync** - Share conversations with the Shelley web UI via SQLite
 - **Multi-model support** - Switch between Claude, GPT, and open source models on the fly
 - **Image attachments** - Attach local images via `/attach` or use remote image analysis
-- **File uploader** - Drag-and-drop files from your local machine via web UI, then `/pick` to analyze
+- **Igor** - Your faithful laboratory assistant for file transfers via web UI, then `/pick` to analyze
 - **Tab completion** - Complete file paths and slash commands
 - **Prompt history** - Up/Down arrows cycle through previous prompts
 - **Git integration** - View recent commits and diffs inline
@@ -220,28 +220,48 @@ Conversations sync to the database by default, so you can switch between CLI and
 | `/sync` | Reload messages from database (see below) |
 | `/export [file]` | Export conversation to markdown |
 
-### File Uploads
+### Igor - File Transfer Assistant
 
-If you prefer working in the terminal but need a quick way to get files (screenshots, images, documents) from your local machine to your VM, use the built-in uploader.
+Igor is your faithful laboratory assistant for transferring files between your local machine and your VM. If you prefer working in the terminal but need a quick way to get files (screenshots, images, documents) onto your VM, summon Igor.
 
-**On exe.dev (recommended):** Install as a service so it's always available:
+**On exe.dev (recommended):** Install as a service so Igor is always available:
 
 ```bash
-sudo cp ~/shelley-cli/shelley-uploader.service /etc/systemd/system/
+sudo cp ~/shelley-cli/igor.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable shelley-uploader
-sudo systemctl start shelley-uploader
+sudo systemctl enable igor
+sudo systemctl start igor
 ```
 
-Then access `https://your-vm.exe.xyz:8099/` anytime (authenticated via exe.dev).
+Then access `https://your-vm.exe.xyz:8001/` anytime (authenticated via exe.dev).
 
 **Manual start:**
 
 ```bash
-shelley uploader
+shelley igor
 ```
 
-This starts a web server at `http://localhost:8099`. Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
+This starts Igor at `http://localhost:8001`. Open it in your browser, drag and drop files, and they're saved to `~/uploads/` on your VM.
+
+#### Igor Features
+
+- **Drag & drop uploads** - Drop files anywhere on the page
+- **File browser** - Click the dropzone to browse and select files
+- **Recent specimens** - View and manage your uploaded files
+- **Thumbnails** - Image previews with lightbox for full view
+- **Download files** - Download files back to your local machine
+- **Delete files** - Remove individual files or clear all
+- **Copy paths** - One-click copy of file paths for use in CLI
+
+#### Command Line Options
+
+```bash
+shelley igor              # Start on default port 8001
+shelley igor -port 8080   # Use custom port
+shelley igor -dir /tmp    # Use custom upload directory
+```
+
+#### CLI Commands
 
 | Command | Description |
 |---------|-------------|
@@ -249,14 +269,22 @@ This starts a web server at `http://localhost:8099`. Open it in your browser, dr
 | `/pick` | List recent uploads (numbered) |
 | `/pick <n>` | Analyze file n with Shelley |
 
-**Workflow:**
-1. Run `shelley uploader` (or add `-port 8080` for a custom port)
-2. Open the uploader URL in your browser
+#### Workflow
+
+1. Run `shelley igor` (or use the systemd service)
+2. Open the Igor URL in your browser
 3. Drag and drop files (screenshots, CSVs, code, etc.)
 4. In Shelley CLI, type `/pick` to see uploads
 5. Type `/pick 1` to have Shelley analyze the most recent file
 
 For images, `/pick` loads them directly as attachments. For text files (CSV, JSON, Markdown, code), Shelley reads and analyzes the content.
+
+#### Supported File Types
+
+- **Images** - PNG, JPG, JPEG, GIF, WEBP (shown with thumbnails)
+- **Data** - CSV, JSON
+- **Documents** - Markdown, plain text
+- **Code** - Go, Python, JavaScript, TypeScript, Rust, C, C++, Java, and more
 
 ### Images
 
@@ -271,7 +299,7 @@ For images, `/pick` loads them directly as attachments. For text files (CSV, JSO
 
 **Note:** Drag-and-drop only works if you're running the CLI locally on your computer (not recommended for exe.dev workflows). When SSHed into a remote VM, you have these options for working with local images:
 
-1. **Use the uploader** (recommended) - Run `shelley uploader`, drag files to the web page, then use `/pick` in the CLI. See [File Uploads](#file-uploads) above.
+1. **Summon Igor** (recommended) - Run `shelley igor`, drag files to the web page, then use `/pick` in the CLI. See [Igor - File Transfer Assistant](#igor---file-transfer-assistant) above.
 
 2. **Switch to web client** - The Shelley web UI supports drag-and-drop. Use `/conversations` to find your conversation ID, then open it in the web UI at the same path.
 

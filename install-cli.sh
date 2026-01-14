@@ -59,13 +59,13 @@ fi
 echo "🔗 Installing shelley command..."
 sudo ln -sf ~/shelley-cli/bin/shelley /usr/local/bin/shelley
 
-# Install uploader service
+# Install Igor service
 if [ -d "/exe.dev" ]; then
-    echo "🚀 Installing file uploader service..."
-    sudo cp ~/shelley-cli/shelley-uploader.service /etc/systemd/system/
+    echo "⚡ Installing Igor file transfer service..."
+    sudo cp ~/shelley-cli/igor.service /etc/systemd/system/
     sudo systemctl daemon-reload
-    sudo systemctl enable shelley-uploader
-    sudo systemctl start shelley-uploader
+    sudo systemctl enable igor
+    sudo systemctl start igor
     
     HOSTNAME=$(hostname)
     echo ""
@@ -73,7 +73,7 @@ if [ -d "/exe.dev" ]; then
     echo ""
     echo "   Run:  shelley chat"
     echo ""
-    echo "   File uploader: https://${HOSTNAME}.exe.xyz:8099/"
+    echo "   Igor: https://${HOSTNAME}.exe.xyz:8001/"
 else
     echo ""
     echo "✅ Shelley CLI installed!"

@@ -482,12 +482,6 @@ const igorHTMLTemplate = `<!DOCTYPE html>
 </head>
 <body>
 	<div class="toast" id="toast"></div>
-	<nav class="navbar">
-		<a href="https://exe.dev/" class="navbar-link">
-			<img class="navbar-logo" src="https://exe.dev/static/exy.png" alt="exe.dev">
-			<span class="navbar-brand">exe.dev</span>
-		</a>
-	</nav>
 	<div class="main">
 	<div class="page-title">
 		<h1>⚡ Igor</h1>
@@ -511,7 +505,7 @@ const igorHTMLTemplate = `<!DOCTYPE html>
 				<span class="instructions-arrow"></span>
 			</div>
 			<div class="instructions-body">
-				<p>Igor fetches files between your machine and the laboratory. Upload specimens for experiments, retrieve results when ready.</p>
+				<p>Igor fetches files between your local machine and the laboratory (your VM).</p>
 				<h4>How to use</h4>
 				<ol>
 					<li>Drag and drop files (or click to browse)</li>
@@ -522,7 +516,7 @@ const igorHTMLTemplate = `<!DOCTYPE html>
 			</div>
 		</div>
 		<div class="upload-dir">Laboratory storage: <code>{{.UploadDir}}</code></div>
-		<div class="recent" id="recent">
+		<div class="recent collapsed" id="recent">
 			<div class="recent-header" onclick="toggleRecent()">
 				<div class="recent-toggle">
 					<h3>Specimens</h3>

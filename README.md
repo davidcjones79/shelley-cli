@@ -1,6 +1,6 @@
 # Shelley CLI
 
-> A terminal interface for [Shelley](https://github.com/boldsoftware/shelley), the coding agent. This fork adds CLI, file uploader, and `/pick` workflow.
+> A terminal interface for [Shelley](https://github.com/boldsoftware/shelley), the coding agent. This fork adds CLI, Igor file transfer, and `/pick` workflow.
 
 ## Quick Install (exe.dev)
 
@@ -10,7 +10,7 @@ source ~/.bashrc
 shelley chat
 ```
 
-This installs the CLI with file uploader service. See [cli/README.md](cli/README.md) for full documentation.
+This installs the CLI with Igor file transfer service. See [cli/README.md](cli/README.md) for full documentation.
 
 ## What's Added in This Fork
 
@@ -19,9 +19,9 @@ This installs the CLI with file uploader service. See [cli/README.md](cli/README
   - [Windows Terminal](https://aka.ms/terminal) (Windows)
   - [Alacritty](https://alacritty.org/) (Windows/Mac)
   - Mac built-in Terminal - works, but not as well as the others. If mouse scrolling is enabled, selecting text is difficult without first disabling it via `/mouse`
-- **File Uploader** - Drag-and-drop web UI to get files onto your VM (`shelley uploader`)
+- **Igor** - Your faithful laboratory assistant for file transfers (`shelley igor`)
 - **`/pick` Command** - Quick workflow to analyze uploaded files
-- **Systemd Service** - Uploader runs persistently at `https://your-vm.exe.xyz:8099/`
+- **Systemd Service** - Igor runs persistently at `https://your-vm.exe.xyz:8001/`
 
 ## Keyboard Shortcuts
 
