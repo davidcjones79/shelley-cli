@@ -57,6 +57,7 @@ func main() {
 		fmt.Fprintf(flag.CommandLine.Output(), "  serve [flags]                 Start the web server\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  memory <add|list|remove>      Manage persistent memory\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  unpack-template <name> <dir>  Unpack a project template to a directory\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  uploader [flags]              Start file upload server for drag & drop\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  version                       Print version information as JSON\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "\nUse '%s <command> -h' for command-specific help\n", os.Args[0])
 	}
@@ -87,6 +88,8 @@ func main() {
 		runMemory(args[1:])
 	case "unpack-template":
 		runUnpackTemplate(args[1:])
+	case "uploader":
+		runUploader(args[1:])
 	case "version":
 		runVersion()
 	default:
@@ -731,4 +734,32 @@ func systemdListener() (net.Listener, error) {
 	f.Close()
 
 	return listener, nil
+}
+
+func runUploader(args []string) {
+	fs := flag.NewFlagSet("uploader", flag.ExitOnError)
+	port := fs.Int("port", 8001, "Port to listen on")
+	dir := fs.String("dir", "", "Upload directory (default: ~/uploads)")
+	fs.Parse(args)
+
+	uploadDir := *dir
+	if uploadDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting home dir: %v\n", err)
+			os.Exit(1)
+		}
+		uploadDir = filepath.Join(home, "uploads")
+	}
+
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating upload dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Upload server running on :%d\n", *port)
+	fmt.Printf("Files will be saved to %s\n", uploadDir)
+	fmt.Printf("Drag & drop files at http://localhost:%d/\n", *port)
+
+	server.RunUploader(*port, uploadDir)
 }
