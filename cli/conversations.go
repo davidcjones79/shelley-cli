@@ -484,3 +484,72 @@ func (m *Model) searchConversations(query string) tea.Cmd {
 	m.updateViewportContent()
 	return nil
 }
+
+// syncConversation reloads messages from the database, picking up any changes
+// made by other Shelley instances (e.g., web UI or another terminal)
+func (m *Model) syncConversation() tea.Cmd {
+	if m.config.DB == nil {
+		m.showError("Database not configured. Use -sync flag to enable.")
+		return nil
+	}
+
+	if m.conversationID == "" {
+		m.showError("No active conversation to sync")
+		return nil
+	}
+
+	// Count current messages for comparison
+	prevCount := len(m.messages)
+
+	// Reload history from database
+	history, err := m.loadHistoryFromDB()
+	if err != nil {
+		m.showError("Failed to sync: " + err.Error())
+		return nil
+	}
+
+	// Clear and rebuild messages
+	m.messages = nil
+	m.toolNames = make(map[string]string)
+
+	// First pass: extract tool names
+	for _, msg := range history {
+		for _, content := range msg.Content {
+			if content.Type == llm.ContentTypeToolUse && content.ID != "" && content.ToolName != "" {
+				m.toolNames[content.ID] = content.ToolName
+			}
+		}
+	}
+	m.renderer.toolNames = m.toolNames
+
+	// Second pass: render messages
+	for _, msg := range history {
+		rendered := m.renderer.RenderMessage(msg, m.verbose)
+		if rendered != "" {
+			m.messages = append(m.messages, renderedMessage{
+				role:    msg.Role,
+				content: rendered,
+			})
+		}
+	}
+
+	// Update the loop's history if it exists
+	if m.loop != nil {
+		m.loop.SetHistory(history)
+	}
+
+	newCount := len(m.messages)
+	diff := newCount - prevCount
+
+	var statusMsg string
+	if diff > 0 {
+		statusMsg = fmt.Sprintf("Synced: %d new message(s)", diff)
+	} else if diff < 0 {
+		statusMsg = fmt.Sprintf("Synced: %d message(s) removed", -diff)
+	} else {
+		statusMsg = "Synced: no changes"
+	}
+
+	m.showSystemMessage(statusMsg)
+	return nil
+}
