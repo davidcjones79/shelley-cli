@@ -1,5 +1,12 @@
 package cli
 
+// TODO: Refactor Update() (~380 lines) - extract message handlers:
+//   - handleKeyMsg()
+//   - handleStreamMsg()
+//   - handleResponseMsg()
+//
+// TODO: Consolidate tool rendering duplication between streaming and non-streaming paths
+
 import (
 	"context"
 	"encoding/json"
