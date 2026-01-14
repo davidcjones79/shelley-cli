@@ -336,18 +336,54 @@ func (m *Model) listImageResults() tea.Cmd {
 			sb.WriteString(fmt.Sprintf("  ... and %d more\n", len(files)-10))
 			break
 		}
-		// Extract timestamp from filename
-		base := filepath.Base(f)
+		// Get timestamp
 		info, _ := os.Stat(f)
 		var timeStr string
 		if info != nil {
 			timeStr = info.ModTime().Format("Jan 2 15:04")
 		}
-		sb.WriteString(fmt.Sprintf("  %d. %s (%s)\n", i+1, base, timeStr))
+		// Read first line of content as preview
+		preview := getImageResultPreview(f)
+		sb.WriteString(fmt.Sprintf("  %d. %s (%s)\n", i+1, preview, timeStr))
 	}
 	sb.WriteString("\nUse /imgresult or /imgresult <n> to inject into conversation")
 	m.showSystemMessage(sb.String())
 	return nil
+}
+
+// getImageResultPreview reads the first meaningful line of an image result file
+func getImageResultPreview(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "(unable to read)"
+	}
+	
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return "(empty)"
+	}
+	
+	// Get first non-empty line
+	lines := strings.Split(content, "\n")
+	var preview string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			preview = line
+			break
+		}
+	}
+	
+	if preview == "" {
+		return "(empty)"
+	}
+	
+	// Truncate if too long
+	if len(preview) > 60 {
+		preview = preview[:57] + "..."
+	}
+	
+	return preview
 }
 
 // injectImageResult reads the Mac describe-image result and injects it into the conversation as context
