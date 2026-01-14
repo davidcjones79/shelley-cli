@@ -38,10 +38,7 @@ cd shelley-cli
 make
 ```
 
-# Releases
 
-New releases are automatically created on every commit to `main`. Versions
-follow the pattern `v0.N.9OCTAL` where N is the total commit count and 9OCTAL is the commit SHA encoded as octal (prefixed with 9).
 
 # Architecture 
 
@@ -87,7 +84,7 @@ EOF
 Then add an alias to your `~/.bashrc`:
 
 ```bash
-alias shelley='~/shelley-cli/bin/shelley -db ~/.config/shelley/shelley.db -config /exe.dev/shelley.json'
+alias shelley='~/shelley-cli/bin/shelley -db ~/.config/shelley/shelley.db -config ~/.config/shelley/shelley.json'
 ```
 
 Now you can simply run:
@@ -123,9 +120,11 @@ Then `source ~/.bashrc` or start a new terminal.
 
 In the CLI, use `/models` to list available models and `/model <name>` to switch.
 
-# Open source
+# License
 
-Shelley is Apache licensed. We require a CLA for contributions.
+Shelley is Apache 2.0 licensed. See [LICENSE](LICENSE) for details.
+
+This fork maintains the same license. For contributions to upstream Shelley, see [boldsoftware/shelley](https://github.com/boldsoftware/shelley).
 
 # Building Shelley
 
