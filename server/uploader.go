@@ -37,8 +37,12 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 		.header {
 			display: flex;
 			align-items: center;
-			gap: 8px;
+			gap: 10px;
 			margin-bottom: 24px;
+		}
+		.logo {
+			width: 32px;
+			height: 32px;
 		}
 		.status {
 			width: 10px;
@@ -161,6 +165,7 @@ const uploaderHTMLTemplate = `<!DOCTYPE html>
 <body>
 	<div class="container">
 		<div class="header">
+			<img class="logo" src="https://exe.dev/static/exy.png" alt="exe.dev">
 			<span class="status"></span>
 			<span class="hostname">{{.Hostname}}</span>
 		</div>
