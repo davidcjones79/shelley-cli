@@ -158,6 +158,9 @@ type Model struct {
 	// Last viewport content (to avoid unnecessary updates)
 	lastViewportContent string
 
+	// User manually scrolled up - don't auto-scroll until they return to bottom
+	userScrolledUp bool
+
 	// Mouse mode enabled (for scrolling, but prevents text selection)
 	mouseEnabled bool
 
@@ -432,12 +435,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Page/half-page up in viewport
 			if m.viewportReady {
 				m.viewport.HalfViewUp()
+				m.userScrolledUp = true
 			}
 
 		case tea.KeyPgDown, tea.KeyCtrlD:
 			// Page/half-page down in viewport
 			if m.viewportReady {
 				m.viewport.HalfViewDown()
+				if m.viewport.AtBottom() {
+					m.userScrolledUp = false
+				}
 			}
 		}
 
@@ -447,8 +454,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.Button {
 			case tea.MouseButtonWheelUp:
 				m.viewport.LineUp(3)
+				m.userScrolledUp = true
 			case tea.MouseButtonWheelDown:
 				m.viewport.LineDown(3)
+				if m.viewport.AtBottom() {
+					m.userScrolledUp = false
+				}
 			}
 		}
 
@@ -738,6 +749,7 @@ func (m *Model) sendMessage() tea.Cmd {
 	m.streamingText.Reset()
 	m.currentToolName = ""
 	m.currentToolInput.Reset()
+	m.userScrolledUp = false // Reset scroll state on new message
 
 	// Clear suggested commands for new conversation turn
 	m.suggestedCmds = nil
@@ -998,12 +1010,14 @@ func (m *Model) updateViewportContentAndScroll(scrollToBottom bool) {
 
 	// Only update if content actually changed
 	if newContent != m.lastViewportContent {
-		wasAtBottom := m.viewport.AtBottom()
 		m.lastViewportContent = newContent
 		m.viewport.SetContent(newContent)
 
-		// Scroll to bottom if requested or if user was already there
-		if scrollToBottom || wasAtBottom {
+		// Scroll to bottom if explicitly requested, or if user hasn't scrolled up
+		if scrollToBottom {
+			m.userScrolledUp = false
+			m.viewport.GotoBottom()
+		} else if !m.userScrolledUp {
 			m.viewport.GotoBottom()
 		}
 	}
@@ -1039,9 +1053,6 @@ func (m *Model) updateViewportContent() {
 	
 	// Only update and scroll if content actually changed
 	if newContent != m.lastViewportContent {
-		// Check if user was at bottom before update
-		wasAtBottom := m.viewport.AtBottom()
-		
 		// Detect transition from welcome message to real content
 		wasShowingWelcome := strings.Contains(m.lastViewportContent, "Welcome to Shelley CLI")
 		transitionFromWelcome := wasShowingWelcome && !showingWelcome
@@ -1049,8 +1060,12 @@ func (m *Model) updateViewportContent() {
 		m.lastViewportContent = newContent
 		m.viewport.SetContent(newContent)
 		
-		// Auto-scroll if at bottom OR transitioning from welcome screen
-		if wasAtBottom || transitionFromWelcome {
+		// Auto-scroll unless user explicitly scrolled up
+		// Reset userScrolledUp on transition from welcome or when user returns to bottom
+		if transitionFromWelcome {
+			m.userScrolledUp = false
+		}
+		if !m.userScrolledUp {
 			m.viewport.GotoBottom()
 		}
 	}
