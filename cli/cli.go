@@ -1306,9 +1306,6 @@ func (m *Model) finalizeStreamingText() {
 	m.updateViewportContent()
 }
 
-// exyASCII is the exe.dev mascot
-const exyASCII = `.*:....:::=+*%%%**=-::..*:..:==+===+:..-+--+=+#####%**++=--+`
-
 // renderConsentScreen shows the initial consent/warning screen
 // Frankenstein accent color - bright lime for decorative elements
 const frankensteinAccent = lipgloss.Color("#919831")
