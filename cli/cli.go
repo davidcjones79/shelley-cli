@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,6 +33,96 @@ import (
 	"shelley.exe.dev/models"
 	"shelley.exe.dev/slug"
 )
+
+// frankensteinStatus returns a random Frankenstein-themed status message
+// Mary Shelley wrote Frankenstein, so we honor the namesake
+var frankensteinStatuses = []string{
+	// Lab/Creation themed
+	"Harnessing lightning...",
+	"Stitching together...",
+	"Animating the creature...",
+	"Charging the apparatus...",
+	"Galvanizing...",
+	"Assembling parts...",
+	"Reanimating...",
+	"Connecting the electrodes...",
+	"Calibrating the voltaic pile...",
+	"Preparing the galvanic bath...",
+	"Raising the platform...",
+	"Opening the skylight...",
+	"The machinery hums...",
+	"Bubbling beakers...",
+	"Adjusting the dials...",
+	"Checking the sutures...",
+	"Reading the instruments...",
+	// Gothic/Atmospheric
+	"Brooding in the laboratory...",
+	"Consulting ancient texts...",
+	"By candlelight...",
+	"The creature stirs...",
+	"Awaiting the storm...",
+	"In the shadows...",
+	"A dark and stormy night...",
+	"The wind howls outside...",
+	"Thunder rumbles...",
+	"In Castle Frankenstein...",
+	"Midnight approaches...",
+	"Cobwebs tremble...",
+	"Candles flicker...",
+	"Something stirs below...",
+	"The tower shakes...",
+	"Rain lashes the windows...",
+	"Fog rolls in...",
+	"The clock strikes twelve...",
+	// Literary references (Mary Shelley's novel)
+	"Prometheus stirs...",
+	"The Modern Prometheus awakens...",
+	"From the workshop of filthy creation...",
+	"Pursuing nature to her hiding places...",
+	"Infusing a spark of being...",
+	"The secrets of heaven and earth...",
+	"A new species would bless me...",
+	"The beauty of the dream vanished...",
+	"I beheld the wretch...",
+	// Classic film references
+	"Igor, the switches!",
+	"Throw the switch!",
+	"It's alive... almost...",
+	"The monster awakens...",
+	"Lightning crackles...",
+	"Sparks fly...",
+	"More power!",
+	"The body twitches...",
+	"Vital signs detected...",
+	"The hand moves...",
+	"Eyes flicker open...",
+	"Give my creature life!",
+	"The moment of truth...",
+	"Destiny awaits...",
+	"History in the making...",
+	"Science prevails...",
+	"The experiment continues...",
+	"Behold!",
+	"Stand back!",
+	"Now we wait...",
+	"Patience, Igor...",
+	"Almost there...",
+	"The stars align...",
+	"Fate intervenes...",
+	"Genius at work...",
+}
+
+func randomFrankensteinStatus() string {
+	return frankensteinStatuses[rand.Intn(len(frankensteinStatuses))]
+}
+
+// getWorkingStatus returns a status message, either Frankenstein-themed or standard
+func (m *Model) getWorkingStatus() string {
+	if m.config.BoringStatus {
+		return "Working..."
+	}
+	return randomFrankensteinStatus()
+}
 
 // bashCodeBlockRe matches ```bash or ```sh code blocks
 var bashCodeBlockRe = regexp.MustCompile("(?s)```(?:bash|sh|shell|zsh)\\s*\\n(.*?)```")
@@ -65,6 +156,7 @@ type Config struct {
 	System        []llm.SystemContent
 	Verbose       bool // Show tool execution details
 	EnableBrowser bool // Enable browser tools
+	BoringStatus  bool // Use standard status messages instead of Frankenstein-themed
 
 	// Model manager for switching models (optional)
 	ModelManager *models.Manager
@@ -586,12 +678,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.event.Type {
 		case llm.StreamEventRequestStart:
 			// Request is being sent to the API
-			m.processStatus = "Sending request..."
+			m.processStatus = m.getWorkingStatus()
 
 		case llm.StreamEventTextDelta:
 			// Accumulate text and update display
 			m.streamingActive = true
-			m.processStatus = "Receiving..."
+			if m.config.BoringStatus {
+				m.processStatus = "Receiving..."
+			} else {
+				m.processStatus = "It's alive!"
+			}
 			m.streamingText.WriteString(msg.event.Text)
 			m.updateStreamingDisplay()
 
@@ -613,7 +709,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.toolNames[msg.event.ToolUseID] = msg.event.ToolName
 			}
 			// Update status to show which tool is running
-			m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
+			if m.config.BoringStatus {
+				m.processStatus = fmt.Sprintf("Running %s...", msg.event.ToolName)
+			} else {
+				m.processStatus = fmt.Sprintf("The creature runs %s...", msg.event.ToolName)
+			}
 			// Show tool starting indicator (verbose: boxed, non-verbose: inline)
 			toolMsg := m.styles.ToolName.Render(msg.event.ToolName) + " " + m.styles.ToolRunning.Render("running...")
 			var content string
@@ -743,7 +843,7 @@ func (m *Model) sendMessage() tea.Cmd {
 	m.textarea.SetHeight(2)
 	m.recalculateViewportHeight()
 	m.processing = true
-	m.processStatus = "Preparing request..."
+	m.processStatus = m.getWorkingStatus()
 	m.err = nil
 	m.streamingActive = false
 	m.streamingText.Reset()
@@ -1312,7 +1412,7 @@ func (m *Model) View() string {
 	if m.processing {
 		status := m.processStatus
 		if status == "" {
-			status = "Agent working..."
+			status = m.getWorkingStatus()
 		}
 		statusLine := m.spinner.View() + " " + m.styles.Thinking.Render(status)
 		if len(m.pendingMessages) > 0 {

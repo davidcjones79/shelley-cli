@@ -105,6 +105,7 @@ func runChat(global GlobalConfig, args []string) {
 	useDB := fs.Bool("sync", true, "Sync conversations with database (enables /conversations, /switch)")
 	noSync := fs.Bool("no-sync", false, "Disable database sync (ephemeral conversation)")
 	conversationID := fs.String("conversation", "", "Resume specific conversation by ID or slug")
+	boringStatus := fs.Bool("boring", false, "Use standard status messages instead of Frankenstein-themed")
 	fs.Parse(args)
 
 	// Check for piped stdin
@@ -202,6 +203,7 @@ func runChat(global GlobalConfig, args []string) {
 		Verbose:       *verbose,
 		EnableBrowser: *enableBrowser,
 		ModelManager:  manager,
+		BoringStatus:  *boringStatus,
 	}
 
 	// Set up database if sync is enabled (default: true, unless -no-sync)
