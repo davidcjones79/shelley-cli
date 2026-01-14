@@ -19,7 +19,7 @@ import (
 	"shelley.exe.dev/db"
 	"shelley.exe.dev/llm"
 	"shelley.exe.dev/loop"
-	"shelley.exe.dev/memory"
+
 	"shelley.exe.dev/models"
 	"shelley.exe.dev/server"
 	"shelley.exe.dev/templates"
@@ -55,7 +55,7 @@ func main() {
 		fmt.Fprintf(flag.CommandLine.Output(), "\nCommands:\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  chat [flags]                  Start interactive CLI chat mode\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  serve [flags]                 Start the web server\n")
-		fmt.Fprintf(flag.CommandLine.Output(), "  memory <add|list|remove>      Manage persistent memory\n")
+
 		fmt.Fprintf(flag.CommandLine.Output(), "  unpack-template <name> <dir>  Unpack a project template to a directory\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  uploader [flags]              Start file upload server for drag & drop\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  version                       Print version information as JSON\n")
@@ -84,8 +84,7 @@ func main() {
 		runChat(global, args[1:])
 	case "serve":
 		runServe(global, args[1:])
-	case "memory":
-		runMemory(args[1:])
+
 	case "unpack-template":
 		runUnpackTemplate(args[1:])
 	case "uploader":
@@ -172,14 +171,6 @@ func runChat(global GlobalConfig, args []string) {
 	if err != nil {
 		logger.Warn("Failed to generate system prompt", "error", err)
 		systemPrompt = ""
-	}
-
-	// Append memory to system prompt
-	memStore, err := memory.Load()
-	if err != nil {
-		logger.Warn("Failed to load memory", "error", err)
-	} else {
-		systemPrompt += memStore.ForSystemPrompt()
 	}
 
 	var system []llm.SystemContent
@@ -491,73 +482,6 @@ func runUnpackTemplate(args []string) {
 
 	fmt.Printf("Template %q unpacked to %s\n", templateName, destDir)
 }
-
-// runMemory handles the memory subcommand
-func runMemory(args []string) {
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: shelley memory <add|list|remove> [args]\n")
-		fmt.Fprintf(os.Stderr, "\nSubcommands:\n")
-		fmt.Fprintf(os.Stderr, "  add <text>     Add a memory entry\n")
-		fmt.Fprintf(os.Stderr, "  list           List all memory entries\n")
-		fmt.Fprintf(os.Stderr, "  remove <index> Remove a memory entry by index\n")
-		os.Exit(1)
-	}
-
-	store, err := memory.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading memory: %v\n", err)
-		os.Exit(1)
-	}
-
-	switch args[0] {
-	case "add":
-		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "Usage: shelley memory add <text>\n")
-			os.Exit(1)
-		}
-		text := strings.Join(args[1:], " ")
-		store.Add(text)
-		if err := store.Save(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving memory: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("Memory added.")
-
-	case "list":
-		if len(store.Entries) == 0 {
-			fmt.Println("No memories stored.")
-			return
-		}
-		for i, entry := range store.Entries {
-			fmt.Printf("%d: %s\n", i, entry.Text)
-		}
-
-	case "remove":
-		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "Usage: shelley memory remove <index>\n")
-			os.Exit(1)
-		}
-		index, err := strconv.Atoi(args[1])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Invalid index: %s\n", args[1])
-			os.Exit(1)
-		}
-		if err := store.Remove(index); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		if err := store.Save(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving memory: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("Memory removed.")
-
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown memory subcommand: %s\n", args[0])
-		os.Exit(1)
-	}
-}
-
 // runVersion prints version information as JSON
 func runVersion() {
 	info := version.GetInfo()
