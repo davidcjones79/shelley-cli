@@ -76,10 +76,12 @@
             </div>
         </header>
 
-        <div class="card">
-            <div class="token-input">
-                <input type="password" id="token" placeholder="API Token">
-                <button onclick="saveToken()" class="btn-primary btn-sm">Connect</button>
+        <div class="card" id="coord-control">
+            <h2>⚙️ Coordinator Control</h2>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <span id="coord-status" class="badge badge-idle">Checking...</span>
+                <button id="start-btn" onclick="startCoordinator()" class="btn-success btn-sm">Start</button>
+                <button id="stop-btn" onclick="stopCoordinator()" class="btn-sm" style="background:var(--danger);color:#fff">Stop</button>
             </div>
         </div>
 
@@ -136,12 +138,80 @@
     <script>
         let token = localStorage.getItem('coordToken') || '';
         let logs = [];
-        document.getElementById('token').value = token;
+        let coordRunning = false;
 
-        function saveToken() {
-            token = document.getElementById('token').value;
-            localStorage.setItem('coordToken', token);
-            refresh();
+        async function checkCoordinatorStatus() {
+            try {
+                const res = await fetch('/dashboard/status');
+                const data = await res.json();
+                coordRunning = data.running;
+                updateCoordUI();
+                // Add server logs to our log display
+                if (data.logs && data.logs.length > 0) {
+                    const lastLog = data.logs[data.logs.length - 1];
+                    if (!logs.find(l => l.msg === lastLog)) {
+                        const time = new Date().toLocaleTimeString();
+                        logs.unshift({ time, msg: lastLog.replace(/^\[.*?\] /, '') });
+                        if (logs.length > 50) logs.pop();
+                        renderLogs();
+                    }
+                }
+            } catch (e) {
+                coordRunning = false;
+                updateCoordUI();
+            }
+        }
+
+        function updateCoordUI() {
+            const statusEl = document.getElementById('coord-status');
+            const startBtn = document.getElementById('start-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            
+            if (coordRunning) {
+                statusEl.textContent = 'Running';
+                statusEl.className = 'badge badge-completed';
+                startBtn.disabled = true;
+                startBtn.style.opacity = '0.5';
+                stopBtn.disabled = false;
+                stopBtn.style.opacity = '1';
+            } else {
+                statusEl.textContent = 'Stopped';
+                statusEl.className = 'badge badge-failed';
+                startBtn.disabled = false;
+                startBtn.style.opacity = '1';
+                stopBtn.disabled = true;
+                stopBtn.style.opacity = '0.5';
+            }
+        }
+
+        async function startCoordinator() {
+            try {
+                const res = await fetch('/dashboard/start', { method: 'POST' });
+                const data = await res.json();
+                if (data.error) {
+                    alert('Failed: ' + data.error);
+                } else {
+                    addLog('Coordinator starting...');
+                    setTimeout(checkCoordinatorStatus, 1000);
+                }
+            } catch (e) {
+                alert('Failed: ' + e.message);
+            }
+        }
+
+        async function stopCoordinator() {
+            try {
+                const res = await fetch('/dashboard/stop', { method: 'POST' });
+                const data = await res.json();
+                if (data.error) {
+                    alert('Failed: ' + data.error);
+                } else {
+                    addLog('Coordinator stopping...');
+                    setTimeout(checkCoordinatorStatus, 1000);
+                }
+            } catch (e) {
+                alert('Failed: ' + e.message);
+            }
         }
 
         function toggleDark() {
@@ -274,7 +344,11 @@
 
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
-        setInterval(refresh, 3000);
+        setInterval(() => {
+            checkCoordinatorStatus();
+            if (coordRunning) refresh();
+        }, 3000);
+        checkCoordinatorStatus();
         refresh();
     </script>
 </body>

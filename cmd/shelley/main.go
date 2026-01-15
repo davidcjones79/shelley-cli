@@ -60,6 +60,7 @@ func main() {
 		fmt.Fprintf(flag.CommandLine.Output(), "  serve [flags]                 Start the web server\n")
 
 		fmt.Fprintf(flag.CommandLine.Output(), "  coord [flags]                 Start coordinator server\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  dashboard [flags]             Start dashboard with coordinator management\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  unpack-template <name> <dir>  Unpack a project template to a directory\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  igor [flags]                  Start Igor file transfer server\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  version                       Print version information as JSON\n")
@@ -91,6 +92,8 @@ func main() {
 
 	case "coord":
 		runCoord(global, args[1:])
+	case "dashboard":
+		runDashboard(global, args[1:])
 	case "unpack-template":
 		runUnpackTemplate(args[1:])
 	case "igor":
@@ -795,6 +798,76 @@ func runCoord(global GlobalConfig, args []string) {
 }
 
 var cryptoRand io.Reader = nil
+func runDashboard(global GlobalConfig, args []string) {
+	fs := flag.NewFlagSet("dashboard", flag.ExitOnError)
+	port := fs.Int("port", 8080, "Dashboard HTTP server port")
+	coordPort := fs.Int("coord-port", 8081, "Coordinator internal port")
+	dbPath := fs.String("db", "coordinator.db", "SQLite database path")
+	workerPrefix := fs.String("prefix", "wk", "Worker VM name prefix")
+	maxWorkers := fs.Int("max-workers", 10, "Maximum workers allowed")
+	shelleyBin := fs.String("shelley-bin", "", "Path to shelley binary (default: this binary)")
+	coordHost := fs.String("host", "", "Coordinator hostname (auto-detected)")
+	apiToken := fs.String("token", "", "API token (auto-generated if empty)")
+	autoStart := fs.Bool("auto-start", false, "Automatically start coordinator on dashboard startup")
+
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage: shelley dashboard [flags]\n\n")
+		fmt.Fprintf(fs.Output(), "Start the dashboard server with coordinator management.\n\n")
+		fmt.Fprintf(fs.Output(), "Flags:\n")
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+
+	// Auto-detect shelley binary path
+	if *shelleyBin == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting executable path: %v\n", err)
+			os.Exit(1)
+		}
+		*shelleyBin = exe
+	}
+
+	// Auto-detect hostname
+	if *coordHost == "" {
+		hostname, _ := os.Hostname()
+		*coordHost = hostname + ".exe.xyz"
+	}
+
+	// Auto-generate token if not provided
+	if *apiToken == "" {
+		b := make([]byte, 16)
+		if _, err := io.ReadFull(cryptoRand, b); err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating token: %v\n", err)
+			os.Exit(1)
+		}
+		*apiToken = fmt.Sprintf("%x", b)
+	}
+
+	config := coordinator.DashboardConfig{
+		Port:         *port,
+		CoordPort:    *coordPort,
+		CoordDBPath:  *dbPath,
+		ShelleyBin:   *shelleyBin,
+		MaxWorkers:   *maxWorkers,
+		WorkerPrefix: *workerPrefix,
+		CoordHost:    *coordHost,
+		APIToken:     *apiToken,
+	}
+
+	dash := coordinator.NewDashboard(config)
+
+	if *autoStart {
+		if err := dash.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to auto-start coordinator: %v\n", err)
+		}
+	}
+
+	if err := dash.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Dashboard error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
 func init() {
 	cryptoRand = cryptoRandReader{}
