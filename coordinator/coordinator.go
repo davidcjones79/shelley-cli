@@ -554,7 +554,9 @@ func (c *Coordinator) updateGroupStatus(groupID string) {
 func (c *Coordinator) SpawnWorker() (*Worker, error) {
 	b := make([]byte, 6)
 	rand.Read(b)
-	workerID := fmt.Sprintf("%s-%s", c.config.WorkerPrefix, hex.EncodeToString(b))
+	// exe.dev rejects VM names that are all digits, so we add an 'x' prefix
+	// to ensure the hex suffix always contains at least one letter
+	workerID := fmt.Sprintf("%s-x%s", c.config.WorkerPrefix, hex.EncodeToString(b))
 
 	_, err := c.db.Exec(`INSERT INTO workers (id, status) VALUES (?, 'starting')`, workerID)
 	if err != nil {
@@ -596,21 +598,33 @@ func (c *Coordinator) setupWorker(workerID string) {
 	}
 
 	log.Printf("Installing shelley-cli on %s...", workerID)
-	downloadURL := fmt.Sprintf("https://%s:%d/shelley-bin", c.config.CoordHost, c.config.Port)
 
-	installCmds := [][]string{
-		{"mkdir", "-p", ".local/bin", ".config/shelley"},
-		{"curl", "-sSL", "-o", ".local/bin/shelley", downloadURL},
-		{"chmod", "+x", ".local/bin/shelley"},
+	// Create directories on worker
+	mkdirCmd := exec.Command("ssh", "-o", "ConnectTimeout=60", "-o", "StrictHostKeyChecking=no",
+		workerHost, "mkdir", "-p", ".local/bin", ".config/shelley")
+	if _, err := mkdirCmd.CombinedOutput(); err != nil {
+		log.Printf("Failed to create directories on %s: %v", workerID, err)
+		c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
+		return
 	}
 
-	for _, args := range installCmds {
-		cmd := exec.Command("ssh", append([]string{"-o", "ConnectTimeout=60", "-o", "StrictHostKeyChecking=no", workerHost}, args...)...)
-		if _, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("Install failed on %s: %v", workerID, err)
-			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
-			return
-		}
+	// SCP the shelley binary directly (avoids exe.dev auth proxy issues)
+	log.Printf("Copying shelley binary to %s via scp...", workerID)
+	scpCmd := exec.Command("scp", "-o", "ConnectTimeout=120", "-o", "StrictHostKeyChecking=no",
+		c.config.ShelleyBin, workerHost+":.local/bin/shelley")
+	if out, err := scpCmd.CombinedOutput(); err != nil {
+		log.Printf("Failed to scp shelley to %s: %v\n%s", workerID, err, out)
+		c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
+		return
+	}
+
+	// Make executable
+	chmodCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
+		workerHost, "chmod", "+x", ".local/bin/shelley")
+	if _, err := chmodCmd.CombinedOutput(); err != nil {
+		log.Printf("Failed to chmod shelley on %s: %v", workerID, err)
+		c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
+		return
 	}
 
 	configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
@@ -646,19 +660,44 @@ func (c *Coordinator) setupWorker(workerID string) {
 }
 
 func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
+	// Start shelley serve on the worker so we can view progress via web UI
+	log.Printf("Starting shelley serve on %s...", workerID)
+	
+	// Start shelley serve in the background on port 8000
+	serveCmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", workerHost,
+		"nohup", ".local/bin/shelley", "-config", ".config/shelley/shelley.json",
+		"-db", "/tmp/shelley-worker.db", "serve", "-port", "8000",
+		">", "/tmp/shelley-serve.log", "2>&1", "&")
+	serveCmd.Run()
+	
+	// Wait for shelley serve to be ready
+	time.Sleep(2 * time.Second)
+	
+	// The worker agent script polls for tasks and uses the local shelley API
 	pollScript := fmt.Sprintf(`#!/bin/bash
 set -e
 export PATH="$HOME/.local/bin:$PATH"
 COORD="https://%s:%d"
 WORKER_ID="%s"
+API_TOKEN="%s"
+SHELLEY_API="http://localhost:8000"
 IDLE_COUNT=0
 MAX_IDLE=24
 WORKDIR="$HOME/workspaces"
 
 mkdir -p "$WORKDIR"
 
+# Wait for shelley serve to be ready
+for i in $(seq 1 30); do
+    if curl -s "$SHELLEY_API/api/health" >/dev/null 2>&1; then
+        echo "Shelley API ready"
+        break
+    fi
+    sleep 1
+done
+
 while true; do
-    RESPONSE=$(curl -s "$COORD/api/next-task?worker=$WORKER_ID")
+    RESPONSE=$(curl -s -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/next-task?worker=$WORKER_ID")
     TASK_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
     
     if [ -n "$TASK_ID" ]; then
@@ -670,12 +709,11 @@ while true; do
         
         echo "=== Task $TASK_ID ==="
         echo "Prompt: $PROMPT"
-        echo "Repo: $REPO_URL"
-        echo "Branch: $BRANCH_NAME"
         
         TASK_DIR="$WORKDIR/$TASK_ID"
         COMMIT_SHA=""
         ERROR=""
+        CWD="$HOME"
         
         # If repo URL provided, clone and setup git
         if [ -n "$REPO_URL" ]; then
@@ -686,36 +724,71 @@ while true; do
                 ERROR="Failed to clone repository"
                 curl -s -X POST "$COORD/api/complete" \
                     -H "Content-Type: application/json" \
+                    -H "X-Coordinator-Token: $API_TOKEN" \
                     -d "$(jq -n --arg tid "$TASK_ID" --arg wid "$WORKER_ID" --arg err "$ERROR" \
                         '{task_id: $tid, worker_id: $wid, error: $err}')"
                 continue
             fi
             
+            CWD="$TASK_DIR"
             cd "$TASK_DIR"
             
-            # Create task branch
             if [ -n "$BRANCH_NAME" ]; then
                 git checkout -b "$BRANCH_NAME"
             fi
             
-            # Configure git for commits
             git config user.email "shelley-worker@exe.dev"
             git config user.name "Shelley Worker ($WORKER_ID)"
         else
-            # No repo - work in a temp directory
             TASK_DIR="$WORKDIR/$TASK_ID"
             mkdir -p "$TASK_DIR"
-            cd "$TASK_DIR"
+            CWD="$TASK_DIR"
         fi
         
-        echo "Running shelley in $(pwd)..."
+        echo "Starting conversation via Shelley API..."
         
-        # Run shelley with the prompt
-        OUTPUT=$(shelley -config ~/.config/shelley/shelley.json chat -yes -no-sync -prompt "$PROMPT" 2>&1) || true
+        # Create a new conversation with the task prompt using shelley API
+        # This allows viewing progress in the web UI at https://$WORKER_ID.exe.xyz:8000/
+        CONV_RESPONSE=$(curl -s -X POST "$SHELLEY_API/api/conversations/new" \
+            -H "Content-Type: application/json" \
+            -H "X-Shelley-Request: 1" \
+            -d "$(jq -n --arg msg "$PROMPT" --arg cwd "$CWD" \
+                '{message: $msg, cwd: $cwd, auto_approve: true}')")
+        
+        CONV_ID=$(echo "$CONV_RESPONSE" | jq -r '.conversation_id // empty')
+        
+        if [ -z "$CONV_ID" ]; then
+            ERROR="Failed to create conversation: $CONV_RESPONSE"
+            curl -s -X POST "$COORD/api/complete" \
+                -H "Content-Type: application/json" \
+                -H "X-Coordinator-Token: $API_TOKEN" \
+                -d "$(jq -n --arg tid "$TASK_ID" --arg wid "$WORKER_ID" --arg err "$ERROR" \
+                    '{task_id: $tid, worker_id: $wid, error: $err}')"
+            continue
+        fi
+        
+        echo "Conversation started: $CONV_ID"
+        echo "View progress at: https://${WORKER_ID}.exe.xyz:8000/conversation/$CONV_ID"
+        
+        # Poll until conversation is complete (agent_working becomes false)
+        while true; do
+            STATUS=$(curl -s "$SHELLEY_API/api/conversation/$CONV_ID")
+            WORKING=$(echo "$STATUS" | jq -r '.agent_working // false')
+            
+            if [ "$WORKING" = "false" ]; then
+                echo "Conversation complete"
+                break
+            fi
+            
+            sleep 2
+        done
+        
+        # Get the final conversation messages for the result
+        MESSAGES=$(curl -s "$SHELLEY_API/api/conversation/$CONV_ID" | jq -c '.messages')
         
         # If we have a repo, commit and push changes
         if [ -n "$REPO_URL" ] && [ -n "$BRANCH_NAME" ]; then
-            echo "Checking for changes..."
+            cd "$TASK_DIR"
             
             if [ -n "$(git status --porcelain)" ]; then
                 echo "Committing changes..."
@@ -734,29 +807,26 @@ while true; do
             fi
         fi
         
-        # Report completion
+        # Report completion with conversation ID for reference
         curl -s -X POST "$COORD/api/complete" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n --arg tid "$TASK_ID" --arg wid "$WORKER_ID" --arg out "$OUTPUT" \
-                       --arg sha "$COMMIT_SHA" --arg err "$ERROR" \
-                '{task_id: $tid, worker_id: $wid, result: $out, commit_sha: $sha, error: $err}')"
+            -H "X-Coordinator-Token: $API_TOKEN" \
+            -d "$(jq -n --arg tid "$TASK_ID" --arg wid "$WORKER_ID" \
+                       --arg cid "$CONV_ID" --arg sha "$COMMIT_SHA" --arg err "$ERROR" \
+                '{task_id: $tid, worker_id: $wid, conversation_id: $cid, commit_sha: $sha, error: $err}')"
         
         echo "Task $TASK_ID completed"
-        
-        # Cleanup
-        cd "$HOME"
-        rm -rf "$TASK_DIR"
     else
         IDLE_COUNT=$((IDLE_COUNT + 1))
         if [ $IDLE_COUNT -ge $MAX_IDLE ]; then
             echo "Idle timeout, shutting down"
-            curl -s -X POST "$COORD/api/worker-shutdown?worker=$WORKER_ID"
+            curl -s -X POST -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/worker-shutdown?worker=$WORKER_ID"
             exit 0
         fi
         sleep 5
     fi
 done
-`, c.config.CoordHost, c.config.Port, workerID)
+`, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken)
 
 	scriptCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
 		workerHost, "tee", "/tmp/worker-loop.sh")
@@ -774,7 +844,7 @@ done
 
 	c.db.Exec(`UPDATE workers SET status = 'idle', last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?`, workerID)
 	c.LogEvent("worker.ready", "", workerID, nil)
-	log.Printf("Worker %s is ready", workerID)
+	log.Printf("Worker %s is ready - view at https://%s.exe.xyz:8000/", workerID, workerID)
 }
 
 // GetWorker retrieves a worker by ID.

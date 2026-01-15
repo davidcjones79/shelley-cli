@@ -667,7 +667,18 @@
                             <span class="list-item-name">${w.id}</span>
                             <span class="list-item-meta">Tasks: ${w.tasks_completed || 0}</span>
                         </div>
-                        <span class="badge badge-${w.status === 'busy' ? 'info' : 'neutral'}">${w.status}</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <a href="https://${w.id}.exe.xyz:8000/" target="_blank" 
+                               class="btn btn-secondary" style="font-size: 12px; padding: 4px 8px;"
+                               title="View Shelley chat session">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                                View
+                            </a>
+                            <span class="badge badge-${w.status === 'busy' ? 'info' : 'neutral'}">${w.status}</span>
+                        </div>
                     </div>
                 `).join('') : '<div class="list-empty">No workers</div>';
 
