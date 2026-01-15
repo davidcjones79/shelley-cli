@@ -36,6 +36,7 @@ type Config struct {
 	GitLogging   bool
 	GitToken     string // GitHub/GitLab token for HTTPS auth
 	GitUser      string // Git username (default: git)
+	ShelleyDB    string // Path to main shelley DB for syncing conversations
 }
 
 // Task represents a unit of work.
@@ -782,6 +783,27 @@ while true; do
         
         echo "Task execution complete (conversation: $CONV_ID)"
         echo "View at: https://${WORKER_ID}.exe.xyz:8000/conversation/$CONV_ID"
+        
+        # Sync conversation to main shelley DB for viewing in main UI
+        if [ -n "$CONV_ID" ]; then
+            echo "Syncing conversation to main shelley..."
+            # Export conversation and messages as JSON
+            CONV_DATA=$(sqlite3 -json "$SHELLEY_DB" "SELECT * FROM conversations WHERE conversation_id='$CONV_ID'" 2>/dev/null | jq '.[0]')
+            MSG_DATA=$(sqlite3 -json "$SHELLEY_DB" "SELECT * FROM messages WHERE conversation_id='$CONV_ID' ORDER BY sequence_id" 2>/dev/null)
+            
+            if [ -n "$CONV_DATA" ] && [ "$CONV_DATA" != "null" ]; then
+                SYNC_PAYLOAD=$(jq -n \
+                    --argjson conv "$CONV_DATA" \
+                    --argjson msgs "$MSG_DATA" \
+                    --arg tid "$TASK_ID" \
+                    --arg wid "$WORKER_ID" \
+                    '{conversation: $conv, messages: $msgs, task_id: $tid, worker_id: $wid}')
+                curl -s -X POST "$COORD/api/sync-conversation" \
+                    -H "Content-Type: application/json" \
+                    -H "X-Coordinator-Token: $API_TOKEN" \
+                    -d "$SYNC_PAYLOAD" || echo "Sync failed (non-fatal)"
+            fi
+        fi
         
         # If we have a repo, commit and push changes
         if [ -n "$REPO_URL" ] && [ -n "$BRANCH_NAME" ]; then

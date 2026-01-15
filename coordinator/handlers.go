@@ -1,9 +1,14 @@
 package coordinator
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
+
+	_ "modernc.org/sqlite" // SQLite driver for sync
 )
 
 // CheckAuth validates the API token.
@@ -333,4 +338,102 @@ func (c *Coordinator) HandleGetGroupTasks(w http.ResponseWriter, r *http.Request
 func (c *Coordinator) HandleShelleyBinary(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	http.ServeFile(w, r, c.config.ShelleyBin)
+}
+
+// SyncConversationRequest contains conversation data to sync to main shelley DB
+type SyncConversationRequest struct {
+	Conversation struct {
+		ConversationID string  `json:"conversation_id"`
+		Slug           *string `json:"slug"`
+		UserInitiated  int     `json:"user_initiated"` // SQLite outputs 0/1 for booleans
+		CreatedAt      string  `json:"created_at"`
+		UpdatedAt      string  `json:"updated_at"`
+		Cwd            *string `json:"cwd"`
+		Archived       int     `json:"archived"` // SQLite outputs 0/1 for booleans
+	} `json:"conversation"`
+	Messages []struct {
+		MessageID      string  `json:"message_id"`
+		ConversationID string  `json:"conversation_id"`
+		SequenceID     int     `json:"sequence_id"`
+		Type           string  `json:"type"`
+		LLMData        *string `json:"llm_data"`
+		UserData       *string `json:"user_data"`
+		UsageData      *string `json:"usage_data"`
+		CreatedAt      string  `json:"created_at"`
+		DisplayData    *string `json:"display_data"`
+	} `json:"messages"`
+	TaskID   string `json:"task_id"`
+	WorkerID string `json:"worker_id"`
+}
+
+// HandleSyncConversation receives conversation data from workers and syncs to main shelley DB
+func (c *Coordinator) HandleSyncConversation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if c.config.ShelleyDB == "" {
+		http.Error(w, "Shelley DB not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req SyncConversationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Open the main shelley DB
+	shelleyDB, err := sql.Open("sqlite", c.config.ShelleyDB)
+	if err != nil {
+		http.Error(w, "Failed to open shelley DB: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer shelleyDB.Close()
+
+	// Generate a slug for the conversation based on task ID
+	slug := fmt.Sprintf("worker-%s-%s", req.WorkerID, req.TaskID[:8])
+
+	// Insert conversation (use INSERT OR REPLACE to handle duplicates)
+	_, err = shelleyDB.Exec(`INSERT OR REPLACE INTO conversations 
+		(conversation_id, slug, user_initiated, created_at, updated_at, cwd, archived) 
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		req.Conversation.ConversationID,
+		slug,
+		false, // Mark as not user-initiated (autonomous)
+		req.Conversation.CreatedAt,
+		req.Conversation.UpdatedAt,
+		req.Conversation.Cwd,
+		req.Conversation.Archived,
+	)
+	if err != nil {
+		http.Error(w, "Failed to insert conversation: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Insert messages
+	for _, msg := range req.Messages {
+		_, err = shelleyDB.Exec(`INSERT OR REPLACE INTO messages 
+			(message_id, conversation_id, sequence_id, type, llm_data, user_data, usage_data, created_at, display_data) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			msg.MessageID,
+			msg.ConversationID,
+			msg.SequenceID,
+			msg.Type,
+			msg.LLMData,
+			msg.UserData,
+			msg.UsageData,
+			msg.CreatedAt,
+			msg.DisplayData,
+		)
+		if err != nil {
+			log.Printf("Failed to insert message %s: %v", msg.MessageID, err)
+		}
+	}
+
+	log.Printf("Synced conversation %s (%d messages) from worker %s", req.Conversation.ConversationID, len(req.Messages), req.WorkerID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "slug": slug})
 }

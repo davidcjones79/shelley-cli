@@ -791,6 +791,7 @@ func runCoord(global GlobalConfig, args []string) {
 	gitLogging := fs.Bool("git-log", true, "Enable git logging of completed tasks")
 	gitToken := fs.String("git-token", "", "GitHub/GitLab token for worker git push (env: GITHUB_TOKEN)")
 	gitUser := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
+	shelleyDB := fs.String("shelley-db", "", "Path to main shelley DB for syncing conversations (enables viewing worker chats in main UI)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley coord [flags]\n\n")
@@ -842,6 +843,7 @@ func runCoord(global GlobalConfig, args []string) {
 		GitLogging:   *gitLogging,
 		GitToken:     *gitToken,
 		GitUser:      *gitUser,
+		ShelleyDB:    *shelleyDB,
 	}
 
 	coord, err := coordinator.New(config)
@@ -877,6 +879,7 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/group/create", coord.HandleCreateGroup)
 	mux.HandleFunc("/api/group/tasks", coord.HandleGetGroupTasks)
 	mux.HandleFunc("/shelley-bin", coord.HandleShelleyBinary)
+	mux.HandleFunc("/api/sync-conversation", coord.HandleSyncConversation)
 
 	addr := fmt.Sprintf(":%d", *port)
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -899,6 +902,7 @@ func runDashboard(global GlobalConfig, args []string) {
 	autoStart := fs.Bool("auto-start", false, "Automatically start coordinator on dashboard startup")
 	gitTokenDash := fs.String("git-token", "", "GitHub/GitLab token for worker git push (env: GITHUB_TOKEN)")
 	gitUserDash := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
+	shelleyDBDash := fs.String("shelley-db", "/home/exedev/.config/shelley/shelley.db", "Path to main shelley DB for syncing conversations")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley dashboard [flags]\n\n")
@@ -950,6 +954,7 @@ func runDashboard(global GlobalConfig, args []string) {
 		APIToken:     *apiToken,
 		GitToken:     *gitTokenDash,
 		GitUser:      *gitUserDash,
+		ShelleyDB:    *shelleyDBDash,
 	}
 
 	dash := coordinator.NewDashboard(config)
