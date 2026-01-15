@@ -348,10 +348,10 @@ func New(cfg Config) (*Model, error) {
 	ta.ShowLineNumbers = false
 	ta.MaxHeight = 10 // Cap expansion at 10 lines
 
-	// Create spinner
+	// Create spinner (style will be set based on theme)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
+	// Spinner style is set via m.styles.Spinner after Model is created
 
 	// Create renderer (will be recreated with proper width on WindowSizeMsg)
 	renderer, err := NewMessageRenderer(80)
@@ -390,6 +390,9 @@ func New(cfg Config) (*Model, error) {
 		toolNames:      make(map[string]string),
 		toolInputs:     make(map[string]json.RawMessage),
 	}
+
+	// Set spinner style based on theme
+	m.spinner.Style = m.styles.Spinner
 
 	// If resuming a conversation, load and display history
 	if cfg.DB != nil && cfg.ConversationID != "" {
@@ -1617,11 +1620,7 @@ func (m *Model) View() string {
 	}
 
 	headerContent := title + strings.Repeat(" ", padding) + model
-	headerStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("236")).
-		Foreground(lipgloss.Color("15")).
-		Padding(0, 1)
-	header := headerStyle.Render(headerContent)
+	header := m.styles.StatusBar.Width(m.width).Render(headerContent)
 
 	// ========== MESSAGES VIEWPORT ==========
 	viewport := m.viewport.View()

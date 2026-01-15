@@ -281,6 +281,7 @@ func (m *Model) setTheme(themeName string) tea.Cmd {
 
 	m.styles = newStyles
 	m.renderer.styles = newStyles
+	m.spinner.Style = newStyles.Spinner
 
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleAssistant,
