@@ -221,6 +221,9 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 		"group_id": req.GroupID,
 	})
 
+	// Auto-scale: spawn a worker if there are queued tasks and no available workers
+	go c.maybeSpawnWorker()
+
 	return c.GetTask(req.ID)
 }
 
@@ -385,6 +388,11 @@ func (c *Coordinator) CompleteTask(req CompleteRequest) error {
 
 	if c.config.GitLogging {
 		go c.gitLogTask(req.TaskID)
+	}
+
+	// Auto-scale: check if more workers needed for remaining queued tasks
+	if !c.draining {
+		go c.maybeSpawnWorker()
 	}
 
 	return nil
@@ -567,6 +575,48 @@ func (c *Coordinator) updateGroupStatus(groupID string) {
 
 	c.db.Exec(`UPDATE task_groups SET tasks_total = ?, tasks_completed = ?, tasks_failed = ?, status = ?, completed_at = ? WHERE id = ?`,
 		total, completed, failed, status, completedAt, groupID)
+}
+
+// maybeSpawnWorker checks if we need to spawn a worker for queued tasks.
+// It spawns a worker if there are queued tasks and no idle/starting workers available.
+func (c *Coordinator) maybeSpawnWorker() {
+	c.mu.Lock()
+	if c.draining {
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+
+	// Check if there are queued tasks
+	var queuedCount int
+	c.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE status = 'queued'`).Scan(&queuedCount)
+	if queuedCount == 0 {
+		return
+	}
+
+	// Check current worker count
+	var activeWorkers, idleWorkers, startingWorkers int
+	c.db.QueryRow(`SELECT COUNT(*) FROM workers WHERE status IN ('idle', 'busy', 'starting')`).Scan(&activeWorkers)
+	c.db.QueryRow(`SELECT COUNT(*) FROM workers WHERE status = 'idle'`).Scan(&idleWorkers)
+	c.db.QueryRow(`SELECT COUNT(*) FROM workers WHERE status = 'starting'`).Scan(&startingWorkers)
+
+	// If there are idle or starting workers, they'll pick up the task
+	if idleWorkers > 0 || startingWorkers > 0 {
+		return
+	}
+
+	// Check if we're at max workers
+	if activeWorkers >= c.config.MaxWorkers {
+		log.Printf("Auto-scale: at max workers (%d), not spawning", c.config.MaxWorkers)
+		return
+	}
+
+	// Spawn a new worker
+	log.Printf("Auto-scale: %d queued tasks, %d active workers, spawning new worker", queuedCount, activeWorkers)
+	_, err := c.SpawnWorker()
+	if err != nil {
+		log.Printf("Auto-scale: failed to spawn worker: %v", err)
+	}
 }
 
 // SpawnWorker creates a new worker VM.
