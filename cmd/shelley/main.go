@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	crand "crypto/rand"
 	"io"
+	"net/http"
 	"log/slog"
 	"net"
 	"os"
@@ -23,6 +25,7 @@ import (
 	"shelley.exe.dev/models"
 	"shelley.exe.dev/server"
 	"shelley.exe.dev/templates"
+	"shelley.exe.dev/coordinator"
 	"shelley.exe.dev/version"
 )
 
@@ -56,6 +59,7 @@ func main() {
 		fmt.Fprintf(flag.CommandLine.Output(), "  chat [flags]                  Start interactive CLI chat mode\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  serve [flags]                 Start the web server\n")
 
+		fmt.Fprintf(flag.CommandLine.Output(), "  coord [flags]                 Start coordinator server\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  unpack-template <name> <dir>  Unpack a project template to a directory\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  igor [flags]                  Start Igor file transfer server\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  version                       Print version information as JSON\n")
@@ -85,6 +89,8 @@ func main() {
 	case "serve":
 		runServe(global, args[1:])
 
+	case "coord":
+		runCoord(global, args[1:])
 	case "unpack-template":
 		runUnpackTemplate(args[1:])
 	case "igor":
@@ -694,4 +700,108 @@ func runIgor(args []string) {
 	fmt.Printf("Open http://localhost:%d/\n", *port)
 
 	server.RunIgor(*port, uploadDir)
+}
+
+func runCoord(global GlobalConfig, args []string) {
+	fs := flag.NewFlagSet("coord", flag.ExitOnError)
+	port := fs.Int("port", 8000, "HTTP server port")
+	dbPath := fs.String("db", "coordinator.db", "SQLite database path")
+	workerPrefix := fs.String("prefix", "wk", "Worker VM name prefix")
+	maxWorkers := fs.Int("max-workers", 10, "Maximum workers allowed")
+	shelleyBin := fs.String("shelley-bin", "", "Path to shelley binary (default: this binary)")
+	coordHost := fs.String("host", "", "Coordinator hostname (auto-detected)")
+	apiToken := fs.String("token", "", "API token (auto-generated if empty)")
+	gitLogging := fs.Bool("git-log", true, "Enable git logging of completed tasks")
+
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage: shelley coord [flags]\n\n")
+		fmt.Fprintf(fs.Output(), "Start the coordinator server for distributed task execution.\n\n")
+		fmt.Fprintf(fs.Output(), "Flags:\n")
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+
+	// Auto-detect shelley binary path
+	if *shelleyBin == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting executable path: %v\n", err)
+			os.Exit(1)
+		}
+		*shelleyBin = exe
+	}
+
+	// Auto-detect hostname
+	if *coordHost == "" {
+		hostname, _ := os.Hostname()
+		*coordHost = hostname + ".exe.xyz"
+	}
+
+	// Auto-generate token if not provided
+	if *apiToken == "" {
+		b := make([]byte, 16)
+		if _, err := io.ReadFull(cryptoRand, b); err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating token: %v\n", err)
+			os.Exit(1)
+		}
+		*apiToken = fmt.Sprintf("%x", b)
+	}
+
+	config := coordinator.Config{
+		Port:         *port,
+		DBPath:       *dbPath,
+		WorkerPrefix: *workerPrefix,
+		MaxWorkers:   *maxWorkers,
+		ShelleyBin:   *shelleyBin,
+		CoordHost:    *coordHost,
+		APIToken:     *apiToken,
+		GitLogging:   *gitLogging,
+	}
+
+	coord, err := coordinator.New(config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create coordinator: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Shelley Coordinator starting on port %d\n", *port)
+	fmt.Printf("Database: %s\n", *dbPath)
+	fmt.Printf("Host: %s\n", *coordHost)
+	fmt.Printf("Git logging: %v\n", *gitLogging)
+	fmt.Println()
+	fmt.Println("=== API TOKEN ===")
+	fmt.Println(*apiToken)
+	fmt.Println("=================")
+
+	// Set up HTTP routes
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", coord.HandleIndex)
+	mux.HandleFunc("/api/enqueue", coord.HandleEnqueue)
+	mux.HandleFunc("/api/tasks", coord.HandleListTasks)
+	mux.HandleFunc("/api/task", coord.HandleGetTask)
+	mux.HandleFunc("/api/workers", coord.HandleListWorkers)
+	mux.HandleFunc("/api/scale", coord.HandleScale)
+	mux.HandleFunc("/api/stats", coord.HandleStats)
+	mux.HandleFunc("/api/next-task", coord.HandleNextTask)
+	mux.HandleFunc("/api/complete", coord.HandleComplete)
+	mux.HandleFunc("/api/worker-shutdown", coord.HandleWorkerShutdown)
+	mux.HandleFunc("/shelley-bin", coord.HandleShelleyBinary)
+
+	addr := fmt.Sprintf(":%d", *port)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+var cryptoRand io.Reader = nil
+
+func init() {
+	cryptoRand = cryptoRandReader{}
+}
+
+type cryptoRandReader struct{}
+
+func (cryptoRandReader) Read(b []byte) (int, error) {
+	return io.ReadFull(crand.Reader, b)
 }
