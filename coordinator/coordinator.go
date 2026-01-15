@@ -110,13 +110,14 @@ type GroupRequest struct {
 
 // CompleteRequest contains the result of a completed task.
 type CompleteRequest struct {
-	TaskID    string `json:"task_id"`
-	WorkerID  string `json:"worker_id"`
-	Result    string `json:"result"`
-	Error     string `json:"error"`
-	CommitSHA string `json:"commit_sha"`
-	PRURL     string `json:"pr_url"`
-	PRNumber  int    `json:"pr_number"`
+	TaskID         string `json:"task_id"`
+	WorkerID       string `json:"worker_id"`
+	Result         string `json:"result"`
+	Error          string `json:"error"`
+	CommitSHA      string `json:"commit_sha"`
+	PRURL          string `json:"pr_url"`
+	PRNumber       int    `json:"pr_number"`
+	ConversationID string `json:"conversation_id"`
 }
 
 // Coordinator manages the worker pool and task queue.
@@ -347,6 +348,10 @@ func (c *Coordinator) CompleteTask(req CompleteRequest) error {
 	if req.PRNumber > 0 {
 		query += `, pr_number = ?`
 		args = append(args, req.PRNumber)
+	}
+	if req.ConversationID != "" {
+		query += `, conversation_id = ?`
+		args = append(args, req.ConversationID)
 	}
 
 	query += ` WHERE id = ?`
@@ -768,10 +773,15 @@ while true; do
         OUTPUT=$(shelley -db "$SHELLEY_DB" -config ~/.config/shelley/shelley.json \
             chat -yes -prompt "$PROMPT" 2>&1) || true
         
-        # Get the conversation ID from the most recent conversation in DB
-        CONV_ID=$(curl -s "$SHELLEY_API/api/conversations" | jq -r '.[0].id // empty')
+        # Extract conversation ID from output (format: [Conversation: xxx])
+        CONV_ID=$(echo "$OUTPUT" | grep -oP '\[Conversation: \K[^\]]+' | tail -1)
+        if [ -z "$CONV_ID" ]; then
+            # Fallback: get from API
+            CONV_ID=$(curl -s "$SHELLEY_API/api/conversations" | jq -r '.[0].id // empty')
+        fi
         
-        echo "Task execution complete"
+        echo "Task execution complete (conversation: $CONV_ID)"
+        echo "View at: https://${WORKER_ID}.exe.xyz:8000/conversation/$CONV_ID"
         
         # If we have a repo, commit and push changes
         if [ -n "$REPO_URL" ] && [ -n "$BRANCH_NAME" ]; then

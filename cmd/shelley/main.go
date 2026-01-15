@@ -198,7 +198,25 @@ func runChat(global GlobalConfig, args []string) {
 				fullPrompt = stdinContent
 			}
 		}
-		runNonInteractiveChat(llmService, modelID, wd, system, fullPrompt, *yesMode, logger)
+		
+		// Set up database for non-interactive mode if sync is enabled
+		var database *db.DB
+		if *useDB && !*noSync && global.DBPath != "" {
+			var err error
+			database, err = db.New(db.Config{DSN: global.DBPath})
+			if err != nil {
+				logger.Error("Failed to open database", "error", err)
+				os.Exit(1)
+			}
+			defer database.Close()
+
+			if err := database.Migrate(context.Background()); err != nil {
+				logger.Error("Failed to migrate database", "error", err)
+				os.Exit(1)
+			}
+		}
+		
+		runNonInteractiveChat(llmService, modelID, wd, system, fullPrompt, *yesMode, logger, database)
 		return
 	}
 
@@ -283,7 +301,7 @@ func buildUserMessageWithImages(text string, maxImageDimension int) llm.Message 
 	}
 }
 
-func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, system []llm.SystemContent, prompt string, yesMode bool, logger *slog.Logger) {
+func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, system []llm.SystemContent, prompt string, yesMode bool, logger *slog.Logger, database *db.DB) {
 	ctx := context.Background()
 
 	// Create toolset
@@ -295,8 +313,34 @@ func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, s
 	toolSet := claudetool.NewToolSet(ctx, toolSetConfig)
 	defer toolSet.Cleanup()
 
-	// Create message recorder that prints to stdout
+	// Create conversation in database if available
+	var conversationID string
+	if database != nil {
+		cwdPtr := &workingDir
+		conv, err := database.CreateConversation(ctx, nil, true, cwdPtr)
+		if err != nil {
+			logger.Error("Failed to create conversation", "error", err)
+		} else {
+			conversationID = conv.ConversationID
+			logger.Info("Created conversation", "id", conversationID)
+		}
+	}
+
+	// Helper to get message type for database
+	getMessageType := func(message llm.Message) db.MessageType {
+		switch message.Role {
+		case llm.MessageRoleUser:
+			return db.MessageTypeUser
+		case llm.MessageRoleAssistant:
+			return db.MessageTypeAgent
+		default:
+			return db.MessageTypeUser
+		}
+	}
+
+	// Create message recorder that prints to stdout and saves to DB
 	recordMessage := func(ctx context.Context, message llm.Message, usage llm.Usage) error {
+		// Print to stdout
 		for _, content := range message.Content {
 			switch content.Type {
 			case llm.ContentTypeText:
@@ -311,11 +355,24 @@ func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, s
 				}
 			}
 		}
+		
+		// Save to database if available
+		if database != nil && conversationID != "" {
+			_, err := database.CreateMessage(ctx, db.CreateMessageParams{
+				ConversationID: conversationID,
+				Type:           getMessageType(message),
+				LLMData:        message,
+				UsageData:      usage,
+			})
+			if err != nil {
+				logger.Error("Failed to save message to database", "error", err)
+			}
+		}
 		return nil
 	}
 
 	// Create and run loop
-	loop := loop.NewLoop(loop.Config{
+	loopInstance := loop.NewLoop(loop.Config{
 		LLM:           llmService,
 		History:       []llm.Message{},
 		Tools:         toolSet.Tools(),
@@ -328,23 +385,40 @@ func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, s
 
 	// Queue the prompt, extracting any embedded images
 	userMsg := buildUserMessageWithImages(prompt, llmService.MaxImageDimension())
-	loop.QueueUserMessage(userMsg)
+	loopInstance.QueueUserMessage(userMsg)
+	
+	// Save the user message to database
+	if database != nil && conversationID != "" {
+		_, err := database.CreateMessage(ctx, db.CreateMessageParams{
+			ConversationID: conversationID,
+			Type:           db.MessageTypeUser,
+			LLMData:        userMsg,
+		})
+		if err != nil {
+			logger.Error("Failed to save user message", "error", err)
+		}
+	}
 
 	// Process turns until done
 	for {
-		if err := loop.ProcessOneTurn(ctx); err != nil {
+		if err := loopInstance.ProcessOneTurn(ctx); err != nil {
 			logger.Error("Failed to process turn", "error", err)
 			os.Exit(1)
 		}
 
 		// Check if we're done (by checking if the last response ended the turn)
-		history := loop.GetHistory()
+		history := loopInstance.GetHistory()
 		if len(history) > 0 {
 			lastMsg := history[len(history)-1]
 			if lastMsg.Role == llm.MessageRoleAssistant && lastMsg.EndOfTurn {
 				break
 			}
 		}
+	}
+	
+	// Print conversation ID for reference
+	if conversationID != "" {
+		fmt.Fprintf(os.Stderr, "\n[Conversation: %s]\n", conversationID)
 	}
 }
 
