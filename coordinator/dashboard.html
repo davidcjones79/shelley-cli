@@ -814,14 +814,24 @@
                 
                 const sourceIcon = task.source === 'manual' ? '👤' : task.source === 'autonomous' ? '🤖' : '🔌';
                 const sourceLabel = task.source === 'manual' ? 'Manual' : task.source === 'autonomous' ? 'Autonomous' : 'API';
-                const viewLink = task.conversation_id && task.worker_id 
-                    ? `<a href="https://${task.worker_id}.exe.xyz:8000/conversation/${task.conversation_id}" target="_blank" class="btn btn-secondary" style="font-size:12px;margin-left:8px;">View Chat</a>` 
-                    : (task.worker_id ? `<a href="https://${task.worker_id}.exe.xyz:8000/" target="_blank" class="btn btn-secondary" style="font-size:12px;margin-left:8px;">View Worker</a>` : '');
+                
+                // Build chat view links
+                let viewLinks = '';
+                // Show "Live Chat" if worker is running and has conversation
+                if (task.worker_id && task.status === 'running' && task.conversation_id) {
+                    viewLinks += `<a href="https://${task.worker_id}.exe.xyz:8000/conversation/${task.conversation_id}" target="_blank" class="btn btn-secondary" style="font-size:12px;margin-left:8px;" title="View live chat on worker">Live Chat</a>`;
+                } else if (task.worker_id && task.status === 'running') {
+                    viewLinks += `<a href="https://${task.worker_id}.exe.xyz:8000/" target="_blank" class="btn btn-secondary" style="font-size:12px;margin-left:8px;" title="View worker dashboard">View Worker</a>`;
+                }
+                // Show "Synced Chat" if conversation exists (for completed/failed tasks)
+                if (task.conversation_id && (task.status === 'completed' || task.status === 'failed')) {
+                    viewLinks += `<a href="/conversation/${task.conversation_id}" target="_blank" class="btn btn-info" style="font-size:12px;margin-left:8px;" title="View synced conversation">View Chat</a>`;
+                }
                 
                 document.getElementById('taskDetails').innerHTML = `
                     <p style="margin-bottom:12px"><strong>ID:</strong> <code>${task.id}</code></p>
                     <p style="margin-bottom:12px"><strong>Status:</strong> <span class="badge badge-${task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : 'info'}">${task.status}</span></p>
-                    <p style="margin-bottom:12px"><strong>Source:</strong> ${sourceIcon} ${sourceLabel} ${viewLink}</p>
+                    <p style="margin-bottom:12px"><strong>Source:</strong> ${sourceIcon} ${sourceLabel} ${viewLinks}</p>
                     <p style="margin-bottom:12px"><strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}</p>
                     ${task.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
                     ${task.worker_id ? `<p style="margin-bottom:12px"><strong>Worker:</strong> ${task.worker_id}</p>` : ''}
