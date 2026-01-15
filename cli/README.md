@@ -104,12 +104,14 @@ Usage: shelley chat [flags]
 Flags:
   -conversation ID   Resume specific conversation by ID or slug
   -no-sync           Disable database sync (ephemeral conversation)
-  -browser           Enable browser tools (screenshots, navigation, etc.)
+  -no-browser        Disable browser tools (screenshots, navigation, etc.)
   -verbose           Show tool execution details (commands, inputs, outputs)
   -yes               Auto-accept all tool operations (no confirmation prompts)
   -prompt TEXT       Send initial prompt and exit (for scripting/piping)
   -theme THEME       Color theme: dark, light, mono, or auto (default: auto-detect)
 ```
+
+Browser tools are **enabled by default**. Use `-no-browser` to disable them (useful if Chrome/Chromium isn't installed).
 
 ### Examples
 
@@ -129,8 +131,8 @@ shelley chat -verbose
 # No confirmation prompts (use with caution)
 shelley chat -yes
 
-# Enable browser automation (requires Chrome/Chromium)
-shelley chat -browser
+# Disable browser automation (if Chrome/Chromium not installed)
+shelley chat -no-browser
 
 # Use light theme (for light terminal backgrounds)
 shelley chat -theme light
@@ -192,6 +194,7 @@ Type `/help` in the CLI to see all available commands.
 | `/theme <dark\|light\|mono>` | Switch color theme |
 | `/cwd` or `/cd <path>` | Show or change working directory |
 | `/exe <command>` | Run exe.dev shell commands (set-public, etc.) |
+| `/frankenstein` | Toggle Frankenstein mode (status messages honor Mary Shelley) |
 
 ### Models
 
@@ -462,13 +465,20 @@ cat ~/.config/shelley/shelley.json
 
 ### "Browser tools not available"
 
-Install Chrome or Chromium:
+Browser tools are enabled by default. If Chrome/Chromium isn't installed, either:
+
+1. Install Chrome or Chromium:
 ```bash
 # Ubuntu/Debian
 sudo apt install chromium-browser
 
 # macOS
 brew install --cask chromium
+```
+
+2. Or disable browser tools:
+```bash
+shelley chat -no-browser
 ```
 
 ### Slow startup

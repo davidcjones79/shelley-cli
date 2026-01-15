@@ -1,6 +1,6 @@
 # Shelley CLI
 
-> A terminal interface for [Shelley](https://github.com/boldsoftware/shelley), the coding agent. This fork adds CLI, Igor file transfer, and `/pick` workflow.
+> A terminal interface for [Shelley](https://github.com/boldsoftware/shelley), the coding agent. This fork adds CLI, Igor file transfer, Coordinator for distributed tasks, and `/pick` workflow.
 
 ## Quick Install (exe.dev)
 
@@ -20,9 +20,25 @@ This installs the CLI with Igor file transfer service. See [cli/README.md](cli/R
   - [Alacritty](https://alacritty.org/) (Windows/Mac)
   - Mac built-in Terminal - works, but not as well as the others. If mouse scrolling is enabled, selecting text is difficult without first disabling it via `/mouse`
 - **Igor** - Your faithful laboratory assistant for file transfers (`shelley igor`)
-- **Coordinator** - Distributed task queue with worker pool (`shelley coord`) - see [coordinator/README.md](coordinator/README.md)
+- **Coordinator & Dashboard** - Distributed task queue with worker pool for parallelizing Shelley across multiple VMs (`shelley dashboard` or `shelley coord`) - see [coordinator/README.md](coordinator/README.md)
+- **Task Groups** - Batch multiple related tasks together with shared repo/branch settings
+- **Git Integration** - Workers can clone repos, make changes, commit, and push to feature branches
 - **`/pick` Command** - Quick workflow to analyze uploaded files
 - **Systemd Service** - Igor runs persistently at `https://your-vm.exe.xyz:8099/`
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `shelley chat` | Interactive CLI chat mode |
+| `shelley serve` | Start the web server |
+| `shelley dashboard` | Start dashboard with coordinator management UI |
+| `shelley coord` | Start coordinator server (headless) |
+| `shelley igor` | Start Igor file transfer server |
+| `shelley unpack-template` | Unpack a project template |
+| `shelley version` | Print version information as JSON |
+
+Use `shelley <command> -h` for command-specific help.
 
 ## Keyboard Shortcuts
 
@@ -98,6 +114,24 @@ putting "-ey" at the end of words. It is also named after Percy Bysshe Shelley,
 with an appropriately ironic nod at
 "[Ozymandias](https://www.poetryfoundation.org/poems/46565/ozymandias)."
 Shelley is a computer program, and, it's an it.
+
+# Global Flags
+
+These flags apply to all commands:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-config` | | Path to shelley.json configuration file |
+| `-db` | shelley.db | Path to SQLite database file |
+| `-debug` | false | Enable debug logging |
+| `-model` | (from config) | LLM model to use |
+| `-default-model` | claude-opus-4.5 | Default model for web UI |
+| `-predictable-only` | false | Use only the predictable test model |
+
+Example:
+```bash
+shelley -config ~/.config/shelley/shelley.json -db ~/.config/shelley/shelley.db chat
+```
 
 # Using exe.dev LLM Gateway
 
