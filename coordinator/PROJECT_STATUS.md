@@ -164,6 +164,14 @@ export GITHUB_TOKEN=ghp_xxx
   - Busy workers complete current task then shut down
   - `POST /api/drain` endpoint
 
+- **Synced Conversation Viewer**
+  - New `/conversation/{id}` route on dashboard
+  - View conversations synced from workers to main Shelley DB
+  - Task details show "View Chat" button for completed/failed tasks
+  - "Live Chat" button shown for running tasks (links to worker)
+  - Dark theme matching exe.dev style
+  - Back link to dashboard
+
 ### January 15, 2026
 - Added git integration for workers
 - Dashboard repo/branch input fields
