@@ -10,6 +10,7 @@ type Theme string
 const (
 	ThemeDark  Theme = "dark"
 	ThemeLight Theme = "light"
+	ThemeMono  Theme = "mono"
 )
 
 // Styles defines the visual styling for the CLI interface
@@ -68,6 +69,8 @@ func getStylesForTheme(theme string) *Styles {
 		return DarkStyles()
 	case "light":
 		return LightStyles()
+	case "mono", "monochrome":
+		return MonoStyles()
 	default:
 		return DefaultStyles()
 	}
@@ -264,11 +267,88 @@ func (s *Styles) RolePrefix(role string) string {
 func (s *Styles) ToolBoxStyle(width int, isError bool) lipgloss.Style {
 	borderColor := s.BorderColor
 	if isError {
-		borderColor = lipgloss.Color("9") // Red for errors
+		if s.theme == ThemeMono {
+			// Keep default border color for mono theme
+		} else {
+			borderColor = lipgloss.Color("9") // Red for errors
+		}
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1).
 		Width(width)
+}
+
+// MonoStyles returns a monochrome theme using only default terminal colors
+// with bold, italic, and dim for differentiation
+func MonoStyles() *Styles {
+	return &Styles{
+		theme: ThemeMono,
+
+		UserMessage: lipgloss.NewStyle().
+			Bold(true),
+
+		AssistantMessage: lipgloss.NewStyle(),
+
+		SystemMessage: lipgloss.NewStyle().
+			Italic(true).
+			Faint(true),
+
+		ErrorMessage: lipgloss.NewStyle().
+			Bold(true).
+			Underline(true),
+
+		ToolName: lipgloss.NewStyle().
+			Bold(true),
+
+		ToolInput: lipgloss.NewStyle().
+			Faint(true),
+
+		ToolOutput: lipgloss.NewStyle(),
+
+		ToolError: lipgloss.NewStyle().
+			Bold(true).
+			Underline(true),
+
+		ToolRunning: lipgloss.NewStyle().
+			Italic(true),
+
+		ToolSuccess: lipgloss.NewStyle().
+			Bold(true),
+
+		Prompt: lipgloss.NewStyle().
+			Bold(true),
+
+		InputCursor: lipgloss.NewStyle(),
+
+		Header: lipgloss.NewStyle().
+			Bold(true),
+
+		HeaderTitle: lipgloss.NewStyle().
+			Bold(true),
+
+		StatusBar: lipgloss.NewStyle().
+			Reverse(true).
+			Padding(0, 1),
+
+		Spinner: lipgloss.NewStyle(),
+
+		TokenCount: lipgloss.NewStyle().
+			Faint(true),
+
+		ModelName: lipgloss.NewStyle().
+			Bold(true),
+
+		WorkingDir: lipgloss.NewStyle().
+			Faint(true),
+
+		Thinking: lipgloss.NewStyle().
+			Italic(true),
+
+		Divider: lipgloss.NewStyle().
+			Faint(true),
+
+		BorderColor: lipgloss.Color(""), // Empty = use terminal default
+	}
 }

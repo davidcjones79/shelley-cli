@@ -270,10 +270,12 @@ func (m *Model) setTheme(themeName string) tea.Cmd {
 		newStyles = DarkStyles()
 	case "light":
 		newStyles = LightStyles()
+	case "mono", "monochrome":
+		newStyles = MonoStyles()
 	default:
 		m.messages = append(m.messages, renderedMessage{
 			role:    llm.MessageRoleAssistant,
-			content: m.styles.ErrorMessage.Render("Unknown theme: " + themeName + " (available: dark, light)"),
+			content: m.styles.ErrorMessage.Render("Unknown theme: " + themeName + " (available: dark, light, mono)"),
 		})
 		m.updateViewportContent()
 		return nil

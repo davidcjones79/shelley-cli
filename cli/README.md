@@ -94,7 +94,7 @@ export FIREWORKS_BASE_URL="https://your-proxy.example.com/fireworks/inference/v1
 - **Tab completion** - Complete file paths and slash commands
 - **Prompt history** - Up/Down arrows cycle through previous prompts
 - **Git integration** - View recent commits and diffs inline
-- **Themes** - Dark and light themes available
+- **Themes** - Dark, light, and monochrome themes available
 
 ## Command Line Flags
 
@@ -108,7 +108,7 @@ Flags:
   -verbose           Show tool execution details (commands, inputs, outputs)
   -yes               Auto-accept all tool operations (no confirmation prompts)
   -prompt TEXT       Send initial prompt and exit (for scripting/piping)
-  -theme THEME       Color theme: dark, light, or auto (default: auto-detect)
+  -theme THEME       Color theme: dark, light, mono, or auto (default: auto-detect)
 ```
 
 ### Examples
@@ -189,7 +189,7 @@ Type `/help` in the CLI to see all available commands.
 | `/verbose` | Toggle tool detail visibility |
 | `/status` | Show session status (model, tokens, working dir) |
 | `/mouse` | Toggle mouse mode on/off |
-| `/theme <dark\|light>` | Switch color theme |
+| `/theme <dark\|light\|mono>` | Switch color theme |
 | `/cwd` or `/cd <path>` | Show or change working directory |
 | `/exe <command>` | Run exe.dev shell commands (set-public, etc.) |
 
@@ -483,11 +483,15 @@ Shelley auto-detects your terminal background, but some terminals don't report t
 # Force light theme
 shelley chat -theme light
 
+# Use monochrome (no colors, just bold/italic/dim)
+shelley chat -theme mono
+
 # Or switch themes interactively
 /theme light
+/theme mono
 ```
 
-You can also use `/theme` to toggle between dark and light themes.
+You can also use `/theme` to toggle between themes. The `mono` theme uses no colors - only bold, italic, and dim styling - for maximum terminal compatibility.
 
 ### UI glitches
 
