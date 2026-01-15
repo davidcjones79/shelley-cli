@@ -20,6 +20,7 @@ This installs the CLI with Igor file transfer service. See [cli/README.md](cli/R
   - [Alacritty](https://alacritty.org/) (Windows/Mac)
   - Mac built-in Terminal - works, but not as well as the others. If mouse scrolling is enabled, selecting text is difficult without first disabling it via `/mouse`
 - **Igor** - Your faithful laboratory assistant for file transfers (`shelley igor`)
+- **Coordinator** - Distributed task queue with worker pool (`shelley coord`) - see [coordinator/README.md](coordinator/README.md)
 - **`/pick` Command** - Quick workflow to analyze uploaded files
 - **Systemd Service** - Igor runs persistently at `https://your-vm.exe.xyz:8099/`
 
