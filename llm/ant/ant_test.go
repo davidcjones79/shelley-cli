@@ -807,6 +807,36 @@ func TestFromLLMContent(t *testing.T) {
 			},
 		},
 		{
+			name: "tool use content with nil input",
+			c: llm.Content{
+				Type:      llm.ContentTypeToolUse,
+				ID:        "tool-id",
+				ToolName:  "bash",
+				ToolInput: nil, // nil input should be converted to {}
+			},
+			want: content{
+				Type:      "tool_use",
+				ID:        "tool-id",
+				ToolName:  "bash",
+				ToolInput: json.RawMessage("{}"),
+			},
+		},
+		{
+			name: "tool use content with null input",
+			c: llm.Content{
+				Type:      llm.ContentTypeToolUse,
+				ID:        "tool-id",
+				ToolName:  "bash",
+				ToolInput: json.RawMessage("null"), // "null" input should be converted to {}
+			},
+			want: content{
+				Type:      "tool_use",
+				ID:        "tool-id",
+				ToolName:  "bash",
+				ToolInput: json.RawMessage("{}"),
+			},
+		},
+		{
 			name: "tool result content",
 			c: llm.Content{
 				Type:      llm.ContentTypeToolResult,

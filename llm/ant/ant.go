@@ -339,8 +339,11 @@ func fromLLMContent(c llm.Content) content {
 	case llm.ContentTypeToolUse:
 		d.ID = c.ID
 		d.ToolName = c.ToolName
-		// Ensure ToolInput is never nil - Anthropic API requires the input field
-		if len(c.ToolInput) == 0 {
+		// Ensure ToolInput is never nil or "null" - Anthropic API requires the input field to be an object.
+		// When ToolInput is nil and marshaled to JSON, it becomes the string "null".
+		// When loaded back from the database, it becomes json.RawMessage("null") with len=4.
+		// We need to check for both empty and "null" values.
+		if len(c.ToolInput) == 0 || string(c.ToolInput) == "null" {
 			d.ToolInput = json.RawMessage("{}")
 		} else {
 			d.ToolInput = c.ToolInput

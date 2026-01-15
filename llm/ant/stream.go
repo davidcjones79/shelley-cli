@@ -179,10 +179,11 @@ func (s *Service) parseStreamResponse(ctx context.Context, body io.Reader, callb
 			idx := event.Index
 			// Finalize tool input if this was a tool_use block
 			if idx < len(contentBlocks) && contentBlocks[idx].Type == "tool_use" {
-				if buf, ok := toolInputBuffers[idx]; ok {
+				if buf, ok := toolInputBuffers[idx]; ok && buf.Len() > 0 {
 					contentBlocks[idx].ToolInput = json.RawMessage(buf.String())
 				} else {
-					// Ensure ToolInput is never nil - Anthropic API requires the input field
+					// Ensure ToolInput is never empty - Anthropic API requires the input field to be an object.
+					// An empty buffer would result in json.RawMessage("") which is omitted with omitempty.
 					contentBlocks[idx].ToolInput = json.RawMessage("{}")
 				}
 			}
