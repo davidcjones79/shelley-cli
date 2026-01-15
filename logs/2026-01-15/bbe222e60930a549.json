@@ -1,0 +1,12 @@
+{
+  "id": "bbe222e60930a549",
+  "prompt": "Write hello world in Python and save to hello.py",
+  "status": "completed",
+  "priority": 0,
+  "worker_id": "wk-c05b51f04c72",
+  "result": "[Tool: patch]\nDone. Created `hello.py`:\n\n```python\nprint(\"Hello, World!\")\n```\n\nRun it with `python hello.py`.",
+  "error": "",
+  "created_at": "2026-01-15T18:38:23Z",
+  "assigned_at": "2026-01-15T18:38:36Z",
+  "completed_at": "2026-01-15T18:38:43Z"
+}
