@@ -27,6 +27,8 @@ type DashboardConfig struct {
 	WorkerPrefix  string
 	CoordHost     string
 	APIToken      string
+	GitToken      string
+	GitUser       string
 }
 
 // Dashboard manages the coordinator subprocess and serves the web UI.
@@ -86,6 +88,12 @@ func (d *Dashboard) Start() error {
 	}
 	if d.apiToken != "" {
 		args = append(args, "-token", d.apiToken)
+	}
+	if d.config.GitToken != "" {
+		args = append(args, "-git-token", d.config.GitToken)
+	}
+	if d.config.GitUser != "" {
+		args = append(args, "-git-user", d.config.GitUser)
 	}
 
 	d.cmd = exec.Command(d.config.ShelleyBin, args...)

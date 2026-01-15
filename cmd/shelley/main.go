@@ -715,6 +715,8 @@ func runCoord(global GlobalConfig, args []string) {
 	coordHost := fs.String("host", "", "Coordinator hostname (auto-detected)")
 	apiToken := fs.String("token", "", "API token (auto-generated if empty)")
 	gitLogging := fs.Bool("git-log", true, "Enable git logging of completed tasks")
+	gitToken := fs.String("git-token", "", "GitHub/GitLab token for worker git push (env: GITHUB_TOKEN)")
+	gitUser := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley coord [flags]\n\n")
@@ -750,6 +752,11 @@ func runCoord(global GlobalConfig, args []string) {
 		*apiToken = fmt.Sprintf("%x", b)
 	}
 
+	// Use environment variable for git token if not provided
+	if *gitToken == "" {
+		*gitToken = os.Getenv("GITHUB_TOKEN")
+	}
+
 	config := coordinator.Config{
 		Port:         *port,
 		DBPath:       *dbPath,
@@ -759,6 +766,8 @@ func runCoord(global GlobalConfig, args []string) {
 		CoordHost:    *coordHost,
 		APIToken:     *apiToken,
 		GitLogging:   *gitLogging,
+		GitToken:     *gitToken,
+		GitUser:      *gitUser,
 	}
 
 	coord, err := coordinator.New(config)
@@ -809,6 +818,8 @@ func runDashboard(global GlobalConfig, args []string) {
 	coordHost := fs.String("host", "", "Coordinator hostname (auto-detected)")
 	apiToken := fs.String("token", "", "API token (auto-generated if empty)")
 	autoStart := fs.Bool("auto-start", false, "Automatically start coordinator on dashboard startup")
+	gitTokenDash := fs.String("git-token", "", "GitHub/GitLab token for worker git push (env: GITHUB_TOKEN)")
+	gitUserDash := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley dashboard [flags]\n\n")
@@ -844,6 +855,11 @@ func runDashboard(global GlobalConfig, args []string) {
 		*apiToken = fmt.Sprintf("%x", b)
 	}
 
+	// Use environment variable for git token if not provided
+	if *gitTokenDash == "" {
+		*gitTokenDash = os.Getenv("GITHUB_TOKEN")
+	}
+
 	config := coordinator.DashboardConfig{
 		Port:         *port,
 		CoordPort:    *coordPort,
@@ -853,6 +869,8 @@ func runDashboard(global GlobalConfig, args []string) {
 		WorkerPrefix: *workerPrefix,
 		CoordHost:    *coordHost,
 		APIToken:     *apiToken,
+		GitToken:     *gitTokenDash,
+		GitUser:      *gitUserDash,
 	}
 
 	dash := coordinator.NewDashboard(config)

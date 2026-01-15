@@ -366,8 +366,19 @@
                 </div>
                 <div class="list">
                     <div style="padding: 20px;">
-                        <textarea id="prompt" class="input" placeholder="e.g. Add input validation to the signup form, Fix the failing tests in auth_test.go, Add a /health endpoint that returns JSON..."></textarea>
-                        <div style="margin-top: 12px;">
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Repository (optional)</label>
+                            <input id="repo-url" class="input" style="width: 100%;" placeholder="e.g. github.com/user/repo or git@github.com:user/repo.git">
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Base Branch</label>
+                            <input id="base-branch" class="input" style="width: 150px;" placeholder="main" value="main">
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Task Prompt</label>
+                            <textarea id="prompt" class="input" placeholder="e.g. Add input validation to the signup form, Fix the failing tests in auth_test.go, Add a /health endpoint that returns JSON..."></textarea>
+                        </div>
+                        <div>
                             <button onclick="enqueueTask()" class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Task</button>
                         </div>
                     </div>
@@ -614,16 +625,23 @@
                 `).join('') : '<div class="list-empty">No workers</div>';
 
                 const tasks = await api('/api/tasks?limit=20');
-                document.getElementById('tasks').innerHTML = tasks?.length ? tasks.map(t => `
+                document.getElementById('tasks').innerHTML = tasks?.length ? tasks.map(t => {
+                    const repoShort = t.repo_url ? t.repo_url.replace(/.*github\.com[\/:]/, '').replace(/\.git$/, '') : '';
+                    const branchInfo = t.branch_name ? `<span style="color:#737373;">→ ${t.branch_name}</span>` : '';
+                    const commitInfo = t.commit_sha ? `<span style="color:#22c55e;" title="${t.commit_sha}">✓</span>` : '';
+                    return `
                     <div class="list-item" onclick="showTask('${t.id}')" style="cursor:pointer">
                         <div class="list-item-info">
                             <span class="status-dot ${t.status === 'completed' ? 'running' : t.status === 'failed' ? 'stopped' : 'idle'}"></span>
                             <span class="list-item-name">${t.id.slice(0,8)}</span>
-                            <span class="list-item-meta" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.prompt || '')}</span>
+                            ${repoShort ? `<span class="badge badge-neutral" style="margin-left:8px;font-size:11px;">${repoShort}</span>` : ''}
+                            ${branchInfo}
+                            ${commitInfo}
+                            <span class="list-item-meta" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:8px;">${escapeHtml(t.prompt || '')}</span>
                         </div>
                         <span class="badge badge-${t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'}">${t.status}</span>
                     </div>
-                `).join('') : '<div class="list-empty">No tasks</div>';
+                `}).join('') : '<div class="list-empty">No tasks</div>';
             } catch (e) {
                 // Coordinator might have stopped
             }
@@ -635,16 +653,34 @@
 
         async function enqueueTask() {
             const prompt = document.getElementById('prompt').value;
+            const repoUrl = document.getElementById('repo-url').value.trim();
+            const baseBranch = document.getElementById('base-branch').value.trim() || 'main';
+            
             if (!prompt) return alert('Prompt required');
             if (!coordRunning) return alert('Start coordinator first');
+            
+            const payload = { prompt };
+            if (repoUrl) {
+                // Convert github.com/user/repo to git URL if needed
+                let gitUrl = repoUrl;
+                if (repoUrl.match(/^[\w-]+\/[\w-]+$/)) {
+                    gitUrl = `https://github.com/${repoUrl}.git`;
+                } else if (repoUrl.match(/^github\.com\/[\w-]+\/[\w-]+/)) {
+                    gitUrl = `https://${repoUrl}.git`;
+                }
+                payload.repo_url = gitUrl;
+                payload.base_branch = baseBranch;
+            }
+            
             try {
                 const task = await api('/api/enqueue', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt })
+                    body: JSON.stringify(payload)
                 });
                 document.getElementById('prompt').value = '';
-                addLog(`Task ${task.id.slice(0,8)} enqueued`);
+                const repoInfo = repoUrl ? ` (${repoUrl})` : '';
+                addLog(`Task ${task.id.slice(0,8)} enqueued${repoInfo}`);
                 refresh();
             } catch (e) {
                 alert('Failed: ' + e.message);
@@ -667,15 +703,31 @@
             if (!coordRunning) return;
             try {
                 const task = await api('/api/task?id=' + id);
+                const repoShort = task.repo_url ? task.repo_url.replace(/.*github\.com[\/:]/, '').replace(/\.git$/, '') : '';
+                
+                let gitSection = '';
+                if (task.repo_url) {
+                    gitSection = `
+                        <div style="background:#f5f5f5;border-radius:8px;padding:12px;margin-bottom:16px;">
+                            <p style="margin-bottom:8px"><strong>Repository:</strong> <a href="https://github.com/${repoShort}" target="_blank" style="color:#0369a1;">${repoShort}</a></p>
+                            <p style="margin-bottom:8px"><strong>Base Branch:</strong> ${task.base_branch || 'main'}</p>
+                            ${task.branch_name ? `<p style="margin-bottom:8px"><strong>Task Branch:</strong> <code>${task.branch_name}</code></p>` : ''}
+                            ${task.commit_sha ? `<p style="margin-bottom:8px"><strong>Commit:</strong> <a href="https://github.com/${repoShort}/commit/${task.commit_sha}" target="_blank" style="color:#0369a1;"><code>${task.commit_sha.slice(0,7)}</code></a></p>` : ''}
+                            ${task.commit_sha && task.branch_name ? `<p><a href="https://github.com/${repoShort}/compare/${task.base_branch || 'main'}...${task.branch_name}" target="_blank" class="btn" style="font-size:13px;">View Diff / Create PR</a></p>` : ''}
+                        </div>
+                    `;
+                }
+                
                 document.getElementById('taskDetails').innerHTML = `
                     <p style="margin-bottom:12px"><strong>ID:</strong> <code>${task.id}</code></p>
                     <p style="margin-bottom:12px"><strong>Status:</strong> <span class="badge badge-${task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : 'info'}">${task.status}</span></p>
                     <p style="margin-bottom:12px"><strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}</p>
                     ${task.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
                     ${task.worker_id ? `<p style="margin-bottom:12px"><strong>Worker:</strong> ${task.worker_id}</p>` : ''}
+                    ${gitSection}
                     <p style="margin-bottom:8px"><strong>Prompt:</strong></p>
                     <div class="result-box">${escapeHtml(task.prompt || '')}</div>
-                    ${task.result ? `<p style="margin:16px 0 8px"><strong>Result:</strong></p><div class="result-box">${escapeHtml(task.result)}</div>` : ''}
+                    ${task.result ? `<p style="margin:16px 0 8px"><strong>Result:</strong></p><div class="result-box" style="max-height:400px;">${escapeHtml(task.result)}</div>` : ''}
                     ${task.error ? `<p style="margin:16px 0 8px"><strong>Error:</strong></p><div class="result-box" style="background:#fee2e2;color:#dc2626">${escapeHtml(task.error)}</div>` : ''}
                 `;
                 document.getElementById('taskModal').classList.add('active');

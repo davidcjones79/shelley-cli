@@ -34,6 +34,8 @@ type Config struct {
 	CoordHost    string
 	APIToken     string
 	GitLogging   bool
+	GitToken     string // GitHub/GitLab token for HTTPS auth
+	GitUser      string // Git username (default: git)
 }
 
 // Task represents a unit of work.
@@ -394,16 +396,43 @@ func (c *Coordinator) setupWorker(workerID string) {
 	configCmd.Stdin = strings.NewReader(configJSON)
 	configCmd.Run()
 
+	// Configure git credentials if token provided
+	if c.config.GitToken != "" {
+		gitUser := c.config.GitUser
+		if gitUser == "" {
+			gitUser = "git"
+		}
+		// Configure git credential helper to use token
+		gitSetupCmds := [][]string{
+			{"git", "config", "--global", "credential.helper", "store"},
+			{"git", "config", "--global", "user.email", "shelley-worker@exe.dev"},
+			{"git", "config", "--global", "user.name", fmt.Sprintf("Shelley Worker (%s)", workerID)},
+		}
+		for _, args := range gitSetupCmds {
+			exec.Command("ssh", append([]string{"-o", "StrictHostKeyChecking=no", workerHost}, args...)...).Run()
+		}
+		// Store credentials for GitHub
+		credentials := fmt.Sprintf("https://%s:%s@github.com\n", gitUser, c.config.GitToken)
+		credCmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", workerHost, "tee", ".git-credentials")
+		credCmd.Stdin = strings.NewReader(credentials)
+		credCmd.Run()
+		exec.Command("ssh", "-o", "StrictHostKeyChecking=no", workerHost, "chmod", "600", ".git-credentials").Run()
+	}
+
 	c.startWorkerLoop(workerID, workerHost)
 }
 
 func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
 	pollScript := fmt.Sprintf(`#!/bin/bash
+set -e
 export PATH="$HOME/.local/bin:$PATH"
 COORD="https://%s:%d"
 WORKER_ID="%s"
 IDLE_COUNT=0
 MAX_IDLE=24
+WORKDIR="$HOME/workspaces"
+
+mkdir -p "$WORKDIR"
 
 while true; do
     RESPONSE=$(curl -s "$COORD/api/next-task?worker=$WORKER_ID")
@@ -412,16 +441,88 @@ while true; do
     if [ -n "$TASK_ID" ]; then
         IDLE_COUNT=0
         PROMPT=$(echo "$RESPONSE" | jq -r '.prompt')
-        echo "Running task: $TASK_ID"
+        REPO_URL=$(echo "$RESPONSE" | jq -r '.repo_url // empty')
+        BASE_BRANCH=$(echo "$RESPONSE" | jq -r '.base_branch // "main"')
+        BRANCH_NAME=$(echo "$RESPONSE" | jq -r '.branch_name // empty')
         
-        OUTPUT=$(shelley -config ~/.config/shelley/shelley.json chat -yes -no-sync -prompt "$PROMPT" 2>&1)
+        echo "=== Task $TASK_ID ==="
+        echo "Prompt: $PROMPT"
+        echo "Repo: $REPO_URL"
+        echo "Branch: $BRANCH_NAME"
         
+        TASK_DIR="$WORKDIR/$TASK_ID"
+        COMMIT_SHA=""
+        ERROR=""
+        
+        # If repo URL provided, clone and setup git
+        if [ -n "$REPO_URL" ]; then
+            echo "Cloning $REPO_URL..."
+            rm -rf "$TASK_DIR"
+            
+            if ! git clone --depth=50 --branch="$BASE_BRANCH" "$REPO_URL" "$TASK_DIR" 2>&1; then
+                ERROR="Failed to clone repository"
+                curl -s -X POST "$COORD/api/complete" \
+                    -H "Content-Type: application/json" \
+                    -d "$(jq -n --arg tid "$TASK_ID" --arg wid "$WORKER_ID" --arg err "$ERROR" \
+                        '{task_id: $tid, worker_id: $wid, error: $err}')"
+                continue
+            fi
+            
+            cd "$TASK_DIR"
+            
+            # Create task branch
+            if [ -n "$BRANCH_NAME" ]; then
+                git checkout -b "$BRANCH_NAME"
+            fi
+            
+            # Configure git for commits
+            git config user.email "shelley-worker@exe.dev"
+            git config user.name "Shelley Worker ($WORKER_ID)"
+        else
+            # No repo - work in a temp directory
+            TASK_DIR="$WORKDIR/$TASK_ID"
+            mkdir -p "$TASK_DIR"
+            cd "$TASK_DIR"
+        fi
+        
+        echo "Running shelley in $(pwd)..."
+        
+        # Run shelley with the prompt
+        OUTPUT=$(shelley -config ~/.config/shelley/shelley.json chat -yes -no-sync -prompt "$PROMPT" 2>&1) || true
+        
+        # If we have a repo, commit and push changes
+        if [ -n "$REPO_URL" ] && [ -n "$BRANCH_NAME" ]; then
+            echo "Checking for changes..."
+            
+            if [ -n "$(git status --porcelain)" ]; then
+                echo "Committing changes..."
+                git add -A
+                git commit -m "Task $TASK_ID: $PROMPT" -m "Automated commit by Shelley Coordinator" || true
+                COMMIT_SHA=$(git rev-parse HEAD)
+                
+                echo "Pushing branch $BRANCH_NAME..."
+                if git push -u origin "$BRANCH_NAME" 2>&1; then
+                    echo "Push successful: $COMMIT_SHA"
+                else
+                    ERROR="Failed to push branch"
+                fi
+            else
+                echo "No changes to commit"
+            fi
+        fi
+        
+        # Report completion
         curl -s -X POST "$COORD/api/complete" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg tid "$TASK_ID" --arg wid "$WORKER_ID" --arg out "$OUTPUT" \
-                '{task_id: $tid, worker_id: $wid, result: $out}')"
+                       --arg sha "$COMMIT_SHA" --arg err "$ERROR" \
+                '{task_id: $tid, worker_id: $wid, result: $out, commit_sha: $sha, error: $err}')"
         
         echo "Task $TASK_ID completed"
+        
+        # Cleanup
+        cd "$HOME"
+        rm -rf "$TASK_DIR"
     else
         IDLE_COUNT=$((IDLE_COUNT + 1))
         if [ $IDLE_COUNT -ge $MAX_IDLE ]; then
