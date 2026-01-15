@@ -339,7 +339,12 @@ func fromLLMContent(c llm.Content) content {
 	case llm.ContentTypeToolUse:
 		d.ID = c.ID
 		d.ToolName = c.ToolName
-		d.ToolInput = c.ToolInput
+		// Ensure ToolInput is never nil - Anthropic API requires the input field
+		if len(c.ToolInput) == 0 {
+			d.ToolInput = json.RawMessage("{}")
+		} else {
+			d.ToolInput = c.ToolInput
+		}
 	case llm.ContentTypeToolResult:
 		d.ToolUseID = c.ToolUseID
 		d.ToolError = c.ToolError

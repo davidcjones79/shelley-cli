@@ -181,6 +181,9 @@ func (s *Service) parseStreamResponse(ctx context.Context, body io.Reader, callb
 			if idx < len(contentBlocks) && contentBlocks[idx].Type == "tool_use" {
 				if buf, ok := toolInputBuffers[idx]; ok {
 					contentBlocks[idx].ToolInput = json.RawMessage(buf.String())
+				} else {
+					// Ensure ToolInput is never nil - Anthropic API requires the input field
+					contentBlocks[idx].ToolInput = json.RawMessage("{}")
 				}
 			}
 			if err := callback(llm.StreamEvent{
