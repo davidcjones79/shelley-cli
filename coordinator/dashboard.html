@@ -329,6 +329,7 @@
         <div class="header-left">
             <span class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -3px;"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg> Shelley Coordinator</span>
             <span class="tagline">The Laboratory</span>
+            <a href="#" class="nav-link" onclick="scrollToSection('groups')">Groups</a>
             <a href="#" class="nav-link" onclick="scrollToSection('tasks')">Tasks</a>
             <a href="#" class="nav-link" onclick="scrollToSection('workers')">Workers</a>
             <a href="#" class="nav-link" onclick="showHelp()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Help</a>
@@ -356,6 +357,17 @@
             <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Completed</div></div>
             <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Failed</div></div>
             <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Workers</div></div>
+        </div>
+
+        <!-- Groups -->
+        <div class="section" id="groups-section">
+            <div class="section-header">
+                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Task Groups</span>
+                <button onclick="showCreateGroup()" class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New Group</button>
+            </div>
+            <div class="list" id="groups">
+                <div class="list-empty">No groups - create one to batch related tasks together</div>
+            </div>
         </div>
 
         <div class="grid-2">
@@ -421,7 +433,41 @@
         </div>
     </div>
 
-    <!-- Task Detail Modal -->
+    <!-- Create Group Modal -->
+    <div class="modal" id="createGroupModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">Create Task Group</span>
+                <button class="modal-close" onclick="closeCreateGroup()">&times;</button>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Group Name</label>
+                <input id="group-name" class="input" style="width: 100%;" placeholder="e.g. Auth System Improvements">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Description (optional)</label>
+                <input id="group-description" class="input" style="width: 100%;" placeholder="Brief description of the group">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Repository (optional - shared by all tasks)</label>
+                <input id="group-repo-url" class="input" style="width: 100%;" placeholder="e.g. github.com/user/repo">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Base Branch</label>
+                <input id="group-base-branch" class="input" style="width: 150px;" placeholder="main" value="main">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Task Prompts (one per line)</label>
+                <textarea id="group-prompts" class="input" style="min-height: 120px;" placeholder="Add input validation to signup form&#10;Fix failing tests in auth_test.go&#10;Add rate limiting to login endpoint"></textarea>
+                <p style="font-size: 11px; color: #737373; margin-top: 4px;">Each line becomes a separate task that runs in parallel</p>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button onclick="closeCreateGroup()" class="btn">Cancel</button>
+                <button onclick="createGroup()" class="btn btn-primary">Create Group</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Task Detail Modal -->
     <div class="modal" id="taskModal">
         <div class="modal-content">
@@ -624,17 +670,37 @@
                     </div>
                 `).join('') : '<div class="list-empty">No workers</div>';
 
+                // Fetch groups
+                const groups = await api('/api/groups?limit=20');
+                document.getElementById('groups').innerHTML = groups?.length ? groups.map(g => {
+                    const repoShort = g.repo_url ? g.repo_url.replace(/.*github\.com[\/:]/, '').replace(/\.git$/, '') : '';
+                    const progress = g.tasks_total > 0 ? Math.round((g.tasks_completed / g.tasks_total) * 100) : 0;
+                    return `
+                    <div class="list-item" onclick="showGroup('${g.id}')" style="cursor:pointer">
+                        <div class="list-item-info">
+                            <span class="status-dot ${g.status === 'completed' ? 'running' : g.status === 'failed' ? 'stopped' : g.status === 'running' ? 'busy' : 'idle'}"></span>
+                            <span class="list-item-name">${escapeHtml(g.name)}</span>
+                            ${repoShort ? `<span class="badge badge-neutral" style="margin-left:8px;font-size:11px;">${repoShort}</span>` : ''}
+                            <span class="list-item-meta" style="margin-left:8px;">${g.tasks_completed}/${g.tasks_total} tasks</span>
+                            ${g.tasks_failed > 0 ? `<span style="color:#dc2626;font-size:12px;">(${g.tasks_failed} failed)</span>` : ''}
+                        </div>
+                        <span class="badge badge-${g.status === 'completed' ? 'success' : g.status === 'failed' ? 'danger' : g.status === 'running' ? 'info' : 'neutral'}">${g.status}</span>
+                    </div>
+                `}).join('') : '<div class="list-empty">No groups - create one to batch related tasks together</div>';
+
                 const tasks = await api('/api/tasks?limit=20');
                 document.getElementById('tasks').innerHTML = tasks?.length ? tasks.map(t => {
                     const repoShort = t.repo_url ? t.repo_url.replace(/.*github\.com[\/:]/, '').replace(/\.git$/, '') : '';
                     const branchInfo = t.branch_name ? `<span style="color:#737373;">→ ${t.branch_name}</span>` : '';
                     const commitInfo = t.commit_sha ? `<span style="color:#22c55e;" title="${t.commit_sha}">✓</span>` : '';
+                    const groupInfo = t.group_id ? `<span class="badge badge-info" style="margin-left:8px;font-size:10px;">grouped</span>` : '';
                     return `
                     <div class="list-item" onclick="showTask('${t.id}')" style="cursor:pointer">
                         <div class="list-item-info">
                             <span class="status-dot ${t.status === 'completed' ? 'running' : t.status === 'failed' ? 'stopped' : 'idle'}"></span>
                             <span class="list-item-name">${t.id.slice(0,8)}</span>
                             ${repoShort ? `<span class="badge badge-neutral" style="margin-left:8px;font-size:11px;">${repoShort}</span>` : ''}
+                            ${groupInfo}
                             ${branchInfo}
                             ${commitInfo}
                             <span class="list-item-meta" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:8px;">${escapeHtml(t.prompt || '')}</span>
@@ -738,6 +804,7 @@
 
         function closeModal() {
             document.getElementById('taskModal').classList.remove('active');
+            document.getElementById('groupModal')?.classList.remove('active');
         }
 
         function showHelp() {
@@ -746,6 +813,113 @@
 
         function closeHelp() {
             document.getElementById('helpModal').classList.remove('active');
+        }
+
+        // Group functions
+        function showCreateGroup() {
+            if (!coordRunning) return alert('Start coordinator first');
+            document.getElementById('createGroupModal').classList.add('active');
+        }
+
+        function closeCreateGroup() {
+            document.getElementById('createGroupModal').classList.remove('active');
+            // Clear form
+            document.getElementById('group-name').value = '';
+            document.getElementById('group-description').value = '';
+            document.getElementById('group-repo-url').value = '';
+            document.getElementById('group-base-branch').value = 'main';
+            document.getElementById('group-prompts').value = '';
+        }
+
+        async function createGroup() {
+            const name = document.getElementById('group-name').value.trim();
+            const description = document.getElementById('group-description').value.trim();
+            let repoUrl = document.getElementById('group-repo-url').value.trim();
+            const baseBranch = document.getElementById('group-base-branch').value.trim() || 'main';
+            const promptsText = document.getElementById('group-prompts').value.trim();
+
+            if (!name) return alert('Group name required');
+            if (!promptsText) return alert('At least one task prompt required');
+
+            // Parse prompts (one per line)
+            const prompts = promptsText.split('\n').map(p => p.trim()).filter(p => p);
+            if (prompts.length === 0) return alert('At least one task prompt required');
+
+            // Convert repo URL if needed
+            if (repoUrl) {
+                if (repoUrl.match(/^[\w-]+\/[\w-]+$/)) {
+                    repoUrl = `https://github.com/${repoUrl}.git`;
+                } else if (repoUrl.match(/^github\.com\/[\w-]+\/[\w-]+/)) {
+                    repoUrl = `https://${repoUrl}.git`;
+                }
+            }
+
+            const payload = { name, prompts };
+            if (description) payload.description = description;
+            if (repoUrl) {
+                payload.repo_url = repoUrl;
+                payload.base_branch = baseBranch;
+            }
+
+            try {
+                const group = await api('/api/group/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                closeCreateGroup();
+                addLog(`Group '${name}' created with ${prompts.length} tasks`);
+                refresh();
+            } catch (e) {
+                alert('Failed to create group: ' + e.message);
+            }
+        }
+
+        async function showGroup(id) {
+            if (!coordRunning) return;
+            try {
+                const group = await api('/api/group?id=' + id);
+                const tasks = await api('/api/group/tasks?id=' + id);
+                const repoShort = group.repo_url ? group.repo_url.replace(/.*github\.com[\/:]/, '').replace(/\.git$/, '') : '';
+
+                let gitSection = '';
+                if (group.repo_url) {
+                    gitSection = `
+                        <div style="background:#f5f5f5;border-radius:8px;padding:12px;margin-bottom:16px;">
+                            <p style="margin-bottom:8px"><strong>Repository:</strong> <a href="https://github.com/${repoShort}" target="_blank" style="color:#0369a1;">${repoShort}</a></p>
+                            <p><strong>Base Branch:</strong> ${group.base_branch || 'main'}</p>
+                        </div>
+                    `;
+                }
+
+                const tasksHtml = tasks?.length ? tasks.map(t => {
+                    const commitInfo = t.commit_sha ? `<a href="https://github.com/${repoShort}/commit/${t.commit_sha}" target="_blank" style="color:#22c55e;" title="${t.commit_sha}">✓</a>` : '';
+                    return `
+                        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #e5e5e5;">
+                            <span class="status-dot ${t.status === 'completed' ? 'running' : t.status === 'failed' ? 'stopped' : 'idle'}" style="flex-shrink:0;"></span>
+                            <span style="font-family:monospace;font-size:12px;color:#737373;">${t.id.slice(0,8)}</span>
+                            ${commitInfo}
+                            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.prompt || '')}</span>
+                            <span class="badge badge-${t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'}" style="font-size:10px;">${t.status}</span>
+                        </div>
+                    `;
+                }).join('') : '<p style="color:#737373;">No tasks in this group</p>';
+
+                document.getElementById('taskDetails').innerHTML = `
+                    <p style="margin-bottom:12px"><strong>Group:</strong> ${escapeHtml(group.name)}</p>
+                    ${group.description ? `<p style="margin-bottom:12px;color:#525252;">${escapeHtml(group.description)}</p>` : ''}
+                    <p style="margin-bottom:12px"><strong>Status:</strong> <span class="badge badge-${group.status === 'completed' ? 'success' : group.status === 'failed' ? 'danger' : group.status === 'running' ? 'info' : 'neutral'}">${group.status}</span></p>
+                    <p style="margin-bottom:12px"><strong>Progress:</strong> ${group.tasks_completed}/${group.tasks_total} completed${group.tasks_failed > 0 ? `, ${group.tasks_failed} failed` : ''}</p>
+                    <p style="margin-bottom:12px"><strong>Created:</strong> ${new Date(group.created_at).toLocaleString()}</p>
+                    ${group.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(group.completed_at).toLocaleString()}</p>` : ''}
+                    ${gitSection}
+                    <p style="margin-bottom:8px"><strong>Tasks:</strong></p>
+                    <div style="max-height:300px;overflow-y:auto;">${tasksHtml}</div>
+                `;
+                document.getElementById('taskModal').classList.add('active');
+            } catch (e) {
+                alert('Failed to load group');
+            }
         }
 
         function scrollToSection(id) {

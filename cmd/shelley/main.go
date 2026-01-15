@@ -797,6 +797,10 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/next-task", coord.HandleNextTask)
 	mux.HandleFunc("/api/complete", coord.HandleComplete)
 	mux.HandleFunc("/api/worker-shutdown", coord.HandleWorkerShutdown)
+	mux.HandleFunc("/api/groups", coord.HandleListGroups)
+	mux.HandleFunc("/api/group", coord.HandleGetGroup)
+	mux.HandleFunc("/api/group/create", coord.HandleCreateGroup)
+	mux.HandleFunc("/api/group/tasks", coord.HandleGetGroupTasks)
 	mux.HandleFunc("/shelley-bin", coord.HandleShelleyBinary)
 
 	addr := fmt.Sprintf(":%d", *port)

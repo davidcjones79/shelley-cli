@@ -53,6 +53,7 @@ type Task struct {
 	CommitSHA   *string    `json:"commit_sha,omitempty"`
 	PRURL       *string    `json:"pr_url,omitempty"`
 	PRNumber    *int       `json:"pr_number,omitempty"`
+	GroupID     *string    `json:"group_id,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	AssignedAt  *time.Time `json:"assigned_at,omitempty"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
@@ -77,6 +78,32 @@ type TaskRequest struct {
 	Priority   int    `json:"priority"`
 	RepoURL    string `json:"repo_url"`
 	BaseBranch string `json:"base_branch"`
+	GroupID    string `json:"group_id"` // Optional: assign to existing group
+}
+
+// TaskGroup represents a batch of related tasks.
+type TaskGroup struct {
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Description    *string    `json:"description,omitempty"`
+	RepoURL        *string    `json:"repo_url,omitempty"`
+	BaseBranch     *string    `json:"base_branch,omitempty"`
+	Status         string     `json:"status"`
+	TasksTotal     int        `json:"tasks_total"`
+	TasksCompleted int        `json:"tasks_completed"`
+	TasksFailed    int        `json:"tasks_failed"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+}
+
+// GroupRequest contains parameters for creating a task group.
+type GroupRequest struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	RepoURL     string   `json:"repo_url"`
+	BaseBranch  string   `json:"base_branch"`
+	Prompts     []string `json:"prompts"` // Optional: create tasks immediately
 }
 
 // CompleteRequest contains the result of a completed task.
@@ -146,6 +173,22 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 		req.BaseBranch = "main"
 	}
 
+	// If task belongs to a group, inherit repo settings from the group
+	var groupID interface{}
+	if req.GroupID != "" {
+		group, err := c.GetGroup(req.GroupID)
+		if err != nil {
+			return nil, fmt.Errorf("group not found: %w", err)
+		}
+		groupID = req.GroupID
+		if req.RepoURL == "" && group.RepoURL != nil {
+			req.RepoURL = *group.RepoURL
+		}
+		if req.BaseBranch == "main" && group.BaseBranch != nil {
+			req.BaseBranch = *group.BaseBranch
+		}
+	}
+
 	branchName := fmt.Sprintf("task-%s", req.ID)
 
 	var repoURL, baseBranch, branch interface{}
@@ -155,16 +198,22 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 		branch = branchName
 	}
 
-	_, err := c.db.Exec(`INSERT INTO tasks (id, prompt, priority, repo_url, base_branch, branch_name) VALUES (?, ?, ?, ?, ?, ?)`,
-		req.ID, req.Prompt, req.Priority, repoURL, baseBranch, branch)
+	_, err := c.db.Exec(`INSERT INTO tasks (id, prompt, priority, repo_url, base_branch, branch_name, group_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		req.ID, req.Prompt, req.Priority, repoURL, baseBranch, branch, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("enqueue task: %w", err)
+	}
+
+	// Update group task count
+	if req.GroupID != "" {
+		c.db.Exec(`UPDATE task_groups SET tasks_total = tasks_total + 1, status = 'running' WHERE id = ?`, req.GroupID)
 	}
 
 	c.LogEvent("task.queued", req.ID, "", map[string]interface{}{
 		"priority": req.Priority,
 		"repo_url": req.RepoURL,
 		"branch":   branchName,
+		"group_id": req.GroupID,
 	})
 
 	return c.GetTask(req.ID)
@@ -174,15 +223,15 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 func (c *Coordinator) GetTask(id string) (*Task, error) {
 	var t Task
 	var workerID, result, errorMsg sql.NullString
-	var repoURL, baseBranch, branchName, commitSHA, prURL sql.NullString
+	var repoURL, baseBranch, branchName, commitSHA, prURL, groupID sql.NullString
 	var prNumber sql.NullInt64
 	var assignedAt, startedAt, completedAt sql.NullTime
 
 	err := c.db.QueryRow(`SELECT id, prompt, status, priority, worker_id, result, error, 
-		repo_url, base_branch, branch_name, commit_sha, pr_url, pr_number,
+		repo_url, base_branch, branch_name, commit_sha, pr_url, pr_number, group_id,
 		created_at, assigned_at, started_at, completed_at FROM tasks WHERE id = ?`, id).Scan(
 		&t.ID, &t.Prompt, &t.Status, &t.Priority, &workerID, &result, &errorMsg,
-		&repoURL, &baseBranch, &branchName, &commitSHA, &prURL, &prNumber,
+		&repoURL, &baseBranch, &branchName, &commitSHA, &prURL, &prNumber, &groupID,
 		&t.CreatedAt, &assignedAt, &startedAt, &completedAt)
 	if err != nil {
 		return nil, err
@@ -215,6 +264,9 @@ func (c *Coordinator) GetTask(id string) (*Task, error) {
 	if prNumber.Valid {
 		n := int(prNumber.Int64)
 		t.PRNumber = &n
+	}
+	if groupID.Valid {
+		t.GroupID = &groupID.String
 	}
 	if assignedAt.Valid {
 		t.AssignedAt = &assignedAt.Time
@@ -299,6 +351,13 @@ func (c *Coordinator) CompleteTask(req CompleteRequest) error {
 		"pr_url":        req.PRURL,
 	})
 
+	// Update group status if task belongs to a group
+	var groupID sql.NullString
+	c.db.QueryRow(`SELECT group_id FROM tasks WHERE id = ?`, req.TaskID).Scan(&groupID)
+	if groupID.Valid {
+		c.updateGroupStatus(groupID.String)
+	}
+
 	if c.config.GitLogging {
 		go c.gitLogTask(req.TaskID)
 	}
@@ -325,6 +384,164 @@ func (c *Coordinator) gitLogTask(taskID string) {
 		msg += fmt.Sprintf(" by %s", *task.WorkerID)
 	}
 	exec.Command("git", "commit", "-m", msg).Run()
+}
+
+// CreateGroup creates a new task group.
+func (c *Coordinator) CreateGroup(req GroupRequest) (*TaskGroup, error) {
+	if req.ID == "" {
+		b := make([]byte, 8)
+		rand.Read(b)
+		req.ID = hex.EncodeToString(b)
+	}
+	if req.Name == "" {
+		req.Name = fmt.Sprintf("Group %s", req.ID[:8])
+	}
+	if req.BaseBranch == "" {
+		req.BaseBranch = "main"
+	}
+
+	var repoURL, baseBranch, description interface{}
+	if req.RepoURL != "" {
+		repoURL = req.RepoURL
+		baseBranch = req.BaseBranch
+	}
+	if req.Description != "" {
+		description = req.Description
+	}
+
+	_, err := c.db.Exec(`INSERT INTO task_groups (id, name, description, repo_url, base_branch) VALUES (?, ?, ?, ?, ?)`,
+		req.ID, req.Name, description, repoURL, baseBranch)
+	if err != nil {
+		return nil, fmt.Errorf("create group: %w", err)
+	}
+
+	c.LogEvent("group.created", "", "", map[string]interface{}{
+		"group_id": req.ID,
+		"name":     req.Name,
+		"repo_url": req.RepoURL,
+	})
+
+	// If prompts provided, create tasks for each
+	for _, prompt := range req.Prompts {
+		_, err := c.EnqueueTask(TaskRequest{
+			Prompt:  prompt,
+			GroupID: req.ID,
+		})
+		if err != nil {
+			log.Printf("Failed to create task for group %s: %v", req.ID, err)
+		}
+	}
+
+	return c.GetGroup(req.ID)
+}
+
+// GetGroup retrieves a task group by ID.
+func (c *Coordinator) GetGroup(id string) (*TaskGroup, error) {
+	var g TaskGroup
+	var description, repoURL, baseBranch sql.NullString
+	var completedAt sql.NullTime
+
+	err := c.db.QueryRow(`SELECT id, name, description, repo_url, base_branch, status, 
+		tasks_total, tasks_completed, tasks_failed, created_at, completed_at 
+		FROM task_groups WHERE id = ?`, id).Scan(
+		&g.ID, &g.Name, &description, &repoURL, &baseBranch, &g.Status,
+		&g.TasksTotal, &g.TasksCompleted, &g.TasksFailed, &g.CreatedAt, &completedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	if description.Valid {
+		g.Description = &description.String
+	}
+	if repoURL.Valid {
+		g.RepoURL = &repoURL.String
+	}
+	if baseBranch.Valid {
+		g.BaseBranch = &baseBranch.String
+	}
+	if completedAt.Valid {
+		g.CompletedAt = &completedAt.Time
+	}
+
+	return &g, nil
+}
+
+// ListGroups returns all task groups.
+func (c *Coordinator) ListGroups(status string, limit int) ([]TaskGroup, error) {
+	query := `SELECT id FROM task_groups`
+	args := []interface{}{}
+
+	if status != "" {
+		query += " WHERE status = ?"
+		args = append(args, status)
+	}
+	query += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := c.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []TaskGroup
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		if group, err := c.GetGroup(id); err == nil {
+			groups = append(groups, *group)
+		}
+	}
+
+	return groups, nil
+}
+
+// GetGroupTasks returns all tasks in a group.
+func (c *Coordinator) GetGroupTasks(groupID string) ([]Task, error) {
+	rows, err := c.db.Query(`SELECT id FROM tasks WHERE group_id = ? ORDER BY created_at ASC`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		if task, err := c.GetTask(id); err == nil {
+			tasks = append(tasks, *task)
+		}
+	}
+
+	return tasks, nil
+}
+
+// updateGroupStatus recalculates and updates a group's status.
+func (c *Coordinator) updateGroupStatus(groupID string) {
+	if groupID == "" {
+		return
+	}
+
+	var total, completed, failed int
+	c.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE group_id = ?`, groupID).Scan(&total)
+	c.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE group_id = ? AND status = 'completed'`, groupID).Scan(&completed)
+	c.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE group_id = ? AND status = 'failed'`, groupID).Scan(&failed)
+
+	status := "running"
+	var completedAt interface{}
+	if completed+failed >= total && total > 0 {
+		if failed > 0 {
+			status = "failed"
+		} else {
+			status = "completed"
+		}
+		completedAt = time.Now()
+	} else if total == 0 {
+		status = "pending"
+	}
+
+	c.db.Exec(`UPDATE task_groups SET tasks_total = ?, tasks_completed = ?, tasks_failed = ?, status = ?, completed_at = ? WHERE id = ?`,
+		total, completed, failed, status, completedAt, groupID)
 }
 
 // SpawnWorker creates a new worker VM.

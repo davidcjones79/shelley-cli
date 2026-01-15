@@ -105,6 +105,12 @@ Workers authenticate using the API token:
 - `GET /api/tasks` - List all tasks
 - `GET /api/task?id=<id>` - Get task details
 
+### Groups
+- `POST /api/group/create` - Create a task group
+- `GET /api/groups` - List all groups
+- `GET /api/group?id=<id>` - Get group details
+- `GET /api/group/tasks?id=<id>` - Get tasks in a group
+
 ### Workers
 - `GET /api/workers` - List workers
 - `POST /api/scale` - Scale worker count
@@ -131,7 +137,24 @@ shelley coord -port 8001 -max-workers 5
 curl -X POST https://your-vm.exe.xyz:8001/api/enqueue \
   -H "X-Coordinator-Token: <token>" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Fix the bug in main.go", "repo_url": "git@github.com:user/repo.git"}'
+  -d '{"prompt": "Fix the bug in main.go", "repo_url": "https://github.com/user/repo.git"}'
+```
+
+### Create a Task Group
+
+```bash
+curl -X POST https://your-vm.exe.xyz:8001/api/group/create \
+  -H "X-Coordinator-Token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Auth System Updates",
+    "repo_url": "https://github.com/user/repo.git",
+    "prompts": [
+      "Add input validation to login form",
+      "Add rate limiting to login endpoint",
+      "Fix failing auth tests"
+    ]
+  }'
 ```
 
 ### Check Status

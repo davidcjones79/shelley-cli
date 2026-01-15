@@ -1,3 +1,18 @@
+-- Task groups (for batching related tasks)
+CREATE TABLE IF NOT EXISTS task_groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    repo_url TEXT,           -- shared repo for all tasks in group
+    base_branch TEXT,        -- shared base branch
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending, running, completed, failed
+    tasks_total INTEGER DEFAULT 0,
+    tasks_completed INTEGER DEFAULT 0,
+    tasks_failed INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME
+);
+
 -- Workers (long-lived pool)
 CREATE TABLE IF NOT EXISTS workers (
     id TEXT PRIMARY KEY,
@@ -30,7 +45,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     assigned_at DATETIME,
     started_at DATETIME,
     completed_at DATETIME,
-    FOREIGN KEY (worker_id) REFERENCES workers(id)
+    group_id TEXT,           -- optional group this task belongs to
+    FOREIGN KEY (worker_id) REFERENCES workers(id),
+    FOREIGN KEY (group_id) REFERENCES task_groups(id)
 );
 
 -- Audit log
@@ -48,3 +65,5 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority DESC, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_workers_status ON workers(status);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id);
+CREATE INDEX IF NOT EXISTS idx_task_groups_status ON task_groups(status);

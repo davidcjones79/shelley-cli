@@ -49,7 +49,8 @@ coordinator/
 
 ## Database Schema
 
-- **tasks** - id, prompt, status, priority, worker_id, result, error, repo_url, base_branch, branch_name, commit_sha, pr_url, timestamps
+- **task_groups** - id, name, description, repo_url, base_branch, status, tasks_total, tasks_completed, tasks_failed, timestamps
+- **tasks** - id, prompt, status, priority, worker_id, result, error, repo_url, base_branch, branch_name, commit_sha, pr_url, group_id, timestamps
 - **workers** - id, status, current_task_id, tailscale_ip, created_at, last_heartbeat, tasks_completed
 - **events** - audit log of all events
 
@@ -62,10 +63,16 @@ coordinator/
 - `GET /dashboard/status` - Coordinator status + logs
 
 ### Tasks
-- `POST /api/enqueue` - Add task (prompt, repo_url, base_branch)
+- `POST /api/enqueue` - Add task (prompt, repo_url, base_branch, group_id)
 - `GET /api/tasks` - List tasks
 - `GET /api/task?id=` - Get task details
 - `GET /api/stats` - Queue statistics
+
+### Groups
+- `POST /api/group/create` - Create group (name, description, repo_url, base_branch, prompts[])
+- `GET /api/groups` - List groups
+- `GET /api/group?id=` - Get group details
+- `GET /api/group/tasks?id=` - Get tasks in a group
 
 ### Workers
 - `GET /api/workers` - List workers
@@ -116,12 +123,7 @@ export GITHUB_TOKEN=ghp_xxx
 
 ## What's Next (Planned)
 
-1. **Task Groups / Batches**
-   - Group multiple prompts into one batch
-   - Track overall group progress
-   - Common repo/branch for related tasks
-
-2. **Progress Streaming**
+1. **Progress Streaming**
    - Real-time output from workers
    - WebSocket or SSE for live updates
    - Show Shelley's progress in dashboard
@@ -137,6 +139,17 @@ export GITHUB_TOKEN=ghp_xxx
    - Fan-out / fan-in patterns
 
 ## Recent Changes
+
+### January 16, 2026
+- **Task Groups / Batches**
+  - New `task_groups` table to group related tasks
+  - Tasks can inherit repo_url and base_branch from their group
+  - Group progress tracking (tasks_total, tasks_completed, tasks_failed)
+  - Group status auto-updates when tasks complete
+  - Dashboard "Groups" section with create modal
+  - Multi-line prompt input (one task per line)
+  - Group detail modal shows all tasks with status
+  - API endpoints: `/api/groups`, `/api/group`, `/api/group/create`, `/api/group/tasks`
 
 ### January 15, 2026
 - Added git integration for workers

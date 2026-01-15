@@ -209,6 +209,101 @@ func (c *Coordinator) HandleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(c.GetStats())
 }
 
+// HandleCreateGroup creates a new task group.
+func (c *Coordinator) HandleCreateGroup(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req GroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	group, err := c.CreateGroup(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(group)
+}
+
+// HandleGetGroup returns a specific group.
+func (c *Coordinator) HandleGetGroup(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	groupID := r.URL.Query().Get("id")
+	if groupID == "" {
+		http.Error(w, "id param required", http.StatusBadRequest)
+		return
+	}
+
+	group, err := c.GetGroup(groupID)
+	if err != nil {
+		http.Error(w, "group not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(group)
+}
+
+// HandleListGroups returns all groups.
+func (c *Coordinator) HandleListGroups(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		}
+	}
+
+	groups, err := c.ListGroups(status, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(groups)
+}
+
+// HandleGetGroupTasks returns all tasks in a group.
+func (c *Coordinator) HandleGetGroupTasks(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	groupID := r.URL.Query().Get("id")
+	if groupID == "" {
+		http.Error(w, "id param required", http.StatusBadRequest)
+		return
+	}
+
+	tasks, err := c.GetGroupTasks(groupID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tasks)
+}
+
 // HandleShelleyBinary serves the shelley binary.
 func (c *Coordinator) HandleShelleyBinary(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
