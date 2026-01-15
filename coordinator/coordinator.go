@@ -124,6 +124,7 @@ type Coordinator struct {
 	config   Config
 	logsDir  string
 	shutdown chan struct{}
+	draining bool // When true, workers should shut down after completing current task
 }
 
 // New creates a new Coordinator.
@@ -350,6 +351,11 @@ func (c *Coordinator) CompleteTask(req CompleteRequest) error {
 		"commit_sha":    req.CommitSHA,
 		"pr_url":        req.PRURL,
 	})
+
+	// If draining, delete the worker now that it's done
+	if c.draining {
+		go c.DeleteWorker(req.WorkerID)
+	}
 
 	// Update group status if task belongs to a group
 	var groupID sql.NullString
@@ -821,6 +827,53 @@ func (c *Coordinator) ScaleWorkers(desired int) error {
 		activeCount++
 	}
 	return nil
+}
+
+// DrainWorkers marks all workers for shutdown after completing current tasks.
+// Idle workers are deleted immediately, busy workers complete their task first.
+func (c *Coordinator) DrainWorkers() (int, int) {
+	c.mu.Lock()
+	c.draining = true
+	c.mu.Unlock()
+
+	// Delete idle workers immediately
+	rows, _ := c.db.Query(`SELECT id FROM workers WHERE status = 'idle'`)
+	var idleDeleted int
+	if rows != nil {
+		for rows.Next() {
+			var id string
+			rows.Scan(&id)
+			c.DeleteWorker(id)
+			idleDeleted++
+		}
+		rows.Close()
+	}
+
+	// Count busy workers that will drain after completing their task
+	var busyCount int
+	c.db.QueryRow(`SELECT COUNT(*) FROM workers WHERE status = 'busy'`).Scan(&busyCount)
+
+	c.LogEvent("workers.draining", "", "", map[string]interface{}{
+		"idle_deleted": idleDeleted,
+		"busy_draining": busyCount,
+	})
+
+	return idleDeleted, busyCount
+}
+
+// IsDraining returns whether the coordinator is in drain mode.
+func (c *Coordinator) IsDraining() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.draining
+}
+
+// StopDraining cancels drain mode.
+func (c *Coordinator) StopDraining() {
+	c.mu.Lock()
+	c.draining = false
+	c.mu.Unlock()
+	c.LogEvent("workers.drain_cancelled", "", "", nil)
 }
 
 // GetStats returns current statistics.

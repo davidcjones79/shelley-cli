@@ -127,6 +127,11 @@ func (c *Coordinator) HandleScale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cancel drain mode when scaling up
+	if workers > 0 {
+		c.StopDraining()
+	}
+
 	if err := c.ScaleWorkers(workers); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -134,6 +139,26 @@ func (c *Coordinator) HandleScale(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// HandleDrain initiates graceful shutdown of all workers.
+func (c *Coordinator) HandleDrain(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idleDeleted, busyDraining := c.DrainWorkers()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "draining",
+		"idle_deleted":  idleDeleted,
+		"busy_draining": busyDraining,
+	})
 }
 
 // HandleGetTask returns a specific task.

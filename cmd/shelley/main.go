@@ -793,6 +793,7 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/task", coord.HandleGetTask)
 	mux.HandleFunc("/api/workers", coord.HandleListWorkers)
 	mux.HandleFunc("/api/scale", coord.HandleScale)
+	mux.HandleFunc("/api/drain", coord.HandleDrain)
 	mux.HandleFunc("/api/stats", coord.HandleStats)
 	mux.HandleFunc("/api/next-task", coord.HandleNextTask)
 	mux.HandleFunc("/api/complete", coord.HandleComplete)

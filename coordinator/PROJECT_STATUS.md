@@ -77,6 +77,7 @@ coordinator/
 ### Workers
 - `GET /api/workers` - List workers
 - `POST /api/scale?workers=N` - Scale worker count
+- `POST /api/drain` - Gracefully shut down all workers
 - `GET /api/next-task?worker=` - Claim next task (worker use)
 - `POST /api/complete` - Report task completion (worker use)
 
@@ -150,6 +151,18 @@ export GITHUB_TOKEN=ghp_xxx
   - Multi-line prompt input (one task per line)
   - Group detail modal shows all tasks with status
   - API endpoints: `/api/groups`, `/api/group`, `/api/group/create`, `/api/group/tasks`
+
+- **Dashboard UI Improvements**
+  - New Task form now spans full width for more room to type prompts
+  - Repository and Base Branch inputs arranged side by side
+  - Larger prompt textarea (min-height: 100px)
+
+- **Worker Drain Feature**
+  - "Drain" button in Workers section
+  - Gracefully shuts down all workers
+  - Idle workers deleted immediately
+  - Busy workers complete current task then shut down
+  - `POST /api/drain` endpoint
 
 ### January 15, 2026
 - Added git integration for workers

@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS task_groups (
 -- Workers (long-lived pool)
 CREATE TABLE IF NOT EXISTS workers (
     id TEXT PRIMARY KEY,
-    status TEXT NOT NULL DEFAULT 'starting',  -- starting, idle, busy, offline
+    status TEXT NOT NULL DEFAULT 'starting',  -- starting, idle, busy, draining, offline, deleted
     current_task_id TEXT,
     tailscale_ip TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
