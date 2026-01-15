@@ -4,11 +4,27 @@ A task queue and worker pool for distributed Shelley execution on exe.dev VMs.
 
 ## Quick Start
 
+### Dashboard Mode (Recommended)
+
+```bash
+shelley dashboard
+```
+
+Access at `https://your-vm.exe.xyz:8080/`
+
+The dashboard:
+- Serves the web UI
+- Lets you start/stop the coordinator from the browser
+- Proxies API requests to the coordinator
+- Shows coordinator logs in real-time
+
+### Direct Coordinator Mode
+
 ```bash
 shelley coord
 ```
 
-Access the dashboard at `https://your-vm.exe.xyz:8080/` (default port)
+Runs the coordinator directly without the dashboard wrapper.
 
 ## Architecture
 
@@ -50,6 +66,24 @@ Workers authenticate using the API token:
 - Workers receive the token when spawned by the coordinator
 
 ## Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+### `shelley dashboard` Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-port` | 8080 | Dashboard HTTP server port |
+| `-coord-port` | 8081 | Coordinator internal port |
+| `-db` | coordinator.db | SQLite database path |
+| `-prefix` | wk | Worker VM name prefix |
+| `-max-workers` | 10 | Maximum concurrent workers |
+| `-shelley-bin` | (self) | Path to shelley binary |
+| `-host` | (auto) | Coordinator hostname |
+| `-token` | (auto) | API token (auto-generated if empty) |
+| `-auto-start` | false | Start coordinator automatically |
+
+### `shelley coord` Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
