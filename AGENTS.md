@@ -26,3 +26,12 @@
     ./bin/shelley -config /exe.dev/shelley.json -db /tmp/shelley-test.db serve -port 8002
     ```
     Then use browser tools to navigate to http://localhost:8002/ and interact with the UI.
+
+---
+
+## CLI Reference
+
+See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for complete Shelley CLI documentation including:
+- All commands and flags
+- Coordinator system for distributed task execution
+- Common workflows and examples
