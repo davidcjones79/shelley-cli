@@ -1,0 +1,14 @@
+{
+  "id": "e4ea88975426e877",
+  "prompt": "Say hello and tell me the current date",
+  "status": "completed",
+  "priority": 0,
+  "worker_id": "wk-xb23eb97ddb10",
+  "result": "",
+  "error": "",
+  "conversation_id": "cT3TENI",
+  "source": "autonomous",
+  "created_at": "2026-01-15T22:06:13Z",
+  "assigned_at": "2026-01-15T22:06:15Z",
+  "completed_at": "2026-01-15T22:06:20Z"
+}
