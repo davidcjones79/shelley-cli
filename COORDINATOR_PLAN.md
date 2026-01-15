@@ -1,64 +1,60 @@
-# Coordinator Integration Plan
+# Coordinator Integration - COMPLETED
 
 ## Summary
 
-We're merging the standalone coordinator (from `/home/exedev/coordinator-v2/`) into shelley-cli as subcommands.
+Successfully merged the standalone coordinator into shelley-cli as the `shelley coord` subcommand.
 
-## Current State
+## What Was Done
 
-- Fixed the `tool_use.input: Field required` bug in shelley-cli (commit 038d278)
-- Tested parallel workers successfully - 3 workers processed 6 tasks with 0 failures
-- Coordinator exists as separate codebase (~1100 lines of Go)
+1. **Fixed tool_use.input bug** (commit 038d278)
+   - Fixed nil/null ToolInput causing "Field required" errors
+   - Added tests for edge cases
 
-## Decision: Bundle into shelley-cli
+2. **Integrated coordinator** (commit 64818b6)
+   - Created `coordinator/` package with:
+     - `coordinator.go` - Task queue, worker management
+     - `handlers.go` - HTTP API handlers  
+     - `webui.go` - Dashboard HTML
+     - `schema.sql` - SQLite schema
+   - Added `shelley coord` subcommand to main.go
 
-**Why:**
-- Single binary is easier to distribute
-- Version sync is critical (workers need same shelley version)
-- Coordinator is tightly coupled to shelley (spawns shelley processes)
-- Shared code for db, auth patterns
+## Usage
 
-## Target Structure
+```bash
+# Start coordinator on port 8000
+shelley coord -port 8000
 
-```
-shelley-cli/
-  cmd/shelley/
-    main.go           # adds "coord" and "worker" commands
-  coordinator/
-    coordinator.go    # task queue, worker management, Config, Task, Worker types
-    handlers.go       # HTTP API handlers
-    schema.sql        # embedded SQL schema
+# With custom options
+shelley coord -port 8000 -db coordinator.db -token mytoken
 ```
 
-## New Commands
+## API Endpoints
 
-- `shelley coord` - Start coordinator server
-- `shelley worker` - Start as a worker (connects to coordinator)
+- `GET /` - Web dashboard
+- `POST /api/enqueue` - Add task to queue
+- `GET /api/tasks` - List tasks
+- `GET /api/task?id=X` - Get specific task
+- `GET /api/workers` - List workers
+- `POST /api/scale?workers=N` - Scale worker pool
+- `GET /api/stats` - Get statistics
+- `GET /api/next-task?worker=X` - Worker polls for task
+- `POST /api/complete` - Worker reports completion
+- `POST /api/worker-shutdown?worker=X` - Worker self-shutdown
 
-## Source Files to Migrate
+## Test Results
 
-From `/home/exedev/coordinator-v2/`:
-- `main.go` (556 lines) - Coordinator struct, task/worker management
-- `handlers.go` (417 lines) - HTTP handlers + embedded HTML UI
-- `cmd.go` (78 lines) - CLI flags/setup (merge into main.go commands)
-- `schema.sql` (50 lines) - Database schema
+```
+18:39:17 - queued:2 running:1 workers:3
+18:39:27 - queued:0 running:2 workers:3  
+18:39:42 - queued:0 running:0 workers:3 completed:4
+All tasks completed with 0 failures!
+```
+
+3 parallel workers processed 4 tasks successfully.
 
 ## Next Steps
 
-1. Create `coordinator/` package in shelley-cli
-2. Copy and adapt the coordinator code
-3. Add `coord` and `worker` subcommands to main.go
-4. Build and test
-5. Then: Build improved web dashboard
-
-## Test Results (before integration)
-
-```
-18:25:52 - queued:3 running:3 completed:5 failed:0
-18:25:57 - queued:0 running:3 completed:8 failed:0
-18:26:02 - queued:0 running:3 completed:8 failed:0
-18:26:07 - queued:0 running:0 completed:11 failed:0
-All tasks completed!
-```
-
-All 3 workers processed tasks in parallel with no errors.
+- [ ] Build improved web dashboard with real-time updates
+- [ ] Add worker health monitoring
+- [ ] Add task retry logic
+- [ ] Add task cancellation
