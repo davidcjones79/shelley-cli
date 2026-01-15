@@ -5,130 +5,408 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shelley Coordinator</title>
     <style>
-        :root {
-            --bg: #f5f5f5; --card-bg: #fff; --text: #333; --text-muted: #666;
-            --border: #e0e0e0; --primary: #007bff; --success: #28a745;
-            --warning: #ffc107; --danger: #dc3545; --info: #17a2b8;
-        }
-        .dark {
-            --bg: #1a1a2e; --card-bg: #16213e; --text: #eee; --text-muted: #aaa;
-            --border: #333; --primary: #4dabf7; --success: #51cf66;
-        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        h1 { font-size: 1.5em; }
-        .header-controls { display: flex; gap: 10px; align-items: center; }
-        .card { background: var(--card-bg); border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        .card h2 { font-size: 1em; color: var(--text-muted); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; }
-        .stat { text-align: center; padding: 15px; background: var(--bg); border-radius: 8px; }
-        .stat-value { font-size: 2em; font-weight: bold; color: var(--primary); }
-        .stat-label { font-size: 0.85em; color: var(--text-muted); }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
-        input, textarea, select { padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: inherit; }
-        textarea { width: 100%; min-height: 80px; resize: vertical; }
-        button { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: opacity 0.2s; }
-        button:hover { opacity: 0.9; }
-        .btn-primary { background: var(--primary); color: #fff; }
-        .btn-success { background: var(--success); color: #fff; }
-        .btn-sm { padding: 5px 10px; font-size: 0.85em; }
-        .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.75em; font-weight: 600; }
-        .badge-queued { background: var(--warning); color: #000; }
-        .badge-assigned, .badge-running { background: var(--info); color: #fff; }
-        .badge-completed { background: var(--success); color: #fff; }
-        .badge-failed { background: var(--danger); color: #fff; }
-        .badge-idle { background: #6c757d; color: #fff; }
-        .badge-busy { background: var(--primary); color: #fff; }
-        .badge-starting { background: var(--warning); color: #000; }
-        .worker-item, .task-item { padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-        .worker-item:last-child, .task-item:last-child { border-bottom: none; }
-        .worker-info, .task-info { flex: 1; }
-        .worker-name, .task-id { font-weight: 600; font-family: monospace; }
-        .worker-meta, .task-meta { font-size: 0.85em; color: var(--text-muted); margin-top: 4px; }
-        .task-prompt { font-size: 0.9em; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
-        .log { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.85em; max-height: 200px; overflow-y: auto; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            background: #fff; 
+            color: #1a1a1a; 
+            line-height: 1.5;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+        .logo {
+            font-weight: 700;
+            font-size: 18px;
+            color: #1a1a1a;
+        }
+        .nav-link {
+            color: #666;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .nav-link:hover { color: #1a1a1a; }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            background: #fff;
+            color: #1a1a1a;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn:hover { background: #f5f5f5; border-color: #d0d0d0; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-group {
+            display: inline-flex;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .btn-group .btn {
+            border: none;
+            border-radius: 0;
+            border-right: 1px solid #e5e5e5;
+        }
+        .btn-group .btn:last-child { border-right: none; }
+        .btn-primary {
+            background: #1a1a1a;
+            color: #fff;
+            border-color: #1a1a1a;
+        }
+        .btn-primary:hover { background: #333; }
+        .btn-success {
+            background: #22c55e;
+            color: #fff;
+            border-color: #22c55e;
+        }
+        .btn-success:hover { background: #16a34a; }
+        .btn-danger {
+            background: #fff;
+            color: #dc2626;
+            border-color: #fca5a5;
+        }
+        .btn-danger:hover { background: #fef2f2; }
+        
+        /* Badges */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-success { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
+        .badge-warning { background: #fef9c3; color: #a16207; border: 1px solid #fef08a; }
+        .badge-danger { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+        .badge-info { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+        .badge-neutral { background: #f5f5f5; color: #525252; border: 1px solid #e5e5e5; }
+        
+        /* Status dot */
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.running { background: #22c55e; }
+        .status-dot.stopped { background: #ef4444; }
+        .status-dot.idle { background: #a3a3a3; }
+        .status-dot.busy { background: #3b82f6; }
+        
+        /* Main content */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        
+        /* Section header */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #525252;
+        }
+        
+        /* Cards/Sections */
+        .section {
+            margin-bottom: 32px;
+        }
+        
+        /* Stats grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            padding: 20px;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        .stat-label {
+            font-size: 13px;
+            color: #737373;
+            margin-top: 4px;
+        }
+        
+        /* Table/List */
+        .list {
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+        .list-item:last-child { border-bottom: none; }
+        .list-item:hover { background: #fafafa; }
+        .list-item-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+        .list-item-name {
+            font-weight: 600;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 14px;
+        }
+        .list-item-meta {
+            font-size: 13px;
+            color: #737373;
+        }
+        .list-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .list-empty {
+            padding: 40px;
+            text-align: center;
+            color: #a3a3a3;
+        }
+        
+        /* Control panel */
+        .control-panel {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 20px;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            margin-bottom: 24px;
+        }
+        .control-panel-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+        
+        /* Form elements */
+        .input {
+            padding: 8px 12px;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .input:focus { border-color: #a3a3a3; }
+        .input-group {
+            display: flex;
+            gap: 8px;
+        }
+        textarea.input {
+            min-height: 80px;
+            resize: vertical;
+            width: 100%;
+        }
+        
+        /* Two column layout */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        @media (max-width: 768px) {
+            .grid-2 { grid-template-columns: 1fr; }
+        }
+        
+        /* Log viewer */
+        .log-viewer {
+            background: #1a1a1a;
+            color: #e5e5e5;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
         .log-entry { padding: 2px 0; }
-        .log-time { color: #888; }
-        .log-event { color: #4ec9b0; }
-        .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
+        .log-time { color: #737373; }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
         .modal.active { display: flex; }
-        .modal-content { background: var(--card-bg); border-radius: 12px; padding: 25px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .modal-close { background: none; border: none; font-size: 1.5em; cursor: pointer; color: var(--text-muted); }
-        .result-box { background: var(--bg); padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.9em; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
-        .empty { text-align: center; padding: 30px; color: var(--text-muted); }
-        .pulse { animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .token-input { display: flex; gap: 10px; align-items: center; }
-        .token-input input { flex: 1; }
+        .modal-content {
+            background: #fff;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .modal-title { font-size: 18px; font-weight: 600; }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #737373;
+        }
+        .result-box {
+            background: #f5f5f5;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🚀 Shelley Coordinator</h1>
-            <div class="header-controls">
-                <span id="status" class="badge badge-idle">Disconnected</span>
-                <button onclick="toggleDark()" class="btn-sm">🌙</button>
-            </div>
-        </header>
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">🚀 Coordinator</span>
+            <a href="#" class="nav-link">Tasks</a>
+            <a href="#" class="nav-link">Workers</a>
+        </div>
+        <div class="header-right">
+            <span id="status" class="badge badge-neutral">Checking...</span>
+        </div>
+    </header>
 
-        <div class="card" id="coord-control">
-            <h2>⚙️ Coordinator Control</h2>
-            <div style="display:flex; gap:10px; align-items:center;">
-                <span id="coord-status" class="badge badge-idle">Checking...</span>
-                <button id="start-btn" onclick="startCoordinator()" class="btn-success btn-sm">Start</button>
-                <button id="stop-btn" onclick="stopCoordinator()" class="btn-sm" style="background:var(--danger);color:#fff">Stop</button>
+    <div class="container">
+        <!-- Coordinator Control -->
+        <div class="control-panel">
+            <div class="control-panel-status">
+                <span id="coord-dot" class="status-dot stopped"></span>
+                <span id="coord-status">Coordinator Stopped</span>
             </div>
+            <button id="start-btn" onclick="startCoordinator()" class="btn btn-success">Start</button>
+            <button id="stop-btn" onclick="stopCoordinator()" class="btn btn-danger" disabled>Stop</button>
         </div>
 
-        <div class="card">
-            <h2>📊 Overview</h2>
-            <div class="stats-grid" id="stats">
-                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Queued</div></div>
-                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Running</div></div>
-                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Completed</div></div>
-                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Failed</div></div>
-                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Workers</div></div>
-            </div>
+        <!-- Stats -->
+        <div class="stats-grid" id="stats">
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Queued</div></div>
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Running</div></div>
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Completed</div></div>
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Failed</div></div>
+            <div class="stat-card"><div class="stat-value">-</div><div class="stat-label">Workers</div></div>
         </div>
 
         <div class="grid-2">
-            <div class="card">
-                <h2>📝 New Task</h2>
-                <textarea id="prompt" placeholder="Enter task prompt..."></textarea>
-                <div style="margin-top:10px">
-                    <button onclick="enqueueTask()" class="btn-primary">Add Task</button>
+            <!-- New Task -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-title">New Task</span>
+                </div>
+                <div class="list">
+                    <div style="padding: 20px;">
+                        <textarea id="prompt" class="input" placeholder="Enter task prompt..."></textarea>
+                        <div style="margin-top: 12px;">
+                            <button onclick="enqueueTask()" class="btn btn-primary">Add Task</button>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="card">
-                <h2>👷 Workers</h2>
-                <div style="margin-bottom:15px; display:flex; gap:10px; align-items:center;">
-                    <input type="number" id="workerCount" value="1" min="0" max="10" style="width:60px">
-                    <button onclick="scaleWorkers()" class="btn-success btn-sm">Scale</button>
+
+            <!-- Workers -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-title">Workers</span>
+                    <div class="input-group">
+                        <input type="number" id="workerCount" value="1" min="0" max="10" class="input" style="width:60px">
+                        <button onclick="scaleWorkers()" class="btn">Scale</button>
+                    </div>
                 </div>
-                <div id="workers"><div class="empty">No workers</div></div>
+                <div class="list" id="workers">
+                    <div class="list-empty">No workers</div>
+                </div>
             </div>
         </div>
 
-        <div class="card">
-            <h2>📋 Tasks</h2>
-            <div id="tasks"><div class="empty">No tasks</div></div>
+        <!-- Tasks -->
+        <div class="section">
+            <div class="section-header">
+                <span class="section-title">Tasks</span>
+            </div>
+            <div class="list" id="tasks">
+                <div class="list-empty">No tasks</div>
+            </div>
         </div>
 
-        <div class="card">
-            <h2>📜 Activity Log</h2>
-            <div class="log" id="log"><div class="empty">Waiting for events...</div></div>
+        <!-- Activity Log -->
+        <div class="section">
+            <div class="section-header">
+                <span class="section-title">Activity Log</span>
+            </div>
+            <div class="log-viewer" id="log">
+                <div class="list-empty" style="color: #737373;">Waiting for events...</div>
+            </div>
         </div>
     </div>
 
+    <!-- Task Detail Modal -->
     <div class="modal" id="taskModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Task Details</h3>
+                <span class="modal-title">Task Details</span>
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             <div id="taskDetails"></div>
@@ -146,15 +424,15 @@
                 const data = await res.json();
                 coordRunning = data.running;
                 updateCoordUI();
-                // Add server logs to our log display
                 if (data.logs && data.logs.length > 0) {
-                    const lastLog = data.logs[data.logs.length - 1];
-                    if (!logs.find(l => l.msg === lastLog)) {
-                        const time = new Date().toLocaleTimeString();
-                        logs.unshift({ time, msg: lastLog.replace(/^\[.*?\] /, '') });
-                        if (logs.length > 50) logs.pop();
-                        renderLogs();
-                    }
+                    data.logs.slice(-10).forEach(log => {
+                        const msg = log.replace(/^\[.*?\] /, '');
+                        if (!logs.find(l => l.msg === msg)) {
+                            logs.unshift({ time: new Date().toLocaleTimeString(), msg });
+                        }
+                    });
+                    if (logs.length > 50) logs = logs.slice(0, 50);
+                    renderLogs();
                 }
             } catch (e) {
                 coordRunning = false;
@@ -163,24 +441,26 @@
         }
 
         function updateCoordUI() {
-            const statusEl = document.getElementById('coord-status');
+            const dot = document.getElementById('coord-dot');
+            const statusText = document.getElementById('coord-status');
+            const statusBadge = document.getElementById('status');
             const startBtn = document.getElementById('start-btn');
             const stopBtn = document.getElementById('stop-btn');
             
             if (coordRunning) {
-                statusEl.textContent = 'Running';
-                statusEl.className = 'badge badge-completed';
+                dot.className = 'status-dot running';
+                statusText.textContent = 'Coordinator Running';
+                statusBadge.textContent = 'Running';
+                statusBadge.className = 'badge badge-success';
                 startBtn.disabled = true;
-                startBtn.style.opacity = '0.5';
                 stopBtn.disabled = false;
-                stopBtn.style.opacity = '1';
             } else {
-                statusEl.textContent = 'Stopped';
-                statusEl.className = 'badge badge-failed';
+                dot.className = 'status-dot stopped';
+                statusText.textContent = 'Coordinator Stopped';
+                statusBadge.textContent = 'Stopped';
+                statusBadge.className = 'badge badge-danger';
                 startBtn.disabled = false;
-                startBtn.style.opacity = '1';
                 stopBtn.disabled = true;
-                stopBtn.style.opacity = '0.5';
             }
         }
 
@@ -214,11 +494,22 @@
             }
         }
 
-        function toggleDark() {
-            document.body.classList.toggle('dark');
-            localStorage.setItem('dark', document.body.classList.contains('dark'));
+        function addLog(msg) {
+            logs.unshift({ time: new Date().toLocaleTimeString(), msg });
+            if (logs.length > 50) logs.pop();
+            renderLogs();
         }
-        if (localStorage.getItem('dark') === 'true') document.body.classList.add('dark');
+
+        function renderLogs() {
+            const el = document.getElementById('log');
+            if (logs.length === 0) {
+                el.innerHTML = '<div style="color: #737373;">Waiting for events...</div>';
+                return;
+            }
+            el.innerHTML = logs.map(l => 
+                `<div class="log-entry"><span class="log-time">${l.time}</span> ${l.msg}</div>`
+            ).join('');
+        }
 
         async function api(path, opts = {}) {
             opts.headers = { ...opts.headers, 'X-Coordinator-Token': token };
@@ -227,62 +518,43 @@
             return res.json();
         }
 
-        function addLog(msg) {
-            const time = new Date().toLocaleTimeString();
-            logs.unshift({ time, msg });
-            if (logs.length > 50) logs.pop();
-            renderLogs();
-        }
-
-        function renderLogs() {
-            const el = document.getElementById('log');
-            if (logs.length === 0) {
-                el.innerHTML = '<div class="empty">Waiting for events...</div>';
-                return;
-            }
-            el.innerHTML = logs.map(l => 
-                `<div class="log-entry"><span class="log-time">${l.time}</span> ${l.msg}</div>`
-            ).join('');
-        }
-
         async function refresh() {
+            if (!coordRunning) return;
             try {
                 const stats = await api('/api/stats');
-                document.getElementById('status').textContent = 'Connected';
-                document.getElementById('status').className = 'badge badge-completed';
-                
                 document.getElementById('stats').innerHTML = `
-                    <div class="stat"><div class="stat-value">${stats.tasks?.queued || 0}</div><div class="stat-label">Queued</div></div>
-                    <div class="stat"><div class="stat-value">${stats.tasks?.running || 0}</div><div class="stat-label">Running</div></div>
-                    <div class="stat"><div class="stat-value">${stats.tasks?.completed || 0}</div><div class="stat-label">Completed</div></div>
-                    <div class="stat"><div class="stat-value">${stats.tasks?.failed || 0}</div><div class="stat-label">Failed</div></div>
-                    <div class="stat"><div class="stat-value">${stats.workers?.total || 0}</div><div class="stat-label">Workers</div></div>
+                    <div class="stat-card"><div class="stat-value">${stats.tasks?.queued || 0}</div><div class="stat-label">Queued</div></div>
+                    <div class="stat-card"><div class="stat-value">${stats.tasks?.running || 0}</div><div class="stat-label">Running</div></div>
+                    <div class="stat-card"><div class="stat-value">${stats.tasks?.completed || 0}</div><div class="stat-label">Completed</div></div>
+                    <div class="stat-card"><div class="stat-value">${stats.tasks?.failed || 0}</div><div class="stat-label">Failed</div></div>
+                    <div class="stat-card"><div class="stat-value">${stats.workers?.total || 0}</div><div class="stat-label">Workers</div></div>
                 `;
 
                 const workers = await api('/api/workers');
                 document.getElementById('workers').innerHTML = workers?.length ? workers.map(w => `
-                    <div class="worker-item">
-                        <div class="worker-info">
-                            <div class="worker-name">${w.id}</div>
-                            <div class="worker-meta">Tasks: ${w.tasks_completed || 0}</div>
+                    <div class="list-item">
+                        <div class="list-item-info">
+                            <span class="status-dot ${w.status}"></span>
+                            <span class="list-item-name">${w.id}</span>
+                            <span class="list-item-meta">Tasks: ${w.tasks_completed || 0}</span>
                         </div>
-                        <span class="badge badge-${w.status}">${w.status}</span>
+                        <span class="badge badge-${w.status === 'busy' ? 'info' : 'neutral'}">${w.status}</span>
                     </div>
-                `).join('') : '<div class="empty">No workers</div>';
+                `).join('') : '<div class="list-empty">No workers</div>';
 
                 const tasks = await api('/api/tasks?limit=20');
                 document.getElementById('tasks').innerHTML = tasks?.length ? tasks.map(t => `
-                    <div class="task-item" onclick="showTask('${t.id}')" style="cursor:pointer">
-                        <div class="task-info">
-                            <div class="task-id">${t.id}</div>
-                            <div class="task-prompt">${escapeHtml(t.prompt || '')}</div>
+                    <div class="list-item" onclick="showTask('${t.id}')" style="cursor:pointer">
+                        <div class="list-item-info">
+                            <span class="status-dot ${t.status === 'completed' ? 'running' : t.status === 'failed' ? 'stopped' : 'idle'}"></span>
+                            <span class="list-item-name">${t.id.slice(0,8)}</span>
+                            <span class="list-item-meta" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.prompt || '')}</span>
                         </div>
-                        <span class="badge badge-${t.status}">${t.status}</span>
+                        <span class="badge badge-${t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'}">${t.status}</span>
                     </div>
-                `).join('') : '<div class="empty">No tasks</div>';
+                `).join('') : '<div class="list-empty">No tasks</div>';
             } catch (e) {
-                document.getElementById('status').textContent = 'Disconnected';
-                document.getElementById('status').className = 'badge badge-failed';
+                // Coordinator might have stopped
             }
         }
 
@@ -293,6 +565,7 @@
         async function enqueueTask() {
             const prompt = document.getElementById('prompt').value;
             if (!prompt) return alert('Prompt required');
+            if (!coordRunning) return alert('Start coordinator first');
             try {
                 const task = await api('/api/enqueue', {
                     method: 'POST',
@@ -300,7 +573,7 @@
                     body: JSON.stringify({ prompt })
                 });
                 document.getElementById('prompt').value = '';
-                addLog(`Task <span class="log-event">${task.id}</span> enqueued`);
+                addLog(`Task ${task.id.slice(0,8)} enqueued`);
                 refresh();
             } catch (e) {
                 alert('Failed: ' + e.message);
@@ -308,10 +581,11 @@
         }
 
         async function scaleWorkers() {
+            if (!coordRunning) return alert('Start coordinator first');
             const count = document.getElementById('workerCount').value;
             try {
                 await api('/api/scale?workers=' + count, { method: 'POST' });
-                addLog(`Scaling to <span class="log-event">${count}</span> workers`);
+                addLog(`Scaling to ${count} workers`);
                 refresh();
             } catch (e) {
                 alert('Failed: ' + e.message);
@@ -319,18 +593,19 @@
         }
 
         async function showTask(id) {
+            if (!coordRunning) return;
             try {
                 const task = await api('/api/task?id=' + id);
                 document.getElementById('taskDetails').innerHTML = `
-                    <p><strong>ID:</strong> ${task.id}</p>
-                    <p><strong>Status:</strong> <span class="badge badge-${task.status}">${task.status}</span></p>
-                    <p><strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}</p>
-                    ${task.completed_at ? `<p><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
-                    ${task.worker_id ? `<p><strong>Worker:</strong> ${task.worker_id}</p>` : ''}
-                    <p><strong>Prompt:</strong></p>
+                    <p style="margin-bottom:12px"><strong>ID:</strong> <code>${task.id}</code></p>
+                    <p style="margin-bottom:12px"><strong>Status:</strong> <span class="badge badge-${task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : 'info'}">${task.status}</span></p>
+                    <p style="margin-bottom:12px"><strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}</p>
+                    ${task.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
+                    ${task.worker_id ? `<p style="margin-bottom:12px"><strong>Worker:</strong> ${task.worker_id}</p>` : ''}
+                    <p style="margin-bottom:8px"><strong>Prompt:</strong></p>
                     <div class="result-box">${escapeHtml(task.prompt || '')}</div>
-                    ${task.result ? `<p style="margin-top:15px"><strong>Result:</strong></p><div class="result-box">${escapeHtml(task.result)}</div>` : ''}
-                    ${task.error ? `<p style="margin-top:15px"><strong>Error:</strong></p><div class="result-box" style="color:#dc3545">${escapeHtml(task.error)}</div>` : ''}
+                    ${task.result ? `<p style="margin:16px 0 8px"><strong>Result:</strong></p><div class="result-box">${escapeHtml(task.result)}</div>` : ''}
+                    ${task.error ? `<p style="margin:16px 0 8px"><strong>Error:</strong></p><div class="result-box" style="background:#fee2e2;color:#dc2626">${escapeHtml(task.error)}</div>` : ''}
                 `;
                 document.getElementById('taskModal').classList.add('active');
             } catch (e) {
@@ -349,7 +624,6 @@
             if (coordRunning) refresh();
         }, 3000);
         checkCoordinatorStatus();
-        refresh();
     </script>
 </body>
 </html>
