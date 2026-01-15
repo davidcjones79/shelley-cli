@@ -1,6 +1,7 @@
 package coordinator
 
 import (
+	"bytes"
 	"embed"
 	"net/http"
 )
@@ -29,6 +30,12 @@ func (c *Coordinator) HandleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Dashboard not found", http.StatusInternalServerError)
 		return
 	}
+
+	// Inject API token for authenticated users so dashboard auto-connects
+	data = bytes.Replace(data,
+		[]byte(`let token = localStorage.getItem('coordToken') || '';`),
+		[]byte(`let token = localStorage.getItem('coordToken') || '`+c.config.APIToken+`';`),
+		1)
 
 	w.Header().Set("Content-Type", "text/html")
 	w.Write(data)

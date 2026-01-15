@@ -5,10 +5,10 @@ A task queue and worker pool for distributed Shelley execution on exe.dev VMs.
 ## Quick Start
 
 ```bash
-shelley coord -port 8001
+shelley coord
 ```
 
-Access the dashboard at `https://your-vm.exe.xyz:8001/`
+Access the dashboard at `https://your-vm.exe.xyz:8080/` (default port)
 
 ## Architecture
 
@@ -53,7 +53,7 @@ Workers authenticate using the API token:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-port` | 8000 | HTTP server port |
+| `-port` | 8080 | HTTP server port |
 | `-db` | coordinator.db | SQLite database path |
 | `-prefix` | wk | Worker VM name prefix |
 | `-max-workers` | 10 | Maximum concurrent workers |

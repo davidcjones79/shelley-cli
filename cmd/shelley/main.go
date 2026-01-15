@@ -704,7 +704,7 @@ func runIgor(args []string) {
 
 func runCoord(global GlobalConfig, args []string) {
 	fs := flag.NewFlagSet("coord", flag.ExitOnError)
-	port := fs.Int("port", 8000, "HTTP server port")
+	port := fs.Int("port", 8080, "HTTP server port")
 	dbPath := fs.String("db", "coordinator.db", "SQLite database path")
 	workerPrefix := fs.String("prefix", "wk", "Worker VM name prefix")
 	maxWorkers := fs.Int("max-workers", 10, "Maximum workers allowed")
