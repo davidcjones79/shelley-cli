@@ -52,9 +52,25 @@ type Styles struct {
 	BorderColor lipgloss.Color
 }
 
-// DefaultStyles returns the default (dark) color scheme
+// DefaultStyles returns styles based on detected terminal background
 func DefaultStyles() *Styles {
-	return DarkStyles()
+	if lipgloss.HasDarkBackground() {
+		return DarkStyles()
+	}
+	return LightStyles()
+}
+
+// getStylesForTheme returns styles for the given theme name
+// If theme is empty, auto-detects based on terminal background
+func getStylesForTheme(theme string) *Styles {
+	switch theme {
+	case "dark":
+		return DarkStyles()
+	case "light":
+		return LightStyles()
+	default:
+		return DefaultStyles()
+	}
 }
 
 // DarkStyles returns the dark color scheme

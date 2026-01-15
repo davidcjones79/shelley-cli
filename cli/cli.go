@@ -154,9 +154,10 @@ type Config struct {
 	LLMService    llm.Service
 	Logger        *slog.Logger
 	System        []llm.SystemContent
-	Verbose       bool // Show tool execution details
-	EnableBrowser bool // Enable browser tools
-	Frankenstein  bool // Enable Frankenstein-themed status messages (easter egg)
+	Verbose       bool   // Show tool execution details
+	EnableBrowser bool   // Enable browser tools
+	Frankenstein  bool   // Enable Frankenstein-themed status messages (easter egg)
+	Theme         string // Color theme: "dark", "light", or "" for auto-detect
 
 	// Model manager for switching models (optional)
 	ModelManager *models.Manager
@@ -375,7 +376,7 @@ func New(cfg Config) (*Model, error) {
 		spinner:        sp,
 		viewport:       vp,
 		renderer:       renderer,
-		styles:         DefaultStyles(),
+		styles:         getStylesForTheme(cfg.Theme),
 		messages:       []renderedMessage{},
 		promptHistory:  []string{},
 		historyIndex:   -1,

@@ -108,6 +108,7 @@ Flags:
   -verbose           Show tool execution details (commands, inputs, outputs)
   -yes               Auto-accept all tool operations (no confirmation prompts)
   -prompt TEXT       Send initial prompt and exit (for scripting/piping)
+  -theme THEME       Color theme: dark, light, or auto (default: auto-detect)
 ```
 
 ### Examples
@@ -130,6 +131,9 @@ shelley chat -yes
 
 # Enable browser automation (requires Chrome/Chromium)
 shelley chat -browser
+
+# Use light theme (for light terminal backgrounds)
+shelley chat -theme light
 
 # Non-interactive: send one prompt and exit
 shelley chat -prompt "What is 2+2?"
@@ -469,6 +473,20 @@ brew install --cask chromium
 ### Slow startup
 
 First run may be slow as Go compiles. Subsequent runs use the cached binary in `bin/`.
+
+### Colors look wrong on light terminal backgrounds
+
+Shelley auto-detects your terminal background, but some terminals don't report this correctly. If colors are hard to read:
+
+```bash
+# Force light theme
+shelley chat -theme light
+
+# Or switch themes interactively
+/theme light
+```
+
+You can also use `/theme` to toggle between dark and light themes.
 
 ### UI glitches
 
