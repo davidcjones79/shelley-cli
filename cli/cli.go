@@ -384,7 +384,7 @@ func New(cfg Config) (*Model, error) {
 		streamChan:     make(chan llm.StreamEvent, 1000),
 		verbose:        cfg.Verbose,
 		conversationID: cfg.ConversationID,
-		mouseEnabled:   false, // Start with mouse mode off for better text selection compatibility
+		mouseEnabled:   true,
 		frankenstein:   true, // Themed status messages enabled by default
 		showConsent:    needsConsent,
 		toolNames:      make(map[string]string),
@@ -1965,9 +1965,7 @@ func Run(cfg Config) error {
 	}
 	defer model.Cleanup()
 
-	// Start without mouse mode for better terminal compatibility (text selection works)
-	// Users can enable mouse scrolling with /mouse command
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err
 }
