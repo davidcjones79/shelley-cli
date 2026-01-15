@@ -129,7 +129,7 @@ export GITHUB_TOKEN=ghp_xxx
    - WebSocket or SSE for live updates
    - Show Shelley's progress in dashboard
 
-3. **Auto-merge**
+2. **Auto-merge**
    - Combine completed task branches
    - Sequential merge strategy
    - Conflict detection/reporting
@@ -171,6 +171,13 @@ export GITHUB_TOKEN=ghp_xxx
   - "Live Chat" button shown for running tasks (links to worker)
   - Dark theme matching exe.dev style
   - Back link to dashboard
+
+- **Auto-scaling Workers**
+  - Workers spawn automatically when tasks are enqueued
+  - Checks for available workers before spawning
+  - Respects max-workers limit
+  - Also checks after task completion for remaining queued tasks
+  - Honors draining state (no new workers during drain)
 
 ### January 15, 2026
 - Added git integration for workers
