@@ -1,0 +1,14 @@
+{
+  "id": "c1abbdf5058525b4",
+  "prompt": "Create a file called message.txt with the text: Hello from real-time viewable conversation! Then read it back to confirm.",
+  "status": "completed",
+  "priority": 0,
+  "worker_id": "wk-x705df3a47f6a",
+  "result": "",
+  "error": "",
+  "conversation_id": "c4YMWXB",
+  "source": "autonomous",
+  "created_at": "2026-01-15T21:50:39Z",
+  "assigned_at": "2026-01-15T21:50:43Z",
+  "completed_at": "2026-01-15T21:50:51Z"
+}
