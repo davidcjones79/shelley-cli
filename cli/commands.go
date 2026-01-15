@@ -177,6 +177,18 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 		}
 		return m.exportConversation(filename)
 
+	// exe.dev commands
+	case "/exe":
+		if len(parts) < 2 {
+			m.showSystemMessage("Usage: /exe <command> - Run exe.dev shell commands\n" +
+				"Examples:\n" +
+				"  /exe set-public 8080    - Make port 8080 publicly accessible\n" +
+				"  /exe set-private 8080   - Make port 8080 private again\n" +
+				"  /exe info               - Show VM info")
+			return nil
+		}
+		return m.runExeCommand(strings.Join(parts[1:], " "))
+
 	// Git commands
 	case "/git":
 		if len(parts) < 2 {
@@ -310,6 +322,7 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /theme [name]  - Toggle or set theme (dark/light)\n")
 	sb.WriteString("  /mouse         - Toggle mouse mode (off=select text, on=scroll)\n")
 	sb.WriteString("  /cwd [path]    - Show or change working directory\n")
+	sb.WriteString("  /exe <cmd>     - Run exe.dev shell command (set-public, etc.)\n")
 	sb.WriteString("  /status        - Show session status\n")
 	sb.WriteString("  /export [file] - Export conversation to markdown\n")
 

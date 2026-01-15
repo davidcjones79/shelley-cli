@@ -384,7 +384,7 @@ func New(cfg Config) (*Model, error) {
 		streamChan:     make(chan llm.StreamEvent, 1000),
 		verbose:        cfg.Verbose,
 		conversationID: cfg.ConversationID,
-		mouseEnabled:   true,
+		mouseEnabled:   false, // Start with mouse mode off for better text selection compatibility
 		frankenstein:   true, // Themed status messages enabled by default
 		showConsent:    needsConsent,
 		toolNames:      make(map[string]string),
@@ -437,6 +437,42 @@ func (m *Model) Init() tea.Cmd {
 		m.waitForResponse(),
 		m.waitForStream(),
 	)
+}
+
+// isMouseEscapeSequence detects mouse escape sequences that some terminals
+// (like Ghostty) send as key events instead of proper MouseMsg events.
+// SGR mouse format: ESC [ < button ; x ; y M/m
+// This manifests as a sequence of rune inputs like "<0;45;12M"
+func isMouseEscapeSequence(msg tea.Msg) bool {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return false
+	}
+	if keyMsg.Type != tea.KeyRunes {
+		return false
+	}
+	runes := keyMsg.Runes
+	if len(runes) == 0 {
+		return false
+	}
+	// SGR mouse sequences start with '<' and contain digits, semicolons, and end with M or m
+	// Example: <0;45;12M (button 0, x=45, y=12, press)
+	if runes[0] == '<' {
+		// Check if it looks like a mouse coordinate sequence
+		hasDigit := false
+		hasSemi := false
+		for _, r := range runes[1:] {
+			if r >= '0' && r <= '9' {
+				hasDigit = true
+			} else if r == ';' {
+				hasSemi = true
+			} else if r == 'M' || r == 'm' {
+				// Ends with M (press) or m (release)
+				return hasDigit && hasSemi
+			}
+		}
+	}
+	return false
 }
 
 // waitForResponse returns a command that waits for responses from the loop
@@ -856,10 +892,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, vpCmd)
 
 	// Update textarea - always allow typing, even while processing
+	// Filter out mouse escape sequences that some terminals (Ghostty) send as key events
 	var cmd tea.Cmd
 	oldValue := m.textarea.Value()
-	m.textarea, cmd = m.textarea.Update(msg)
-	cmds = append(cmds, cmd)
+	if !isMouseEscapeSequence(msg) {
+		m.textarea, cmd = m.textarea.Update(msg)
+		cmds = append(cmds, cmd)
+	}
 
 	// Clear completions if text changed (except from tab completion itself)
 	if m.textarea.Value() != oldValue && !strings.HasPrefix(m.textarea.Value(), m.completionPrefix) {
@@ -1926,7 +1965,9 @@ func Run(cfg Config) error {
 	}
 	defer model.Cleanup()
 
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// Start without mouse mode for better terminal compatibility (text selection works)
+	// Users can enable mouse scrolling with /mouse command
+	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err = p.Run()
 	return err
 }

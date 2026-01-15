@@ -191,6 +191,7 @@ Type `/help` in the CLI to see all available commands.
 | `/mouse` | Toggle mouse mode on/off |
 | `/theme <dark\|light>` | Switch color theme |
 | `/cwd` or `/cd <path>` | Show or change working directory |
+| `/exe <command>` | Run exe.dev shell commands (set-public, etc.) |
 
 ### Models
 
@@ -423,9 +424,13 @@ Press `Ctrl+J` to insert a newline. The input area expands automatically (up to 
 
 ### Text Selection
 
-Mouse mode is on by default for scrolling. To select text:
-- Toggle mouse mode off: `/mouse`
-- Or in iTerm2: hold `Option (⌥)` while selecting
+Mouse mode is **off by default** for better terminal compatibility. Text selection works normally.
+
+To enable mouse wheel scrolling:
+- Run `/mouse` to toggle mouse mode on
+- When mouse mode is on, use `Ctrl+U`/`Ctrl+D` or `PgUp`/`PgDown` to scroll
+
+In some terminals like iTerm2, you can hold `Option (⌥)` while selecting text even with mouse mode on.
 
 ### Working Directory
 
