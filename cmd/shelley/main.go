@@ -861,6 +861,9 @@ func runCoord(global GlobalConfig, args []string) {
 	fmt.Println(*apiToken)
 	fmt.Println("=================")
 
+	// Start background tasks (cleanup, etc.)
+	coord.StartBackgroundTasks()
+
 	// Set up HTTP routes
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", coord.HandleIndex)

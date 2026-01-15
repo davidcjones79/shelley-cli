@@ -159,6 +159,117 @@ func (c *Coordinator) Config() Config {
 	return c.config
 }
 
+// StartBackgroundTasks starts periodic background tasks like cleanup.
+func (c *Coordinator) StartBackgroundTasks() {
+	go c.periodicCleanup()
+}
+
+// periodicCleanup runs cleanup tasks periodically.
+func (c *Coordinator) periodicCleanup() {
+	// Run initial cleanup after a short delay
+	time.Sleep(30 * time.Second)
+	c.CleanupStaleWorkers()
+
+	// Then run every 5 minutes
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.CleanupStaleWorkers()
+		case <-c.shutdown:
+			return
+		}
+	}
+}
+
+// CleanupStaleWorkers finds and deletes workers that are stale or orphaned.
+// A worker is considered stale if:
+// - Status is 'failed' or 'deleted' (cleanup DB records)
+// - Status is 'starting' for more than 10 minutes (stuck)
+// - Status is 'idle' for more than 30 minutes (idle timeout)
+// - Exists on exe.dev but not in coordinator DB (orphaned)
+func (c *Coordinator) CleanupStaleWorkers() {
+	log.Printf("Running worker cleanup...")
+
+	// Clean up failed/deleted workers from DB (older than 1 hour)
+	res, _ := c.db.Exec(`DELETE FROM workers WHERE status IN ('failed', 'deleted') AND created_at < datetime('now', '-1 hour')`)
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("Cleanup: removed %d failed/deleted worker records", n)
+	}
+
+	// Find stuck 'starting' workers (more than 10 minutes)
+	rows, err := c.db.Query(`SELECT id FROM workers WHERE status = 'starting' AND created_at < datetime('now', '-10 minutes')`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var workerID string
+			rows.Scan(&workerID)
+			log.Printf("Cleanup: deleting stuck starting worker %s", workerID)
+			c.DeleteWorker(workerID)
+		}
+	}
+
+	// Find idle workers that have been idle too long (30 minutes)
+	rows, err = c.db.Query(`SELECT id FROM workers WHERE status = 'idle' AND last_heartbeat < datetime('now', '-30 minutes')`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var workerID string
+			rows.Scan(&workerID)
+			log.Printf("Cleanup: deleting idle worker %s (idle timeout)", workerID)
+			c.DeleteWorker(workerID)
+		}
+	}
+
+	// Find orphaned VMs on exe.dev that aren't in our DB
+	c.cleanupOrphanedVMs()
+}
+
+// cleanupOrphanedVMs finds worker VMs on exe.dev that aren't tracked in the coordinator DB.
+func (c *Coordinator) cleanupOrphanedVMs() {
+	// Get list of VMs from exe.dev
+	cmd := exec.Command("ssh", "exe.dev", "ls")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Cleanup: failed to list VMs: %v", err)
+		return
+	}
+
+	// Parse VM names that match our worker prefix
+	prefix := c.config.WorkerPrefix + "-"
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		// Line format: "  • wk-xxx.exe.xyz - running (image)"
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "• "+prefix) {
+			continue
+		}
+
+		// Extract worker ID
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		vmName := strings.TrimPrefix(parts[1], "• ")
+		workerID := strings.TrimSuffix(vmName, ".exe.xyz")
+
+		// Check if this worker is in our DB with active status
+		var status string
+		err := c.db.QueryRow(`SELECT status FROM workers WHERE id = ?`, workerID).Scan(&status)
+		if err == sql.ErrNoRows {
+			// Orphaned VM - not in our DB
+			log.Printf("Cleanup: deleting orphaned VM %s (not in coordinator DB)", workerID)
+			exec.Command("ssh", "exe.dev", "rm", workerID).Run()
+		} else if status == "deleted" || status == "failed" {
+			// VM still exists but marked as deleted/failed in DB
+			log.Printf("Cleanup: deleting leftover VM %s (status: %s)", workerID, status)
+			exec.Command("ssh", "exe.dev", "rm", workerID).Run()
+		}
+	}
+}
+
 // LogEvent records an event to the database.
 func (c *Coordinator) LogEvent(eventType, taskID, workerID string, details map[string]interface{}) {
 	detailsJSON, _ := json.Marshal(details)
