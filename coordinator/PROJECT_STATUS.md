@@ -179,6 +179,13 @@ export GITHUB_TOKEN=ghp_xxx
   - Also checks after task completion for remaining queued tasks
   - Honors draining state (no new workers during drain)
 
+- **Automatic Worker Cleanup**
+  - Periodic cleanup every 5 minutes
+  - Removes failed/deleted DB records after 1 hour
+  - Deletes stuck 'starting' workers (>10 min)
+  - Deletes idle workers after 30 min timeout
+  - Finds and removes orphaned VMs not in coordinator DB
+
 ### January 15, 2026
 - Added git integration for workers
 - Dashboard repo/branch input fields
