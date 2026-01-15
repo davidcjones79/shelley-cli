@@ -1,0 +1,14 @@
+{
+  "id": "fa7b82b940ea724a",
+  "prompt": "Create a file called test.txt with Hello World and show its contents",
+  "status": "completed",
+  "priority": 0,
+  "worker_id": "wk-xb23eb97ddb10",
+  "result": "",
+  "error": "",
+  "conversation_id": "cRRK5JF",
+  "source": "autonomous",
+  "created_at": "2026-01-15T22:04:42Z",
+  "assigned_at": "2026-01-15T22:04:45Z",
+  "completed_at": "2026-01-15T22:04:51Z"
+}
