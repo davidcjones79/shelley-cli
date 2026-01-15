@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shelley Coordinator</title>
+    <style>
+        :root {
+            --bg: #f5f5f5; --card-bg: #fff; --text: #333; --text-muted: #666;
+            --border: #e0e0e0; --primary: #007bff; --success: #28a745;
+            --warning: #ffc107; --danger: #dc3545; --info: #17a2b8;
+        }
+        .dark {
+            --bg: #1a1a2e; --card-bg: #16213e; --text: #eee; --text-muted: #aaa;
+            --border: #333; --primary: #4dabf7; --success: #51cf66;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        h1 { font-size: 1.5em; }
+        .header-controls { display: flex; gap: 10px; align-items: center; }
+        .card { background: var(--card-bg); border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 1em; color: var(--text-muted); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; }
+        .stat { text-align: center; padding: 15px; background: var(--bg); border-radius: 8px; }
+        .stat-value { font-size: 2em; font-weight: bold; color: var(--primary); }
+        .stat-label { font-size: 0.85em; color: var(--text-muted); }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+        input, textarea, select { padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: inherit; }
+        textarea { width: 100%; min-height: 80px; resize: vertical; }
+        button { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-sm { padding: 5px 10px; font-size: 0.85em; }
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.75em; font-weight: 600; }
+        .badge-queued { background: var(--warning); color: #000; }
+        .badge-assigned, .badge-running { background: var(--info); color: #fff; }
+        .badge-completed { background: var(--success); color: #fff; }
+        .badge-failed { background: var(--danger); color: #fff; }
+        .badge-idle { background: #6c757d; color: #fff; }
+        .badge-busy { background: var(--primary); color: #fff; }
+        .badge-starting { background: var(--warning); color: #000; }
+        .worker-item, .task-item { padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .worker-item:last-child, .task-item:last-child { border-bottom: none; }
+        .worker-info, .task-info { flex: 1; }
+        .worker-name, .task-id { font-weight: 600; font-family: monospace; }
+        .worker-meta, .task-meta { font-size: 0.85em; color: var(--text-muted); margin-top: 4px; }
+        .task-prompt { font-size: 0.9em; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+        .log { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.85em; max-height: 200px; overflow-y: auto; }
+        .log-entry { padding: 2px 0; }
+        .log-time { color: #888; }
+        .log-event { color: #4ec9b0; }
+        .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: var(--card-bg); border-radius: 12px; padding: 25px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .modal-close { background: none; border: none; font-size: 1.5em; cursor: pointer; color: var(--text-muted); }
+        .result-box { background: var(--bg); padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.9em; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+        .empty { text-align: center; padding: 30px; color: var(--text-muted); }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .token-input { display: flex; gap: 10px; align-items: center; }
+        .token-input input { flex: 1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Shelley Coordinator</h1>
+            <div class="header-controls">
+                <span id="status" class="badge badge-idle">Disconnected</span>
+                <button onclick="toggleDark()" class="btn-sm">🌙</button>
+            </div>
+        </header>
+
+        <div class="card">
+            <div class="token-input">
+                <input type="password" id="token" placeholder="API Token">
+                <button onclick="saveToken()" class="btn-primary btn-sm">Connect</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Overview</h2>
+            <div class="stats-grid" id="stats">
+                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Queued</div></div>
+                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Running</div></div>
+                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Completed</div></div>
+                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Failed</div></div>
+                <div class="stat"><div class="stat-value">-</div><div class="stat-label">Workers</div></div>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="card">
+                <h2>📝 New Task</h2>
+                <textarea id="prompt" placeholder="Enter task prompt..."></textarea>
+                <div style="margin-top:10px">
+                    <button onclick="enqueueTask()" class="btn-primary">Add Task</button>
+                </div>
+            </div>
+            <div class="card">
+                <h2>👷 Workers</h2>
+                <div style="margin-bottom:15px; display:flex; gap:10px; align-items:center;">
+                    <input type="number" id="workerCount" value="1" min="0" max="10" style="width:60px">
+                    <button onclick="scaleWorkers()" class="btn-success btn-sm">Scale</button>
+                </div>
+                <div id="workers"><div class="empty">No workers</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Tasks</h2>
+            <div id="tasks"><div class="empty">No tasks</div></div>
+        </div>
+
+        <div class="card">
+            <h2>📜 Activity Log</h2>
+            <div class="log" id="log"><div class="empty">Waiting for events...</div></div>
+        </div>
+    </div>
+
+    <div class="modal" id="taskModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Task Details</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div id="taskDetails"></div>
+        </div>
+    </div>
+
+    <script>
+        let token = localStorage.getItem('coordToken') || '';
+        let logs = [];
+        document.getElementById('token').value = token;
+
+        function saveToken() {
+            token = document.getElementById('token').value;
+            localStorage.setItem('coordToken', token);
+            refresh();
+        }
+
+        function toggleDark() {
+            document.body.classList.toggle('dark');
+            localStorage.setItem('dark', document.body.classList.contains('dark'));
+        }
+        if (localStorage.getItem('dark') === 'true') document.body.classList.add('dark');
+
+        async function api(path, opts = {}) {
+            opts.headers = { ...opts.headers, 'X-Coordinator-Token': token };
+            const res = await fetch(path, opts);
+            if (!res.ok) throw new Error(res.statusText);
+            return res.json();
+        }
+
+        function addLog(msg) {
+            const time = new Date().toLocaleTimeString();
+            logs.unshift({ time, msg });
+            if (logs.length > 50) logs.pop();
+            renderLogs();
+        }
+
+        function renderLogs() {
+            const el = document.getElementById('log');
+            if (logs.length === 0) {
+                el.innerHTML = '<div class="empty">Waiting for events...</div>';
+                return;
+            }
+            el.innerHTML = logs.map(l => 
+                `<div class="log-entry"><span class="log-time">${l.time}</span> ${l.msg}</div>`
+            ).join('');
+        }
+
+        async function refresh() {
+            try {
+                const stats = await api('/api/stats');
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'badge badge-completed';
+                
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat"><div class="stat-value">${stats.tasks?.queued || 0}</div><div class="stat-label">Queued</div></div>
+                    <div class="stat"><div class="stat-value">${stats.tasks?.running || 0}</div><div class="stat-label">Running</div></div>
+                    <div class="stat"><div class="stat-value">${stats.tasks?.completed || 0}</div><div class="stat-label">Completed</div></div>
+                    <div class="stat"><div class="stat-value">${stats.tasks?.failed || 0}</div><div class="stat-label">Failed</div></div>
+                    <div class="stat"><div class="stat-value">${stats.workers?.total || 0}</div><div class="stat-label">Workers</div></div>
+                `;
+
+                const workers = await api('/api/workers');
+                document.getElementById('workers').innerHTML = workers?.length ? workers.map(w => `
+                    <div class="worker-item">
+                        <div class="worker-info">
+                            <div class="worker-name">${w.id}</div>
+                            <div class="worker-meta">Tasks: ${w.tasks_completed || 0}</div>
+                        </div>
+                        <span class="badge badge-${w.status}">${w.status}</span>
+                    </div>
+                `).join('') : '<div class="empty">No workers</div>';
+
+                const tasks = await api('/api/tasks?limit=20');
+                document.getElementById('tasks').innerHTML = tasks?.length ? tasks.map(t => `
+                    <div class="task-item" onclick="showTask('${t.id}')" style="cursor:pointer">
+                        <div class="task-info">
+                            <div class="task-id">${t.id}</div>
+                            <div class="task-prompt">${escapeHtml(t.prompt || '')}</div>
+                        </div>
+                        <span class="badge badge-${t.status}">${t.status}</span>
+                    </div>
+                `).join('') : '<div class="empty">No tasks</div>';
+            } catch (e) {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'badge badge-failed';
+            }
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        async function enqueueTask() {
+            const prompt = document.getElementById('prompt').value;
+            if (!prompt) return alert('Prompt required');
+            try {
+                const task = await api('/api/enqueue', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+                document.getElementById('prompt').value = '';
+                addLog(`Task <span class="log-event">${task.id}</span> enqueued`);
+                refresh();
+            } catch (e) {
+                alert('Failed: ' + e.message);
+            }
+        }
+
+        async function scaleWorkers() {
+            const count = document.getElementById('workerCount').value;
+            try {
+                await api('/api/scale?workers=' + count, { method: 'POST' });
+                addLog(`Scaling to <span class="log-event">${count}</span> workers`);
+                refresh();
+            } catch (e) {
+                alert('Failed: ' + e.message);
+            }
+        }
+
+        async function showTask(id) {
+            try {
+                const task = await api('/api/task?id=' + id);
+                document.getElementById('taskDetails').innerHTML = `
+                    <p><strong>ID:</strong> ${task.id}</p>
+                    <p><strong>Status:</strong> <span class="badge badge-${task.status}">${task.status}</span></p>
+                    <p><strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}</p>
+                    ${task.completed_at ? `<p><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
+                    ${task.worker_id ? `<p><strong>Worker:</strong> ${task.worker_id}</p>` : ''}
+                    <p><strong>Prompt:</strong></p>
+                    <div class="result-box">${escapeHtml(task.prompt || '')}</div>
+                    ${task.result ? `<p style="margin-top:15px"><strong>Result:</strong></p><div class="result-box">${escapeHtml(task.result)}</div>` : ''}
+                    ${task.error ? `<p style="margin-top:15px"><strong>Error:</strong></p><div class="result-box" style="color:#dc3545">${escapeHtml(task.error)}</div>` : ''}
+                `;
+                document.getElementById('taskModal').classList.add('active');
+            } catch (e) {
+                alert('Failed to load task');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('taskModal').classList.remove('active');
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+        setInterval(refresh, 3000);
+        refresh();
+    </script>
+</body>
+</html>
