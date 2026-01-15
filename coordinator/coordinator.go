@@ -40,24 +40,26 @@ type Config struct {
 
 // Task represents a unit of work.
 type Task struct {
-	ID          string     `json:"id"`
-	Prompt      string     `json:"prompt"`
-	Status      string     `json:"status"`
-	Priority    int        `json:"priority"`
-	WorkerID    *string    `json:"worker_id,omitempty"`
-	Result      *string    `json:"result,omitempty"`
-	Error       *string    `json:"error,omitempty"`
-	RepoURL     *string    `json:"repo_url,omitempty"`
-	BaseBranch  *string    `json:"base_branch,omitempty"`
-	BranchName  *string    `json:"branch_name,omitempty"`
-	CommitSHA   *string    `json:"commit_sha,omitempty"`
-	PRURL       *string    `json:"pr_url,omitempty"`
-	PRNumber    *int       `json:"pr_number,omitempty"`
-	GroupID     *string    `json:"group_id,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	AssignedAt  *time.Time `json:"assigned_at,omitempty"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	ID             string     `json:"id"`
+	Prompt         string     `json:"prompt"`
+	Status         string     `json:"status"`
+	Priority       int        `json:"priority"`
+	WorkerID       *string    `json:"worker_id,omitempty"`
+	Result         *string    `json:"result,omitempty"`
+	Error          *string    `json:"error,omitempty"`
+	RepoURL        *string    `json:"repo_url,omitempty"`
+	BaseBranch     *string    `json:"base_branch,omitempty"`
+	BranchName     *string    `json:"branch_name,omitempty"`
+	CommitSHA      *string    `json:"commit_sha,omitempty"`
+	PRURL          *string    `json:"pr_url,omitempty"`
+	PRNumber       *int       `json:"pr_number,omitempty"`
+	ConversationID *string    `json:"conversation_id,omitempty"` // shelley conversation for viewing
+	Source         string     `json:"source"`                    // manual, autonomous, api
+	GroupID        *string    `json:"group_id,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	AssignedAt     *time.Time `json:"assigned_at,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
 // Worker represents a VM in the pool.
@@ -225,17 +227,28 @@ func (c *Coordinator) GetTask(id string) (*Task, error) {
 	var t Task
 	var workerID, result, errorMsg sql.NullString
 	var repoURL, baseBranch, branchName, commitSHA, prURL, groupID sql.NullString
+	var conversationID, source sql.NullString
 	var prNumber sql.NullInt64
 	var assignedAt, startedAt, completedAt sql.NullTime
 
 	err := c.db.QueryRow(`SELECT id, prompt, status, priority, worker_id, result, error, 
-		repo_url, base_branch, branch_name, commit_sha, pr_url, pr_number, group_id,
+		repo_url, base_branch, branch_name, commit_sha, pr_url, pr_number,
+		conversation_id, COALESCE(source, 'autonomous') as source, group_id,
 		created_at, assigned_at, started_at, completed_at FROM tasks WHERE id = ?`, id).Scan(
 		&t.ID, &t.Prompt, &t.Status, &t.Priority, &workerID, &result, &errorMsg,
-		&repoURL, &baseBranch, &branchName, &commitSHA, &prURL, &prNumber, &groupID,
+		&repoURL, &baseBranch, &branchName, &commitSHA, &prURL, &prNumber,
+		&conversationID, &source, &groupID,
 		&t.CreatedAt, &assignedAt, &startedAt, &completedAt)
 	if err != nil {
 		return nil, err
+	}
+	
+	if conversationID.Valid {
+		t.ConversationID = &conversationID.String
+	}
+	t.Source = source.String
+	if t.Source == "" {
+		t.Source = "autonomous"
 	}
 
 	if workerID.Valid {
@@ -681,6 +694,7 @@ COORD="https://%s:%d"
 WORKER_ID="%s"
 API_TOKEN="%s"
 SHELLEY_API="http://localhost:8000"
+SHELLEY_DB="/tmp/shelley-worker.db"
 IDLE_COUNT=0
 MAX_IDLE=24
 WORKDIR="$HOME/workspaces"
@@ -745,46 +759,19 @@ while true; do
             CWD="$TASK_DIR"
         fi
         
-        echo "Starting conversation via Shelley API..."
+        echo "Starting autonomous shelley chat..."
+        echo "View progress at: https://${WORKER_ID}.exe.xyz:8000/"
         
-        # Create a new conversation with the task prompt using shelley API
-        # This allows viewing progress in the web UI at https://$WORKER_ID.exe.xyz:8000/
-        CONV_RESPONSE=$(curl -s -X POST "$SHELLEY_API/api/conversations/new" \
-            -H "Content-Type: application/json" \
-            -H "X-Shelley-Request: 1" \
-            -d "$(jq -n --arg msg "$PROMPT" --arg cwd "$CWD" \
-                '{message: $msg, cwd: $cwd, auto_approve: true}')")
+        # Run shelley chat with full autonomy (-yes auto-approves all tool calls)
+        # Uses the same DB as shelley serve, so conversation is viewable in real-time
+        cd "$CWD"
+        OUTPUT=$(shelley -db "$SHELLEY_DB" -config ~/.config/shelley/shelley.json \
+            chat -yes -prompt "$PROMPT" 2>&1) || true
         
-        CONV_ID=$(echo "$CONV_RESPONSE" | jq -r '.conversation_id // empty')
+        # Get the conversation ID from the most recent conversation in DB
+        CONV_ID=$(curl -s "$SHELLEY_API/api/conversations" | jq -r '.[0].id // empty')
         
-        if [ -z "$CONV_ID" ]; then
-            ERROR="Failed to create conversation: $CONV_RESPONSE"
-            curl -s -X POST "$COORD/api/complete" \
-                -H "Content-Type: application/json" \
-                -H "X-Coordinator-Token: $API_TOKEN" \
-                -d "$(jq -n --arg tid "$TASK_ID" --arg wid "$WORKER_ID" --arg err "$ERROR" \
-                    '{task_id: $tid, worker_id: $wid, error: $err}')"
-            continue
-        fi
-        
-        echo "Conversation started: $CONV_ID"
-        echo "View progress at: https://${WORKER_ID}.exe.xyz:8000/conversation/$CONV_ID"
-        
-        # Poll until conversation is complete (agent_working becomes false)
-        while true; do
-            STATUS=$(curl -s "$SHELLEY_API/api/conversation/$CONV_ID")
-            WORKING=$(echo "$STATUS" | jq -r '.agent_working // false')
-            
-            if [ "$WORKING" = "false" ]; then
-                echo "Conversation complete"
-                break
-            fi
-            
-            sleep 2
-        done
-        
-        # Get the final conversation messages for the result
-        MESSAGES=$(curl -s "$SHELLEY_API/api/conversation/$CONV_ID" | jq -c '.messages')
+        echo "Task execution complete"
         
         # If we have a repo, commit and push changes
         if [ -n "$REPO_URL" ] && [ -n "$BRANCH_NAME" ]; then

@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     commit_sha TEXT,         -- final commit SHA
     pr_url TEXT,             -- PR URL if created
     pr_number INTEGER,       -- PR number if created
+    -- Execution tracking
+    conversation_id TEXT,    -- shelley conversation ID for viewing
+    source TEXT DEFAULT 'autonomous',  -- 'manual', 'autonomous', 'api'
     -- Timestamps
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     assigned_at DATETIME,

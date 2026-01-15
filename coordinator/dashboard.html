@@ -706,10 +706,12 @@
                     const branchInfo = t.branch_name ? `<span style="color:#737373;">→ ${t.branch_name}</span>` : '';
                     const commitInfo = t.commit_sha ? `<span style="color:#22c55e;" title="${t.commit_sha}">✓</span>` : '';
                     const groupInfo = t.group_id ? `<span class="badge badge-info" style="margin-left:8px;font-size:10px;">grouped</span>` : '';
+                    const sourceIcon = t.source === 'manual' ? '👤' : t.source === 'autonomous' ? '🤖' : '🔌';
                     return `
                     <div class="list-item" onclick="showTask('${t.id}')" style="cursor:pointer">
                         <div class="list-item-info">
                             <span class="status-dot ${t.status === 'completed' ? 'running' : t.status === 'failed' ? 'stopped' : 'idle'}"></span>
+                            <span title="${t.source || 'autonomous'}" style="margin-right:4px;">${sourceIcon}</span>
                             <span class="list-item-name">${t.id.slice(0,8)}</span>
                             ${repoShort ? `<span class="badge badge-neutral" style="margin-left:8px;font-size:11px;">${repoShort}</span>` : ''}
                             ${groupInfo}
@@ -810,9 +812,16 @@
                     `;
                 }
                 
+                const sourceIcon = task.source === 'manual' ? '👤' : task.source === 'autonomous' ? '🤖' : '🔌';
+                const sourceLabel = task.source === 'manual' ? 'Manual' : task.source === 'autonomous' ? 'Autonomous' : 'API';
+                const viewLink = task.conversation_id && task.worker_id 
+                    ? `<a href="https://${task.worker_id}.exe.xyz:8000/conversation/${task.conversation_id}" target="_blank" class="btn btn-secondary" style="font-size:12px;margin-left:8px;">View Chat</a>` 
+                    : (task.worker_id ? `<a href="https://${task.worker_id}.exe.xyz:8000/" target="_blank" class="btn btn-secondary" style="font-size:12px;margin-left:8px;">View Worker</a>` : '');
+                
                 document.getElementById('taskDetails').innerHTML = `
                     <p style="margin-bottom:12px"><strong>ID:</strong> <code>${task.id}</code></p>
                     <p style="margin-bottom:12px"><strong>Status:</strong> <span class="badge badge-${task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : 'info'}">${task.status}</span></p>
+                    <p style="margin-bottom:12px"><strong>Source:</strong> ${sourceIcon} ${sourceLabel} ${viewLink}</p>
                     <p style="margin-bottom:12px"><strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}</p>
                     ${task.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
                     ${task.worker_id ? `<p style="margin-bottom:12px"><strong>Worker:</strong> ${task.worker_id}</p>` : ''}
