@@ -38,11 +38,11 @@ The Shelley coordinator system allows you to:
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
 │   Worker VM 1   │  │   Worker VM 2   │  │   Worker VM 3   │
 │                 │  │                 │  │                 │
-│ shelley serve   │  │ shelley serve   │  │ shelley serve   │
-│ (monitoring)    │  │ (monitoring)    │  │ (monitoring)    │
-│                 │  │                 │  │                 │
 │ worker-loop.sh  │  │ worker-loop.sh  │  │ worker-loop.sh  │
 │ (polls tasks)   │  │ (polls tasks)   │  │ (polls tasks)   │
+│                 │  │                 │  │                 │
+│ shelley chat    │  │ shelley chat    │  │ shelley chat    │
+│ (runs tasks)    │  │ (runs tasks)    │  │ (runs tasks)    │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
 ```
 
@@ -166,9 +166,8 @@ Shelley: [Uses curl to call the scale API]
 1. Coordinator creates new VMs via `ssh exe.dev new --name=wk-xxx-...`
 2. Waits for VM to be ready (~3-5 seconds)
 3. Installs Shelley binary on worker (~30 seconds with scp, ~2 min from source)
-4. Starts `shelley serve` for monitoring
-5. Starts worker loop script that polls for tasks
-6. Worker status changes to "idle" and appears in dashboard
+4. Starts worker loop script that polls for tasks
+5. Worker status changes to "idle" and appears in dashboard
 
 ## Step 4: Submit Tasks
 
@@ -221,13 +220,6 @@ The dashboard at `https://my-coordinator.exe.xyz:8080/` shows:
 - **Workers**: List of workers with status (starting, idle, busy)
 - **Tasks**: Recent tasks with status and assigned worker
 - **Logs**: Real-time coordinator logs
-
-### Worker Web UI
-
-Each worker runs `shelley serve` on port 8000. You can view the Shelley conversation in real-time:
-- `https://wk-xxx-x123456.exe.xyz:8000/`
-
-Click "View" next to any worker in the dashboard to open its web UI.
 
 ### API
 
@@ -393,7 +385,6 @@ watch -n 5 "curl -s -H 'X-Coordinator-Token: $TOKEN' http://localhost:8081/api/s
 
 1. **Use `-install-script scp`** - Much faster than building from source on each worker
 2. **Start with 2-3 workers** - Scale up once you verify things work
-3. **Monitor the dashboard** - It shows real-time logs and task status  
-4. **Check worker web UIs** - You can watch Shelley work in real-time at `https://wk-xxx.exe.xyz:8000/`
-5. **Use meaningful task prompts** - Be specific about what you want created and where to save files
-6. **Create coordinator via web dashboard** - Ensures SSH keys are properly set up
+3. **Monitor the dashboard** - It shows real-time logs and task status
+4. **Use meaningful task prompts** - Be specific about what you want created and where to save files
+5. **Create coordinator via web dashboard** - Ensures SSH keys are properly set up
