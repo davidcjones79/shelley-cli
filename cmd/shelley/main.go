@@ -39,6 +39,16 @@ type GlobalConfig struct {
 	DefaultModel    string
 }
 
+// defaultCoordinatorDBPath returns the default path for the coordinator database.
+// Uses ~/.config/shelley/coordinator.db so it's consistent regardless of working directory.
+func defaultCoordinatorDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "coordinator.db" // fallback to relative path
+	}
+	return filepath.Join(home, ".config", "shelley", "coordinator.db")
+}
+
 func main() {
 	// Define global flags
 	var global GlobalConfig
@@ -791,7 +801,7 @@ func runIgor(args []string) {
 func runCoord(global GlobalConfig, args []string) {
 	fs := flag.NewFlagSet("coord", flag.ExitOnError)
 	port := fs.Int("port", 8080, "HTTP server port")
-	dbPath := fs.String("db", "coordinator.db", "SQLite database path")
+	dbPath := fs.String("db", defaultCoordinatorDBPath(), "SQLite database path")
 	workerPrefix := fs.String("prefix", "wk", "Worker VM name prefix")
 	maxWorkers := fs.Int("max-workers", 10, "Maximum workers allowed")
 	shelleyBin := fs.String("shelley-bin", "", "Path to shelley binary (default: this binary)")
@@ -908,7 +918,7 @@ func runDashboard(global GlobalConfig, args []string) {
 	fs := flag.NewFlagSet("dashboard", flag.ExitOnError)
 	port := fs.Int("port", 8080, "Dashboard HTTP server port")
 	coordPort := fs.Int("coord-port", 8081, "Coordinator internal port")
-	dbPath := fs.String("db", "coordinator.db", "SQLite database path")
+	dbPath := fs.String("db", defaultCoordinatorDBPath(), "SQLite database path")
 	workerPrefix := fs.String("prefix", "wk", "Worker VM name prefix")
 	maxWorkers := fs.Int("max-workers", 10, "Maximum workers allowed")
 	shelleyBin := fs.String("shelley-bin", "", "Path to shelley binary (default: this binary)")
