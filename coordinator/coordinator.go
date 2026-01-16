@@ -1188,7 +1188,11 @@ func (c *Coordinator) GetWorker(id string) (*Worker, error) {
 func (c *Coordinator) DeleteWorker(workerID string) error {
 	log.Printf("Deleting worker: %s", workerID)
 	cmd := exec.Command("ssh", "exe.dev", "rm", workerID)
-	cmd.Run()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("Warning: failed to delete VM %s: %v (output: %s)", workerID, err, string(out))
+		// Continue anyway - mark as deleted in DB even if VM deletion failed
+		// The cleanup routine will catch orphaned VMs later
+	}
 
 	c.db.Exec(`UPDATE workers SET status = 'deleted' WHERE id = ?`, workerID)
 	c.LogEvent("worker.deleted", "", workerID, nil)
