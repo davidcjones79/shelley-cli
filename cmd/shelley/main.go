@@ -837,21 +837,12 @@ func runCoord(global GlobalConfig, args []string) {
 		*coordHost = hostname + ".exe.xyz"
 	}
 
-	// Auto-generate token if not provided
-	if *apiToken == "" {
-		b := make([]byte, 16)
-		if _, err := io.ReadFull(cryptoRand, b); err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating token: %v\n", err)
-			os.Exit(1)
-		}
-		*apiToken = fmt.Sprintf("%x", b)
-	}
-
 	// Use environment variable for git token if not provided
 	if *gitToken == "" {
 		*gitToken = os.Getenv("GITHUB_TOKEN")
 	}
 
+	// Note: API token is now handled by coordinator (persistent in DB)
 	config := coordinator.Config{
 		Port:          *port,
 		DBPath:        *dbPath,
@@ -959,21 +950,12 @@ func runDashboard(global GlobalConfig, args []string) {
 		*coordHost = hostname + ".exe.xyz"
 	}
 
-	// Auto-generate token if not provided
-	if *apiToken == "" {
-		b := make([]byte, 16)
-		if _, err := io.ReadFull(cryptoRand, b); err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating token: %v\n", err)
-			os.Exit(1)
-		}
-		*apiToken = fmt.Sprintf("%x", b)
-	}
-
 	// Use environment variable for git token if not provided
 	if *gitTokenDash == "" {
 		*gitTokenDash = os.Getenv("GITHUB_TOKEN")
 	}
 
+	// Note: API token is now handled by coordinator (persistent in DB)
 	config := coordinator.DashboardConfig{
 		Port:          *port,
 		CoordPort:     *coordPort,

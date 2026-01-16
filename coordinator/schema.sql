@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS events (
     details TEXT  -- JSON metadata
 );
 
+-- Coordinator settings (for persistent config like API token)
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority DESC, created_at ASC);

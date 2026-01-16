@@ -155,6 +155,26 @@ func New(config Config) (*Coordinator, error) {
 	logsDir := "logs"
 	os.MkdirAll(logsDir, 0755)
 
+	// Load or generate persistent API token
+	if config.APIToken == "" {
+		var savedToken string
+		err := db.QueryRow(`SELECT value FROM settings WHERE key = 'api_token'`).Scan(&savedToken)
+		if err == nil && savedToken != "" {
+			config.APIToken = savedToken
+			log.Printf("Loaded API token from database")
+		} else {
+			// Generate new token and save it
+			b := make([]byte, 16)
+			rand.Read(b)
+			config.APIToken = hex.EncodeToString(b)
+			db.Exec(`INSERT OR REPLACE INTO settings (key, value) VALUES ('api_token', ?)`, config.APIToken)
+			log.Printf("Generated and saved new API token")
+		}
+	} else {
+		// Token provided via flag - save it for future restarts
+		db.Exec(`INSERT OR REPLACE INTO settings (key, value) VALUES ('api_token', ?)`, config.APIToken)
+	}
+
 	// Add random suffix to worker prefix so multiple coordinators don't conflict
 	// Format: wk-abc where abc is a random 3-char hex string
 	if config.WorkerPrefix != "" {
