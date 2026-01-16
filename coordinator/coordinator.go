@@ -147,6 +147,15 @@ func New(config Config) (*Coordinator, error) {
 	logsDir := "logs"
 	os.MkdirAll(logsDir, 0755)
 
+	// Add random suffix to worker prefix so multiple coordinators don't conflict
+	// Format: wk-abc where abc is a random 3-char hex string
+	if config.WorkerPrefix != "" {
+		b := make([]byte, 2)
+		rand.Read(b)
+		config.WorkerPrefix = fmt.Sprintf("%s-%s", config.WorkerPrefix, hex.EncodeToString(b)[:3])
+		log.Printf("Worker prefix: %s", config.WorkerPrefix)
+	}
+
 	return &Coordinator{
 		db:       db,
 		config:   config,
