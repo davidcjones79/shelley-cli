@@ -105,7 +105,21 @@ shelley dashboard [flags]
 | `-git-user` | | Git username for HTTPS auth |
 | `-shelley-db` | ~/.config/shelley/shelley.db | Main shelley DB for conversation sync |
 | `-auto-start` | false | Start coordinator automatically |
-| `-install-script` | | URL to install script for workers (see below) |
+| `-install-script` | | Worker install method (see below) |
+| `-host` | (auto) | Coordinator hostname for workers to connect back |
+
+### Install Script Options
+
+The `-install-script` flag controls how shelley is installed on worker VMs:
+
+| Value | Description | Speed |
+|-------|-------------|-------|
+| (empty/default) | Downloads install script from GitHub, builds from source | ~2 min |
+| `scp` | Copies coordinator's binary to workers | ~30 sec |
+| `http` | Workers download binary from coordinator's `/api/shelley-bin` | ~30 sec |
+| URL | Runs custom install script | varies |
+
+**Recommended:** Use `-install-script scp` for fastest worker startup.
 
 ### Examples
 
@@ -113,14 +127,16 @@ shelley dashboard [flags]
 # Start dashboard (coordinator started via UI)
 shelley dashboard
 
-# Start with coordinator auto-started and git integration
-export GITHUB_TOKEN=ghp_xxx
-shelley dashboard -git-token $GITHUB_TOKEN -auto-start
+# Start with coordinator auto-started (recommended)
+shelley dashboard -auto-start -install-script scp
 
-# Use install script so workers have full shelley-cli repo with docs
+# Start with git integration for worker commits
+export GITHUB_TOKEN=ghp_xxx
+shelley dashboard -git-token $GITHUB_TOKEN -auto-start -install-script scp
+
+# Use full install script (workers get complete repo with docs)
 shelley dashboard \
   -install-script 'https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh' \
-  -git-token $GITHUB_TOKEN \
   -auto-start
 ```
 
@@ -205,6 +221,8 @@ git init && git add . && git commit -m "Initial commit"
 # Coordinator System - Distributed Task Execution
 
 The coordinator enables running Shelley tasks in parallel across multiple exe.dev VMs.
+
+**For a complete step-by-step setup guide, see [COORDINATOR_SETUP_GUIDE.md](COORDINATOR_SETUP_GUIDE.md)**
 
 ## Prerequisites: SSH Key Setup
 

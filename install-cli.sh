@@ -55,89 +55,10 @@ if [ ! -f ~/.config/shelley/shelley.json ]; then
 EOF
 fi
 
-# Create AGENTS.md with exe.dev guidance
+# Copy CLI reference to config directory
 if [ ! -f ~/.config/shelley/AGENTS.md ]; then
-    cat > ~/.config/shelley/AGENTS.md << 'EOF'
-You are running in an exe.dev VM.
-
-https://exe.dev/docs/proxy.md has details about the exe.dev HTTPS proxy.
-
-Only use documented exe.dev features (see https://exe.dev/docs.md). Undocumented local endpoints are internal infrastructure—unstable and unsupported.
-
----
-
-## exe.dev SSH Access
-
-**Important:** You cannot SSH directly to other exe.dev VMs (e.g., `ssh vmname.exe.xyz` will NOT work).
-
-To access other VMs, you must go through the exe.dev shell:
-
-```bash
-# Correct way to SSH to another VM
-ssh exe.dev ssh <vmname>
-
-# Correct way to run a command on another VM
-ssh exe.dev ssh <vmname> "<command>"
-
-# To create a new VM
-ssh exe.dev new --name=<vmname>
-
-# To list your VMs
-ssh exe.dev ls
-```
-
-**Creating worker VMs:**
-1. First create the VM: `ssh exe.dev new --name=myworker`
-2. Wait for it to be ready (check with `ssh exe.dev ls`)
-3. Then SSH to it: `ssh exe.dev ssh myworker`
-
-The VM names do NOT include `.exe.xyz` when using `ssh exe.dev ssh`.
-
----
-
-## Shelley CLI Commands
-
-### Status and Monitoring
-
-```bash
-# Show status of all services (includes coordinator token)
-shelley status
-
-# Live CLI dashboard - watch workers and tasks in real-time
-shelley watch
-```
-
-### Coordinator Management
-
-The coordinator runs as a systemd service on port 8080. Manage it with:
-
-```bash
-# Show stats
-shelley coord-cli stats
-
-# List workers and tasks
-shelley coord-cli workers
-shelley coord-cli tasks
-
-# Scale workers
-shelley coord-cli scale 5
-
-# Clear and reset
-shelley coord-cli clear-tasks   # Clear task queue
-shelley coord-cli clear-all     # Full reset (stops service, deletes DB, restarts)
-
-# Drain workers
-shelley coord-cli drain
-```
-
-### Important Notes
-
-- Dashboard runs on port **8080** (required by exe.dev proxy)
-- Coordinator API runs on port **8081**
-- Access dashboard at: `https://<vmname>.exe.xyz:8080/`
-- Token is auto-detected by CLI commands from journalctl
-- Use `shelley status` to see the current token
-EOF
+    cp ~/shelley-cli/docs/CLI_REFERENCE.md ~/.config/shelley/AGENTS.md
+    echo "📚 Installed CLI reference to ~/.config/shelley/AGENTS.md"
 fi
 
 # Symlink to /usr/local/bin
