@@ -1309,22 +1309,22 @@ while true; do
         # Sync conversation to main shelley DB for viewing in main UI
         if [ -n "$CONV_ID" ]; then
             echo "Syncing conversation to main shelley..."
-            # Export conversation and messages as JSON
-            CONV_DATA=$(sqlite3 -json "$SHELLEY_DB" "SELECT * FROM conversations WHERE conversation_id='$CONV_ID'" 2>/dev/null | jq '.[0]')
-            MSG_DATA=$(sqlite3 -json "$SHELLEY_DB" "SELECT * FROM messages WHERE conversation_id='$CONV_ID' ORDER BY sequence_id" 2>/dev/null)
+            # Export conversation and messages as JSON to temp files (avoids argument too long errors)
+            SYNC_TMP=$(mktemp)
+            sqlite3 -json "$SHELLEY_DB" "SELECT * FROM conversations WHERE conversation_id='$CONV_ID'" 2>/dev/null | jq '.[0]' > "$SYNC_TMP.conv"
+            sqlite3 -json "$SHELLEY_DB" "SELECT * FROM messages WHERE conversation_id='$CONV_ID' ORDER BY sequence_id" 2>/dev/null > "$SYNC_TMP.msgs"
             
-            if [ -n "$CONV_DATA" ] && [ "$CONV_DATA" != "null" ]; then
-                SYNC_PAYLOAD=$(jq -n \
-                    --argjson conv "$CONV_DATA" \
-                    --argjson msgs "$MSG_DATA" \
-                    --arg tid "$TASK_ID" \
-                    --arg wid "$WORKER_ID" \
-                    '{conversation: $conv, messages: $msgs, task_id: $tid, worker_id: $wid}')
+            if [ -s "$SYNC_TMP.conv" ] && [ "$(cat $SYNC_TMP.conv)" != "null" ]; then
+                # Build payload using files instead of command-line args
+                jq -n --slurpfile conv "$SYNC_TMP.conv" --slurpfile msgs "$SYNC_TMP.msgs" \
+                    --arg tid "$TASK_ID" --arg wid "$WORKER_ID" \
+                    '{conversation: $conv[0], messages: $msgs[0], task_id: $tid, worker_id: $wid}' > "$SYNC_TMP.payload"
                 curl -s -X POST "$COORD/api/sync-conversation" \
                     -H "Content-Type: application/json" \
                     -H "X-Coordinator-Token: $API_TOKEN" \
-                    -d "$SYNC_PAYLOAD" || echo "Sync failed (non-fatal)"
+                    -d @"$SYNC_TMP.payload" || echo "Sync failed (non-fatal)"
             fi
+            rm -f "$SYNC_TMP" "$SYNC_TMP.conv" "$SYNC_TMP.msgs" "$SYNC_TMP.payload" 2>/dev/null
         fi
         
         # If we have a repo, commit and push changes
