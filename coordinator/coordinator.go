@@ -68,18 +68,28 @@ type Task struct {
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
+// Heartbeat health thresholds for detecting stale/dead workers
+const (
+	HeartbeatWarningAge = 60 * time.Second   // Show warning in UI (yellow)
+	HeartbeatStaleAge   = 120 * time.Second  // Mark as unhealthy (orange)
+	HeartbeatDeadAge    = 300 * time.Second  // Auto-replace worker (red)
+)
+
 // Worker represents a VM in the pool.
 type Worker struct {
-	ID              string     `json:"id"`
-	Status          string     `json:"status"`
-	CurrentTaskID   *string    `json:"current_task_id,omitempty"`
-	ShelleyVersion  *string    `json:"shelley_version,omitempty"` // commit hash of shelley on worker
-	CreatedAt       time.Time  `json:"created_at"`
-	ReadyAt         *time.Time `json:"ready_at,omitempty"`         // when worker first reported version
-	ProvisioningSec *int       `json:"provisioning_sec,omitempty"` // seconds from created to ready
-	LastHeartbeat   *time.Time `json:"last_heartbeat,omitempty"`
-	TasksCompleted  int        `json:"tasks_completed"`
-	Error           *string    `json:"error,omitempty"` // error message if status is 'failed'
+	ID               string     `json:"id"`
+	Status           string     `json:"status"`
+	CurrentTaskID    *string    `json:"current_task_id,omitempty"`
+	ShelleyVersion   *string    `json:"shelley_version,omitempty"` // commit hash of shelley on worker
+	CreatedAt        time.Time  `json:"created_at"`
+	ReadyAt          *time.Time `json:"ready_at,omitempty"`         // when worker first reported version
+	ProvisioningSec  *int       `json:"provisioning_sec,omitempty"` // seconds from created to ready
+	LastHeartbeat    *time.Time `json:"last_heartbeat,omitempty"`
+	TasksCompleted   int        `json:"tasks_completed"`
+	Error            *string    `json:"error,omitempty"`            // error message if status is 'failed'
+	Health           string     `json:"health,omitempty"`           // healthy, warning, unhealthy, dead
+	HeartbeatAgeSec  *int       `json:"heartbeat_age_sec,omitempty"` // seconds since last heartbeat
+	HeartbeatWarning bool       `json:"heartbeat_warning"`          // true if heartbeat is stale
 }
 
 // TaskRequest contains parameters for creating a task.
@@ -299,10 +309,14 @@ func (c *Coordinator) CleanupStaleWorkers() {
 	// Find stuck 'starting' workers (more than 10 minutes)
 	rows, err := c.db.Query(`SELECT id FROM workers WHERE status = 'starting' AND created_at < datetime('now', '-10 minutes')`)
 	if err == nil {
-		defer rows.Close()
+		var stuckStarting []string
 		for rows.Next() {
 			var workerID string
 			rows.Scan(&workerID)
+			stuckStarting = append(stuckStarting, workerID)
+		}
+		rows.Close()
+		for _, workerID := range stuckStarting {
 			log.Printf("Cleanup: deleting stuck starting worker %s", workerID)
 			c.DeleteWorker(workerID)
 		}
@@ -311,20 +325,88 @@ func (c *Coordinator) CleanupStaleWorkers() {
 	// Find idle workers that have been idle too long (30 minutes)
 	rows, err = c.db.Query(`SELECT id FROM workers WHERE status = 'idle' AND last_heartbeat < datetime('now', '-30 minutes')`)
 	if err == nil {
-		defer rows.Close()
+		var idleTimeout []string
 		for rows.Next() {
 			var workerID string
 			rows.Scan(&workerID)
+			idleTimeout = append(idleTimeout, workerID)
+		}
+		rows.Close()
+		for _, workerID := range idleTimeout {
 			log.Printf("Cleanup: deleting idle worker %s (idle timeout)", workerID)
 			c.DeleteWorker(workerID)
 		}
 	}
+
+	// NEW: Find workers with stale heartbeats (dead workers)
+	// These are workers that haven't sent a heartbeat in HeartbeatDeadAge (5 minutes)
+	// and aren't in 'starting' status (which don't have heartbeats yet)
+	c.cleanupDeadWorkers()
 
 	// Find orphaned VMs on exe.dev that aren't in our DB
 	c.cleanupOrphanedVMs()
 
 	// Find workers in DB whose VMs no longer exist (missing VMs)
 	c.cleanupMissingVMs()
+}
+
+// cleanupDeadWorkers finds and replaces workers with stale heartbeats.
+// A worker is considered dead if it hasn't sent a heartbeat in HeartbeatDeadAge (5 minutes).
+func (c *Coordinator) cleanupDeadWorkers() {
+	deadAgeSeconds := int(HeartbeatDeadAge.Seconds())
+	query := fmt.Sprintf(`SELECT id, status, current_task_id FROM workers 
+		WHERE status IN ('idle', 'busy') 
+		AND last_heartbeat IS NOT NULL 
+		AND last_heartbeat < datetime('now', '-%d seconds')`, deadAgeSeconds)
+
+	rows, err := c.db.Query(query)
+	if err != nil {
+		log.Printf("Cleanup: failed to query dead workers: %v", err)
+		return
+	}
+
+	type deadWorker struct {
+		id            string
+		status        string
+		currentTaskID sql.NullString
+	}
+	var dead []deadWorker
+
+	for rows.Next() {
+		var w deadWorker
+		rows.Scan(&w.id, &w.status, &w.currentTaskID)
+		dead = append(dead, w)
+	}
+	rows.Close()
+
+	for _, w := range dead {
+		log.Printf("Cleanup: worker %s is DEAD (no heartbeat for >%d seconds, status: %s)", w.id, deadAgeSeconds, w.status)
+		c.LogEvent("worker.dead", "", w.id, map[string]interface{}{
+			"previous_status": w.status,
+			"reason":          fmt.Sprintf("no heartbeat for >%d seconds", deadAgeSeconds),
+		})
+
+		// If worker was busy with a task, reset the task to queued so it can be retried
+		if w.currentTaskID.Valid && w.currentTaskID.String != "" {
+			log.Printf("Cleanup: resetting task %s from dead worker %s to queued", w.currentTaskID.String, w.id)
+			c.db.Exec(`UPDATE tasks SET status = 'queued', worker_id = NULL, assigned_at = NULL, started_at = NULL, 
+				retry_count = COALESCE(retry_count, 0) + 1 WHERE id = ? AND status IN ('assigned', 'running')`,
+				w.currentTaskID.String)
+		}
+
+		// Delete the dead worker
+		c.DeleteWorker(w.id)
+
+		// Spawn a replacement worker if not draining
+		if !c.IsDraining() {
+			log.Printf("Cleanup: spawning replacement worker for dead worker %s", w.id)
+			go c.SpawnWorker()
+		}
+	}
+
+	if len(dead) > 0 {
+		log.Printf("Cleanup: found and replaced %d dead workers", len(dead))
+	}
 }
 
 // cleanupOrphanedVMs finds worker VMs on exe.dev that aren't tracked in the coordinator DB.
@@ -1222,6 +1304,14 @@ WORKDIR="$HOME/workspaces"
 SHELLEY_VERSION=$(shelley version 2>/dev/null | jq -r '.commit // "unknown"' || echo "unknown")
 
 mkdir -p "$WORKDIR"
+
+# Start HTTP file server for artifact access (serves home directory on port 8000)
+# This allows the coordinator and other VMs to pull files via HTTPS
+echo "Starting HTTP file server on port 8000..."
+cd $HOME && nohup python3 -m http.server 8000 > /tmp/http-server.log 2>&1 &
+HTTP_SERVER_PID=$!
+echo "HTTP server started (PID: $HTTP_SERVER_PID) - files available at https://${WORKER_ID}.exe.xyz:8000/"
+
 echo "Worker loop started (shelley version: $SHELLEY_VERSION)"
 
 while true; do
@@ -1419,7 +1509,45 @@ func (c *Coordinator) GetWorker(id string) (*Worker, error) {
 		w.LastHeartbeat = &lastHeartbeat.Time
 	}
 
+	// Calculate health status based on heartbeat age
+	c.calculateWorkerHealth(&w)
+
 	return &w, nil
+}
+
+// calculateWorkerHealth determines worker health based on heartbeat staleness.
+// This updates the Health, HeartbeatAgeSec, and HeartbeatWarning fields.
+func (c *Coordinator) calculateWorkerHealth(w *Worker) {
+	// Workers that are starting, failed, or deleted don't need health checks
+	if w.Status == "starting" || w.Status == "failed" || w.Status == "deleted" {
+		w.Health = w.Status
+		return
+	}
+
+	// If no heartbeat recorded yet, worker is still initializing
+	if w.LastHeartbeat == nil {
+		w.Health = "initializing"
+		return
+	}
+
+	age := time.Since(*w.LastHeartbeat)
+	ageSec := int(age.Seconds())
+	w.HeartbeatAgeSec = &ageSec
+
+	switch {
+	case age > HeartbeatDeadAge:
+		w.Health = "dead"
+		w.HeartbeatWarning = true
+	case age > HeartbeatStaleAge:
+		w.Health = "unhealthy"
+		w.HeartbeatWarning = true
+	case age > HeartbeatWarningAge:
+		w.Health = "warning"
+		w.HeartbeatWarning = true
+	default:
+		w.Health = "healthy"
+		w.HeartbeatWarning = false
+	}
 }
 
 // DeleteWorker removes a worker VM.
@@ -1590,6 +1718,9 @@ func (c *Coordinator) ListWorkers(showFailed bool) ([]Worker, error) {
 		var currentTaskID, shelleyVersion sql.NullString
 		var readyAtTime, lastHeartbeatTime sql.NullTime
 		rows.Scan(&w.ID, &w.Status, &currentTaskID, &shelleyVersion, &w.CreatedAt, &readyAtTime, &lastHeartbeatTime, &w.TasksCompleted)
+		if currentTaskID.Valid {
+			w.CurrentTaskID = &currentTaskID.String
+		}
 		if shelleyVersion.Valid {
 			w.ShelleyVersion = &shelleyVersion.String
 		}
@@ -1616,6 +1747,9 @@ func (c *Coordinator) ListWorkers(showFailed bool) ([]Worker, error) {
 				}
 			}
 		}
+
+		// Calculate health status based on heartbeat age
+		c.calculateWorkerHealth(&w)
 		
 		workers = append(workers, w)
 	}

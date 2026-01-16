@@ -388,3 +388,42 @@ watch -n 5 "curl -s -H 'X-Coordinator-Token: $TOKEN' http://localhost:8081/api/s
 3. **Monitor the dashboard** - It shows real-time logs and task status
 4. **Use meaningful task prompts** - Be specific about what you want created and where to save files
 5. **Create coordinator via web dashboard** - Ensures SSH keys are properly set up
+
+## File Transfer Between VMs
+
+### Recommended: HTTP Pull Pattern
+
+Workers automatically start an HTTP file server on port 8000, serving the worker's home directory. This makes it easy to transfer files from workers to any destination:
+
+```bash
+# From any VM, download files from a worker:
+curl -o /path/to/dest.html https://wk-abc-123.exe.xyz:8000/workspaces/task-id/output.html
+
+# List files on a worker:
+curl https://wk-abc-123.exe.xyz:8000/
+```
+
+### SSH Flag Parsing Note
+
+When piping data through exe.dev SSH, use `--` to prevent flag parsing:
+
+```bash
+# This works:
+ssh exe.dev ssh myvm -- 'base64 -d < file.b64'
+
+# This may fail (flags consumed by exe.dev wrapper):
+ssh exe.dev ssh myvm 'base64 -d < file.b64'
+```
+
+## Worker Health Monitoring
+
+The coordinator monitors worker heartbeats to detect and auto-replace unhealthy workers:
+
+| Health Status | Heartbeat Age | Dashboard Indicator |
+|---------------|---------------|---------------------|
+| Healthy       | < 60 sec      | Green dot |
+| Warning       | 60-120 sec    | Yellow dot |
+| Unhealthy     | 120-300 sec   | Orange banner |
+| Dead          | > 300 sec     | Red, auto-replaced |
+
+Dead workers are automatically replaced, and their in-progress tasks are reset to "queued" for retry.

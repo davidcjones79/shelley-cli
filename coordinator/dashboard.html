@@ -343,6 +343,16 @@
     </header>
 
     <div class="container">
+        <!-- Health Alert Banner (shown when workers are unhealthy/dead) -->
+        <div id="health-alert" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:18px;">⚠️</span>
+                <span style="font-weight:600;color:#dc2626;">Worker Health Issue</span>
+                <span id="health-alert-text" style="color:#7f1d1d;"></span>
+                <button onclick="document.getElementById('health-alert').style.display='none'" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:16px;color:#7f1d1d;">×</button>
+            </div>
+        </div>
+
         <!-- Coordinator Control -->
         <div class="control-panel">
             <div class="control-panel-status">
@@ -675,11 +685,61 @@
                 const failedCount = failedCountRes?.filter(w => w.status === 'failed').length || 0;
                 document.getElementById('failed-count').textContent = failedCount > 0 ? `(${failedCount} failed)` : '';
                 
+                // Check for unhealthy/dead workers and show alert
+                const unhealthyWorkers = workers?.filter(w => w.health === 'unhealthy' || w.health === 'dead') || [];
+                const healthAlert = document.getElementById('health-alert');
+                if (unhealthyWorkers.length > 0) {
+                    const deadCount = unhealthyWorkers.filter(w => w.health === 'dead').length;
+                    const unhealthyCount = unhealthyWorkers.filter(w => w.health === 'unhealthy').length;
+                    let alertText = '';
+                    if (deadCount > 0) alertText += `${deadCount} dead worker${deadCount > 1 ? 's' : ''} (no heartbeat >5 min)`;
+                    if (deadCount > 0 && unhealthyCount > 0) alertText += ', ';
+                    if (unhealthyCount > 0) alertText += `${unhealthyCount} unhealthy worker${unhealthyCount > 1 ? 's' : ''} (no heartbeat >2 min)`;
+                    document.getElementById('health-alert-text').textContent = alertText + '. These workers will be auto-replaced.';
+                    healthAlert.style.display = 'block';
+                } else {
+                    healthAlert.style.display = 'none';
+                }
+                
                 document.getElementById('workers').innerHTML = workers?.length ? workers.map(w => {
                     // Determine worker state for display
                     let statusText = w.status;
                     let statusClass = w.status === 'busy' ? 'info' : 'neutral';
                     let metaText = '';
+                    let healthIndicator = '';
+                    
+                    // Format heartbeat age for display
+                    function formatHeartbeatAge(seconds) {
+                        if (!seconds && seconds !== 0) return '';
+                        if (seconds < 60) return `${seconds}s ago`;
+                        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+                        return `${Math.floor(seconds / 3600)}h ago`;
+                    }
+                    
+                    // Health indicator with color coding
+                    if (w.health && w.status !== 'failed' && w.status !== 'starting') {
+                        const healthColors = {
+                            'healthy': '#22c55e',     // green
+                            'warning': '#f59e0b',     // yellow/amber
+                            'unhealthy': '#f97316',   // orange
+                            'dead': '#ef4444',        // red
+                            'initializing': '#a3a3a3' // gray
+                        };
+                        const healthColor = healthColors[w.health] || '#a3a3a3';
+                        const heartbeatText = w.heartbeat_age_sec !== undefined ? formatHeartbeatAge(w.heartbeat_age_sec) : '';
+                        
+                        // Show warning banner if worker is unhealthy or dead
+                        if (w.health === 'unhealthy' || w.health === 'dead') {
+                            healthIndicator = `<span style="background:${healthColor}20;color:${healthColor};padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;margin-left:8px;">
+                                ⚠️ ${w.health.toUpperCase()} ${heartbeatText ? '(' + heartbeatText + ')' : ''}
+                            </span>`;
+                        } else if (heartbeatText) {
+                            healthIndicator = `<span style="color:${healthColor};font-size:11px;margin-left:8px;" title="Last heartbeat: ${heartbeatText}">
+                                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${healthColor};margin-right:4px;"></span>
+                                ${heartbeatText}
+                            </span>`;
+                        }
+                    }
                     
                     if (w.status === 'failed') {
                         // Failed worker - show error
@@ -707,16 +767,17 @@
                             <span class="status-dot ${w.status}"></span>
                             <span class="list-item-name">${w.id}</span>
                             <span class="list-item-meta">${metaText}</span>
+                            ${healthIndicator}
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <a href="https://${w.id}.exe.xyz:8000/" target="_blank" 
                                class="btn btn-secondary" style="font-size: 12px; padding: 4px 8px;"
-                               title="View Shelley chat session">
+                               title="Browse worker files (HTTP server)">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                                    <circle cx="12" cy="12" r="3"/>
+                                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                                    <polyline points="9 22 9 12 15 12 15 22"/>
                                 </svg>
-                                View
+                                Files
                             </a>
                             <span class="badge badge-${statusClass}">${statusText}</span>
                         </div>

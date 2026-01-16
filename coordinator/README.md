@@ -258,3 +258,58 @@ curl -X POST https://your-vm.exe.xyz:8080/api/drain \
 - **tasks** - id, prompt, status, priority, worker_id, result, error, repo_url, base_branch, branch_name, commit_sha, pr_url, group_id, conversation_id, timestamps
 - **workers** - id, status, current_task_id, tailscale_ip, created_at, last_heartbeat, tasks_completed
 - **events** - audit log of all events
+
+
+---
+
+## File Transfer Between VMs
+
+### HTTP Pull Pattern (Recommended)
+
+Workers now automatically start an HTTP file server on port 8000 at startup. This serves the worker's home directory and makes files accessible via HTTPS:
+
+```
+https://worker-id.exe.xyz:8000/
+```
+
+**To transfer files from a worker to another VM:**
+
+```bash
+# On the destination VM, pull files from the worker:
+curl -o /path/to/dest/file.html https://wk-abc-123.exe.xyz:8000/workspaces/task-id/output.html
+```
+
+**Benefits:**
+- No SSH flag parsing issues
+- Works reliably with exe.dev proxy
+- Parallel downloads possible
+- Easy to verify with HEAD requests
+
+### SSH Flag Parsing Workaround
+
+The exe.dev SSH wrapper parses flags before passing them to the remote command. To pass flags to commands on the remote VM, use `--` to stop flag parsing:
+
+```bash
+# This fails (flag consumed by exe.dev ssh):
+ssh exe.dev ssh myvm 'base64 -d file.b64'
+
+# This works:
+ssh exe.dev ssh myvm -- 'base64 -d file.b64'
+```
+
+## Worker Health Monitoring
+
+Workers send heartbeats every 30 seconds during task execution. The coordinator monitors these heartbeats to detect unhealthy workers:
+
+| Health Status | Heartbeat Age | Action |
+|---------------|---------------|--------|
+| Healthy       | < 60 seconds  | Normal operation |
+| Warning       | 60-120 seconds | Yellow indicator in dashboard |
+| Unhealthy     | 120-300 seconds | Orange indicator, alert banner |
+| Dead          | > 300 seconds | Auto-replaced, task reset to queued |
+
+The coordinator automatically:
+1. Detects dead workers (no heartbeat for >5 minutes)
+2. Resets any in-progress task to "queued" for retry
+3. Deletes the dead worker VM
+4. Spawns a replacement worker

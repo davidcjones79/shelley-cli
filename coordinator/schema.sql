@@ -72,6 +72,20 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+-- Task artifacts (files produced by tasks that can be retrieved)
+CREATE TABLE IF NOT EXISTS task_artifacts (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    worker_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    path TEXT NOT NULL,          -- path on worker VM
+    url TEXT NOT NULL,           -- https://worker.exe.xyz:8000/path
+    size_bytes INTEGER,
+    content_type TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority DESC, created_at ASC);
@@ -79,3 +93,4 @@ CREATE INDEX IF NOT EXISTS idx_workers_status ON workers(status);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id);
 CREATE INDEX IF NOT EXISTS idx_task_groups_status ON task_groups(status);
+CREATE INDEX IF NOT EXISTS idx_task_artifacts_task ON task_artifacts(task_id);
