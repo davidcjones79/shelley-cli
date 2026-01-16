@@ -203,6 +203,49 @@ git init && git add . && git commit -m "Initial commit"
 
 The coordinator enables running Shelley tasks in parallel across multiple exe.dev VMs.
 
+## Prerequisites: SSH Key Setup
+
+To spawn worker VMs, your coordinator VM must be able to authenticate with exe.dev via SSH.
+This requires an SSH key registered with your exe.dev account.
+
+### Check if your VM is set up
+
+```bash
+# Test if you can access exe.dev
+ssh exe.dev whoami
+```
+
+If this shows your email and SSH keys, you're ready to use the coordinator.
+
+### Setting up a new VM
+
+When you create a VM via the exe.dev website, it automatically:
+1. Generates an SSH key pair at `~/.ssh/id_ed25519`
+2. Registers that public key with your exe.dev account
+
+If you're on a VM without this setup (e.g., manually installed Shelley), you need to:
+
+1. **Generate an SSH key** (if not present):
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
+   ```
+
+2. **Register the key with exe.dev**:
+   - Run `ssh exe.dev browser` to get a magic login link
+   - Open the link in your browser to log into exe.dev
+   - Go to Account Settings and add your public key:
+     ```bash
+     cat ~/.ssh/id_ed25519.pub
+     ```
+
+3. **Verify it works**:
+   ```bash
+   ssh exe.dev whoami
+   ssh exe.dev ls
+   ```
+
+Once set up, the coordinator can create/destroy worker VMs on your behalf.
+
 ## Architecture
 
 ```
