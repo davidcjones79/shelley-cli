@@ -35,3 +35,75 @@ See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for complete Shelley CLI docu
 - All commands and flags
 - Coordinator system for distributed task execution
 - Common workflows and examples
+
+---
+
+## Spawning Sub-Agents
+
+You can spawn additional Shelley instances to work in parallel. This is useful when:
+- A task can be decomposed into independent subtasks
+- You need to try multiple approaches simultaneously
+- Long-running tasks shouldn't block the main conversation
+
+### Direct Sub-Agent Spawning
+
+Run another Shelley instance with a specific prompt:
+
+```bash
+# Spawn a sub-agent that runs a single task and exits
+shelley chat -yes -no-sync -prompt "Create a Python script that calculates fibonacci numbers"
+
+# Spawn with output captured
+shelley chat -yes -no-sync -prompt "Analyze main.go for bugs" > /tmp/analysis.txt 2>&1 &
+
+# Check if sub-agent is still running
+pgrep -f "shelley chat"
+
+# Wait for all sub-agents to complete
+wait
+```
+
+### Key Flags for Sub-Agents
+
+| Flag | Purpose |
+|------|--------|
+| `-yes` | Auto-accept all tool operations (required for unattended execution) |
+| `-no-sync` | Don't sync to database (prevents conversation clutter) |
+| `-prompt "..."` | Execute this prompt and exit (non-interactive mode) |
+| `-no-browser` | Disable browser tools (faster startup if not needed) |
+
+### Using Slash Commands
+
+From within a Shelley chat session:
+
+```
+/spawn "Review auth.go for security issues"     # Spawn single sub-agent
+/spawns                                          # List all sub-agents with status
+/spawn-output agent-1                            # View output from agent-1
+/spawn-wait                                      # Wait for all to complete
+/spawn-clear                                     # Clear completed agents
+
+/parallel "Review auth.go" | "Review api.go" | "Review db.go"  # Spawn multiple
+```
+
+### Example: Parallel File Processing
+
+```bash
+# Process 3 files in parallel
+for file in auth.go api.go db.go; do
+  shelley chat -yes -no-sync -prompt "Review $file for security issues, save report to /tmp/${file%.go}-security.md" &
+done
+wait
+echo "All reviews complete"
+cat /tmp/*-security.md > /tmp/full-security-report.md
+```
+
+### When to Use the Coordinator Instead
+
+For more than 3-4 parallel tasks, or when you need:
+- Task queue with retry logic
+- Progress monitoring dashboard
+- Git integration (branches, commits)
+- Worker health monitoring
+
+Use the coordinator system instead: `shelley dashboard -auto-start`

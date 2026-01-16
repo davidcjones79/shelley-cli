@@ -254,6 +254,50 @@ func (m *Model) handleSlashCommand(text string) tea.Cmd {
 	case "/uploads":
 		return m.listUploadedFiles()
 
+	// Sub-agent commands
+	case "/spawn":
+		if len(parts) < 2 {
+			m.showSystemMessage("Usage: /spawn <prompt>\n\nSpawns a background Shelley instance to execute the prompt.\nUse /spawns to list running sub-agents.")
+			return nil
+		}
+		prompt := strings.Join(parts[1:], " ")
+		m.showSystemMessage(m.spawnSubAgent(prompt))
+		return nil
+
+	case "/spawns":
+		m.showSystemMessage(m.listSubAgents())
+		return nil
+
+	case "/spawn-output":
+		if len(parts) < 2 {
+			m.showError("Usage: /spawn-output <agent-id>")
+			return nil
+		}
+		m.showSystemMessage(m.getSubAgentOutput(parts[1]))
+		return nil
+
+	case "/spawn-wait":
+		m.showSystemMessage(m.waitForSubAgents())
+		return nil
+
+	case "/spawn-clear":
+		m.showSystemMessage(m.clearSubAgents())
+		return nil
+
+	case "/parallel":
+		if len(parts) < 2 {
+			m.showSystemMessage(`Usage: /parallel "task1" | "task2" | "task3"
+
+Spawns multiple sub-agents in parallel. Tasks are separated by |.
+
+Example:
+  /parallel "Review auth.go" | "Review api.go" | "Review db.go"`)
+			return nil
+		}
+		input := strings.Join(parts[1:], " ")
+		m.showSystemMessage(m.spawnParallel(input))
+		return nil
+
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
 		return nil
@@ -334,6 +378,14 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /git           - List recent commits\n")
 	sb.WriteString("  /git show <id> - Show files in commit\n")
 	sb.WriteString("  /git diff <f>  - Show diff for file\n")
+
+	sb.WriteString("\nSub-Agents:\n")
+	sb.WriteString("  /spawn <prompt>      - Spawn a background sub-agent\n")
+	sb.WriteString("  /spawns              - List running sub-agents\n")
+	sb.WriteString("  /spawn-output <id>   - View sub-agent output\n")
+	sb.WriteString("  /spawn-wait          - Wait for all sub-agents\n")
+	sb.WriteString("  /spawn-clear         - Clear completed sub-agents\n")
+	sb.WriteString("  /parallel \"a\"|\"b\"    - Spawn multiple sub-agents\n")
 
 	sb.WriteString("\n  /help          - Show this help")
 	sb.WriteString("\n  /keys          - Show keyboard shortcuts")
