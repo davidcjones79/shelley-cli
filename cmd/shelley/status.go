@@ -169,9 +169,19 @@ func checkCoordinatorAPI() *CoordinatorStatus {
 }
 
 func getCoordinatorToken() string {
-	// Try to get token from journalctl
-	cmd := exec.Command("journalctl", "-u", "coordinator", "-n", "50", "--no-pager")
+	// Method 1: Try to get token from process list (works everywhere)
+	cmd := exec.Command("bash", "-c", "ps aux | grep 'shelley coord' | grep -v grep | grep -o '\\-token [^ ]*' | cut -d' ' -f2")
 	out, err := cmd.Output()
+	if err == nil {
+		token := strings.TrimSpace(string(out))
+		if token != "" {
+			return token
+		}
+	}
+
+	// Method 2: Try journalctl (may not work via exe.dev ssh proxy)
+	cmd = exec.Command("journalctl", "-u", "coordinator", "-n", "50", "--no-pager")
+	out, err = cmd.Output()
 	if err != nil {
 		return ""
 	}
