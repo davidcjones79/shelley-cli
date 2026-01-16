@@ -829,13 +829,16 @@ func (c *Coordinator) setupWorker(workerID string) {
 		// exe.dev proxies HTTPS to the coordinator port
 		log.Printf("Downloading shelley binary to %s from coordinator...", workerID)
 		downloadURL := fmt.Sprintf("https://%s:%d/api/shelley-bin?token=%s", c.config.CoordHost, c.config.Port, c.config.APIToken)
-		downloadCmd := sshToWorker(workerID, "bash", "-c", 
-			fmt.Sprintf("curl -fsSL '%s' -o .local/bin/shelley && chmod +x .local/bin/shelley", downloadURL))
+		// Use curl directly without bash -c to avoid quoting issues
+		downloadCmd := sshToWorker(workerID, "curl", "-fsSL", downloadURL, "-o", ".local/bin/shelley")
 		if out, err := downloadCmd.CombinedOutput(); err != nil {
 			log.Printf("Failed to download shelley to %s: %v\n%s", workerID, err, out)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
 			return
 		}
+		// Make it executable
+		chmodCmd := sshToWorker(workerID, "chmod", "+x", ".local/bin/shelley")
+		chmodCmd.Run()
 
 		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
 		configCmd := sshToWorker(workerID, "bash", "-c", "echo '"+configJSON+"' > .config/shelley/shelley.json")
