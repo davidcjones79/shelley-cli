@@ -915,7 +915,7 @@ func (c *Coordinator) setupWorker(workerID string) {
 		chmodCmd.Run()
 
 		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
-		configCmd := sshToWorker(workerID, "bash", "-c", "echo '"+configJSON+"' > .config/shelley/shelley.json")
+		configCmd := sshToWorker(workerID, "echo '"+configJSON+"' > .config/shelley/shelley.json")
 		configCmd.Run()
 	}
 
