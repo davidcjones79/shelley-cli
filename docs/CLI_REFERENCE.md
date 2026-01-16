@@ -343,11 +343,12 @@ curl -X POST https://your-vm.exe.xyz:8080/api/drain \
 
 ## Worker Behavior
 
-1. **Spawning**: Workers are exe.dev VMs created with `ssh exe.dev create <prefix>-<n>`
+1. **Spawning**: Workers are exe.dev VMs created with `ssh exe.dev new --name=<prefix>-<id>`
 2. **Execution**: Worker clones repo (if specified), runs Shelley with the prompt
 3. **Git Integration**: Creates branch `task-{id}`, commits changes, pushes
 4. **Completion**: Reports results, syncs conversation to main DB
 5. **Auto-shutdown**: Idle workers shut down after 30 minutes
+6. **Deletion**: Workers are removed with `ssh exe.dev rm <worker-id>`
 
 ## API Reference
 
@@ -592,6 +593,18 @@ $ shelley coord-cli tasks
 # exe.dev SSH Quirks
 
 When using the exe.dev SSH proxy, be aware of these behaviors:
+
+## exe.dev Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `ssh exe.dev ls` | List your VMs |
+| `ssh exe.dev new --name=<name>` | Create a new VM |
+| `ssh exe.dev rm <name>` | Delete a VM |
+| `ssh exe.dev ssh <name> '<cmd>'` | Run command on VM |
+| `ssh exe.dev whoami` | Show your account info |
+
+**Note:** The delete command is `rm`, not `delete`.
 
 ## Flag Parsing
 
