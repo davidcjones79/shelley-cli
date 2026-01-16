@@ -127,22 +127,24 @@ func checkCoordinatorAPI() *CoordinatorStatus {
 		Port:    8080,
 	}
 
-	// Try to get stats from coordinator (without token, will fail but confirms it's running)
+	// Try to get token from journalctl
+	token := getCoordinatorToken()
+	status.Token = token
+
 	client := &http.Client{Timeout: 2 * time.Second}
 
-	// Try common token locations or just check if responding
-	resp, err := client.Get("http://localhost:8080/api/stats")
+	// Try with token if we have one
+	url := "http://localhost:8080/api/stats"
+	if token != "" {
+		url += "?token=" + token
+	}
+
+	resp, err := client.Get(url)
 	if err != nil {
 		status.Running = false
 		return status
 	}
 	defer resp.Body.Close()
-
-	// Even if unauthorized, it's running
-	if resp.StatusCode == http.StatusUnauthorized {
-		status.Token = "(required - check journalctl -u coordinator)"
-		return status
-	}
 
 	// If we got stats, parse them
 	if resp.StatusCode == http.StatusOK {
@@ -164,6 +166,24 @@ func checkCoordinatorAPI() *CoordinatorStatus {
 	}
 
 	return status
+}
+
+func getCoordinatorToken() string {
+	// Try to get token from journalctl
+	cmd := exec.Command("journalctl", "-u", "coordinator", "-n", "50", "--no-pager")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	// Look for "API Token: <token>" in output
+	lines := strings.Split(string(out), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if idx := strings.Index(lines[i], "API Token: "); idx != -1 {
+			return strings.TrimSpace(lines[i][idx+11:])
+		}
+	}
+	return ""
 }
 
 func prettyPrintStatus(output StatusOutput) {
