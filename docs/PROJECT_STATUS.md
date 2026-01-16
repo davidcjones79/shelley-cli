@@ -1,6 +1,6 @@
 # Shelley Coordinator Project Status
 
-**Last Updated:** 2026-01-16 05:04 UTC
+**Last Updated:** 2026-01-16 05:45 UTC
 
 ## Overview
 
@@ -83,6 +83,24 @@ cmd := exec.Command("ssh", "exe.dev",
 ### 5. Multi-Coordinator Conflicts
 **Problem:** Multiple coordinators with same prefix interfere with each other's workers
 **Fix:** Add random 3-char hex suffix to prefix at startup (e.g., `wk` → `wk-4f2`)
+
+### 6. Task Group Creation Drops Prompts (SQLITE_BUSY)
+**Problem:** When creating task groups, some tasks silently failed due to SQLite lock contention
+**Fix:** 
+- Added `PRAGMA busy_timeout = 5000` (5 second wait before failing)
+- Added retry logic with exponential backoff (3 attempts)
+- Group creation now fails entirely if any task can't be created (no silent drops)
+
+### 7. Dashboard 404 Without Auth Headers
+**Problem:** Accessing dashboard on localhost returned 404 instead of showing the UI
+**Fix:** Allow local access (localhost/127.0.0.1) without exe.dev auth headers
+
+### 8. Worker Hostname Not Stored
+**Problem:** Worker API responses had null `tailscale_ip` field, making programmatic access harder
+**Fix:** 
+- Repurposed column to store exe.dev hostname
+- Renamed JSON field from `tailscale_ip` to `hostname`
+- Workers now return hostname like `wk-xxx.exe.xyz`
 
 ## Architecture
 
