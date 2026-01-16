@@ -1,6 +1,6 @@
 # Shelley Coordinator - Project Status
 
-**Last Updated:** January 15, 2026
+**Last Updated:** January 16, 2026
 
 ## What's Built
 
@@ -122,69 +122,90 @@ export GITHUB_TOKEN=ghp_xxx
 # Access at: https://desert-daemon.exe.xyz:8080/
 ```
 
+## CLI Commands (`shelley coord-cli`)
+
+```bash
+# Task management
+shelley coord-cli add-task "Create a landing page"
+shelley coord-cli add-group "Pages" "docker.html" \| "k8s.html" \| "terraform.html"
+shelley coord-cli tasks
+shelley coord-cli task <id>
+shelley coord-cli groups
+shelley coord-cli group <id>
+
+# Worker management
+shelley coord-cli workers
+shelley coord-cli scale 5
+shelley coord-cli drain
+shelley coord-cli clear-failed
+shelley coord-cli kill-worker <id>
+
+# Monitoring
+shelley coord-cli stats
+shelley watch  # Live auto-refreshing dashboard
+
+# Troubleshooting
+shelley coord-cli stuck
+shelley coord-cli reset-stuck
+shelley coord-cli reset-task <id>
+```
+
 ## What's Next (Planned)
 
-1. **Progress Streaming**
-   - Real-time output from workers
-   - WebSocket or SSE for live updates
-   - Show Shelley's progress in dashboard
+1. **Artifact Management**
+   - Automatic artifact collection from workers
+   - HTTP-based file transfer (workers serve files on port 8000)
+   - `shelley artifacts collect` command
 
-2. **Auto-merge**
+2. **Multi-Step Workflows**
+   - Task dependencies (B waits for A)
+   - Fan-out / fan-in patterns
+   - Consolidation steps
+
+3. **Auto-merge**
    - Combine completed task branches
    - Sequential merge strategy
    - Conflict detection/reporting
 
-4. **Task Dependencies**
-   - Task B waits for Task A
-   - Chain tasks sequentially
-   - Fan-out / fan-in patterns
-
 ## Recent Changes
 
-### January 16, 2026
-- **Task Groups / Batches**
-  - New `task_groups` table to group related tasks
-  - Tasks can inherit repo_url and base_branch from their group
-  - Group progress tracking (tasks_total, tasks_completed, tasks_failed)
-  - Group status auto-updates when tasks complete
-  - Dashboard "Groups" section with create modal
-  - Multi-line prompt input (one task per line)
-  - Group detail modal shows all tasks with status
-  - API endpoints: `/api/groups`, `/api/group`, `/api/group/create`, `/api/group/tasks`
+### January 16, 2026 (Latest)
+
+- **Reliability Improvements**
+  - Persistent worker prefix (survives coordinator restarts)
+  - Startup cleanup (cleans orphans immediately on start)
+  - Reduced failed worker retention (10 min instead of 1 hour)
+  - Worker error display (shows why workers failed)
+  - Fixed conversation sync "argument list too long" error
+
+- **New CLI Commands**
+  - `add-group` - Create task groups with pipe-separated prompts
+  - `groups` - List all task groups
+  - `group <id>` - Show group details and tasks
+  - `clear-failed` - Clear failed worker records
+  - `shelley watch` - Live auto-refreshing CLI dashboard
 
 - **Dashboard UI Improvements**
-  - New Task form now spans full width for more room to type prompts
-  - Repository and Base Branch inputs arranged side by side
-  - Larger prompt textarea (min-height: 100px)
+  - "Show failed" checkbox to toggle failed worker visibility
+  - "Clear Failed" button to remove failed worker records
+  - Failed worker count badge in Workers section
+  - Error messages displayed for failed workers
 
-- **Worker Drain Feature**
-  - "Drain" button in Workers section
-  - Gracefully shuts down all workers
-  - Idle workers deleted immediately
-  - Busy workers complete current task then shut down
-  - `POST /api/drain` endpoint
+- **Task Groups / Batches**
+  - New `task_groups` table to group related tasks
+  - Tasks inherit repo_url and base_branch from their group
+  - Group progress tracking (tasks_total, tasks_completed, tasks_failed)
+  - API endpoints: `/api/groups`, `/api/group`, `/api/group/create`, `/api/group/tasks`
 
-- **Synced Conversation Viewer**
-  - New `/conversation/{id}` route on dashboard
-  - View conversations synced from workers to main Shelley DB
-  - Task details show "View Chat" button for completed/failed tasks
-  - "Live Chat" button shown for running tasks (links to worker)
-  - Dark theme matching exe.dev style
-  - Back link to dashboard
+- **Worker Features**
+  - HTTP file server on port 8000 (for artifact transfer)
+  - Auto-scaling workers when tasks enqueued
+  - Drain feature for graceful shutdown
+  - Health monitoring with heartbeat staleness detection
 
-- **Auto-scaling Workers**
-  - Workers spawn automatically when tasks are enqueued
-  - Checks for available workers before spawning
-  - Respects max-workers limit
-  - Also checks after task completion for remaining queued tasks
-  - Honors draining state (no new workers during drain)
-
-- **Automatic Worker Cleanup**
-  - Periodic cleanup every 5 minutes
-  - Removes failed/deleted DB records after 1 hour
-  - Deletes stuck 'starting' workers (>10 min)
-  - Deletes idle workers after 30 min timeout
-  - Finds and removes orphaned VMs not in coordinator DB
+- **API Additions**
+  - `GET /api/workers?show_failed=true` - Include failed workers
+  - `POST /api/workers/clear-failed` - Clear failed worker records
 
 ### January 15, 2026
 - Added git integration for workers
