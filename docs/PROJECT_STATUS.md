@@ -1,6 +1,6 @@
 # Shelley Coordinator Project Status
 
-**Last Updated:** 2026-01-16 06:45 UTC
+**Last Updated:** 2026-01-16 21:15 UTC
 
 ## Overview
 
@@ -202,22 +202,48 @@ a1ab108 fix: increase worker idle timeout from 2 minutes to 30 minutes
 - [x] Workers spawn successfully
 - [x] Workers install shelley binary
 - [x] Workers have valid config file
-- [x] Workers start shelley serve (port 8000)
+- [x] Workers start HTTP file server (port 8000)
 - [x] Workers start polling loop
 - [x] Worker loop script has correct jq syntax
 - [x] Tasks picked up and executed
 - [x] Files created by tasks persist
 - [x] Task status updates correctly
 - [x] Workers stay alive for 30 minutes idle
-- [ ] Git integration (branches, commits)
-- [ ] Conversation sync to main DB
-- [ ] Multiple tasks run in parallel (need to re-test)
+- [x] Git integration (branches, commits)
+- [x] Conversation sync to main DB
+- [x] Multiple tasks run in parallel
+- [x] Task groups work correctly
+- [x] CLI commands (coord-cli, watch) work
 
-### 9. Simplified Worker Architecture
-**Change:** Removed shelley serve from workers
-**Reason:** Workers were running two shelley instances (port 8000 and systemd's port 9999), causing confusion
-**New approach:** 
-- Workers only run the worker-loop.sh script
-- Tasks execute via `shelley chat` CLI directly
-- No web UI monitoring per-worker (coordinator dashboard still shows task status)
-- Simpler, fewer moving parts
+## Recent Improvements (2026-01-16)
+
+See [COORDINATOR_CHANGES_2026-01-16.md](COORDINATOR_CHANGES_2026-01-16.md) for detailed changelog.
+
+### Key Improvements:
+
+1. **Persistent Worker Prefix** - Coordinator remembers its worker prefix across restarts
+2. **Startup Cleanup** - Cleans up orphaned workers/tasks immediately on start
+3. **Reduced Failed Worker Retention** - 10 minutes instead of 1 hour
+4. **Filter Failed Workers** - Dashboard hides failed workers by default
+5. **Clear Failed Button** - One-click removal of failed worker records
+6. **Worker Error Display** - Shows why workers failed in dashboard
+7. **Conversation Sync Fix** - Fixed "argument list too long" error
+8. **New CLI Commands** - `add-group`, `groups`, `group`, `clear-failed`
+9. **HTTP File Server on Workers** - Workers serve files at port 8000 for easy transfer
+
+### CLI Commands:
+
+```bash
+# Add task group
+shelley coord-cli add-group "Landing Pages" "Create docker.html" \| "Create k8s.html"
+
+# Monitor
+shelley coord-cli stats
+shelley coord-cli groups
+shelley coord-cli workers
+shelley watch  # Live auto-refreshing dashboard
+
+# Cleanup
+shelley coord-cli clear-failed
+shelley coord-cli drain
+```
