@@ -956,7 +956,7 @@ API_TOKEN="%s"
 SHELLEY_API="http://localhost:8000"
 SHELLEY_DB="/tmp/shelley-worker.db"
 IDLE_COUNT=0
-MAX_IDLE=24
+MAX_IDLE=360
 WORKDIR="$HOME/workspaces"
 
 mkdir -p "$WORKDIR"
