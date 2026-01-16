@@ -83,6 +83,15 @@ func (d *Dashboard) Start() error {
 		return fmt.Errorf("coordinator already running")
 	}
 
+	// Pre-flight check for coordinator port
+	if err := CheckPortAvailable(d.config.CoordPort); err != nil {
+		if portErr, ok := err.(*PortInUseError); ok {
+			return fmt.Errorf("coordinator port %d is in use by %s (PID %d). Use -coord-port to specify a different port",
+				portErr.Port, portErr.Process, portErr.PID)
+		}
+		return fmt.Errorf("coordinator port %d is not available: %w", d.config.CoordPort, err)
+	}
+
 	// Build command
 	args := []string{
 		"coord",
@@ -493,6 +502,14 @@ func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 
 // Run starts the dashboard HTTP server.
 func (d *Dashboard) Run() error {
+	// Pre-flight checks
+	if err := CheckPortAvailable(d.config.Port); err != nil {
+		if portErr, ok := err.(*PortInUseError); ok {
+			return fmt.Errorf("%s", FormatPreflightError(portErr))
+		}
+		return fmt.Errorf("port %d is not available: %w", d.config.Port, err)
+	}
+
 	mux := http.NewServeMux()
 	d.SetupRoutes(mux)
 

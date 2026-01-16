@@ -12,6 +12,24 @@ import (
 	_ "modernc.org/sqlite" // SQLite driver for sync
 )
 
+// APIError represents a structured error response with helpful suggestions.
+type APIError struct {
+	Error       string   `json:"error"`
+	Code        string   `json:"code,omitempty"`
+	Suggestions []string `json:"suggestions,omitempty"`
+}
+
+// writeAPIError writes a structured error response.
+func writeAPIError(w http.ResponseWriter, status int, message, code string, suggestions ...string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(APIError{
+		Error:       message,
+		Code:        code,
+		Suggestions: suggestions,
+	})
+}
+
 // CheckAuth validates the API token.
 func (c *Coordinator) CheckAuth(w http.ResponseWriter, r *http.Request) bool {
 	if c.config.APIToken == "" {
@@ -34,23 +52,29 @@ func (c *Coordinator) HandleEnqueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST method required", "METHOD_NOT_ALLOWED",
+			"Use POST to create tasks: POST /api/enqueue or POST /api/tasks",
+			"To list tasks, use GET /api/tasks")
 		return
 	}
 
 	var req TaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "Invalid JSON body", "INVALID_JSON",
+			"Request body must be valid JSON",
+			"Example: {\"prompt\": \"Your task prompt here\"}")
 		return
 	}
 	if req.Prompt == "" {
-		http.Error(w, "prompt required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "prompt field is required", "MISSING_FIELD",
+			"Include a prompt in the request body",
+			"Example: {\"prompt\": \"Create a hello world script\"}")
 		return
 	}
 
 	task, err := c.EnqueueTask(req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error(), "INTERNAL_ERROR")
 		return
 	}
 
@@ -418,13 +442,20 @@ func (c *Coordinator) HandleGetTask(w http.ResponseWriter, r *http.Request) {
 
 	taskID := r.URL.Query().Get("id")
 	if taskID == "" {
-		http.Error(w, "id param required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "id parameter is required", "MISSING_PARAM",
+			"Include task ID: GET /api/task?id=<task-id>",
+			"List tasks first: GET /api/tasks")
 		return
 	}
 
 	task, err := c.GetTask(taskID)
 	if err != nil {
-		http.Error(w, "task not found", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, 
+			fmt.Sprintf("Task '%s' not found", taskID), 
+			"TASK_NOT_FOUND",
+			"The task ID may be incorrect or the task was deleted",
+			"List all tasks: GET /api/tasks",
+			"Use full task ID or prefix (e.g., abc12345)")
 		return
 	}
 
@@ -432,12 +463,20 @@ func (c *Coordinator) HandleGetTask(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(task)
 }
 
-// HandleListTasks returns all tasks.
+// HandleListTasks returns all tasks (GET) or creates a task (POST).
+// POST acts as an alias for /api/enqueue for API consistency.
 func (c *Coordinator) HandleListTasks(w http.ResponseWriter, r *http.Request) {
 	if !c.CheckAuth(w, r) {
 		return
 	}
 
+	// POST /api/tasks creates a task (alias for /api/enqueue)
+	if r.Method == http.MethodPost {
+		c.HandleEnqueue(w, r)
+		return
+	}
+
+	// GET /api/tasks lists tasks
 	status := r.URL.Query().Get("status")
 	limitStr := r.URL.Query().Get("limit")
 	limit := 100
@@ -682,4 +721,107 @@ func (c *Coordinator) HandleSyncConversation(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "slug": slug})
+}
+
+// Artifact represents a file produced by a task.
+type Artifact struct {
+	ID          string    `json:"id"`
+	TaskID      string    `json:"task_id"`
+	WorkerID    string    `json:"worker_id"`
+	Filename    string    `json:"filename"`
+	Path        string    `json:"path"`
+	URL         string    `json:"url"`
+	SizeBytes   *int64    `json:"size_bytes,omitempty"`
+	ContentType string    `json:"content_type,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ArtifactUploadRequest contains data for uploading an artifact.
+type ArtifactUploadRequest struct {
+	TaskID      string `json:"task_id"`
+	WorkerID    string `json:"worker_id"`
+	Filename    string `json:"filename"`
+	Path        string `json:"path"`
+	URL         string `json:"url"`
+	SizeBytes   int64  `json:"size_bytes"`
+	ContentType string `json:"content_type"`
+}
+
+// HandleUploadArtifact receives artifact metadata from workers.
+func (c *Coordinator) HandleUploadArtifact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST method required", "METHOD_NOT_ALLOWED")
+		return
+	}
+
+	var req ArtifactUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "Invalid JSON body", "INVALID_JSON")
+		return
+	}
+
+	if req.TaskID == "" || req.WorkerID == "" || req.Filename == "" {
+		writeAPIError(w, http.StatusBadRequest, "task_id, worker_id, and filename are required", "MISSING_FIELD")
+		return
+	}
+
+	// Generate artifact ID
+	id := fmt.Sprintf("art-%d", time.Now().UnixNano())
+
+	_, err := c.db.Exec(`INSERT INTO task_artifacts (id, task_id, worker_id, filename, path, url, size_bytes, content_type) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.TaskID, req.WorkerID, req.Filename, req.Path, req.URL, req.SizeBytes, req.ContentType)
+	if err != nil {
+		log.Printf("Failed to save artifact: %v", err)
+		writeAPIError(w, http.StatusInternalServerError, "Failed to save artifact", "DB_ERROR")
+		return
+	}
+
+	log.Printf("Artifact saved: %s (%s) for task %s", req.Filename, id, req.TaskID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": id, "status": "ok"})
+}
+
+// HandleListArtifacts returns artifacts for a task.
+func (c *Coordinator) HandleListArtifacts(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	taskID := r.URL.Query().Get("task")
+	if taskID == "" {
+		writeAPIError(w, http.StatusBadRequest, "task parameter is required", "MISSING_PARAM",
+			"Include task ID: GET /api/artifacts?task=<task-id>")
+		return
+	}
+
+	rows, err := c.db.Query(`SELECT id, task_id, worker_id, filename, path, url, size_bytes, content_type, created_at 
+		FROM task_artifacts WHERE task_id = ? OR task_id LIKE ? ORDER BY created_at`, taskID, taskID+"%")
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error(), "DB_ERROR")
+		return
+	}
+	defer rows.Close()
+
+	var artifacts []Artifact
+	for rows.Next() {
+		var a Artifact
+		var sizeBytes sql.NullInt64
+		var contentType sql.NullString
+		err := rows.Scan(&a.ID, &a.TaskID, &a.WorkerID, &a.Filename, &a.Path, &a.URL, &sizeBytes, &contentType, &a.CreatedAt)
+		if err != nil {
+			continue
+		}
+		if sizeBytes.Valid {
+			a.SizeBytes = &sizeBytes.Int64
+		}
+		if contentType.Valid {
+			a.ContentType = contentType.String
+		}
+		artifacts = append(artifacts, a)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(artifacts)
 }

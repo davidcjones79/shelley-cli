@@ -33,11 +33,13 @@ func runCoordCLI(args []string) {
 		fmt.Fprintf(os.Stderr, "  reset-task <id>     Reset a stuck task to queued status\n")
 		fmt.Fprintf(os.Stderr, "  stuck               Show stuck/orphaned tasks\n")
 		fmt.Fprintf(os.Stderr, "  reset-stuck         Reset all stuck tasks to queued\n")
+		fmt.Fprintf(os.Stderr, "  artifacts <task>    List artifacts for a task\n")
 		fmt.Fprintf(os.Stderr, "  stats               Show coordinator stats\n")
 		fmt.Fprintf(os.Stderr, "  clear-tasks         Clear all tasks from the queue\n")
 		fmt.Fprintf(os.Stderr, "  clear-workers       Remove all workers\n")
 		fmt.Fprintf(os.Stderr, "  clear-failed        Clear failed worker records\n")
 		fmt.Fprintf(os.Stderr, "  clear-all           Clear tasks and workers, reset DB\n")
+		fmt.Fprintf(os.Stderr, "  token               Show the API token\n")
 		fmt.Fprintf(os.Stderr, "  api-help            Show all API endpoints\n")
 		fmt.Fprintf(os.Stderr, "\nFlags:\n")
 		fs.PrintDefaults()
@@ -133,6 +135,12 @@ func runCoordCLI(args []string) {
 		showStuckTasks(client, baseURL, *token)
 	case "reset-stuck":
 		resetStuckTasks(client, baseURL, *token)
+	case "artifacts":
+		if len(cmdArgs) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: shelley coord-cli artifacts <task-id>\n")
+			os.Exit(1)
+		}
+		listArtifacts(client, baseURL, *token, cmdArgs[1])
 	case "stats":
 		showStats(client, baseURL, *token)
 	case "clear-tasks":
@@ -143,6 +151,8 @@ func runCoordCLI(args []string) {
 		clearFailedWorkers(client, baseURL, *token)
 	case "clear-all":
 		clearAll(*port)
+	case "token":
+		showToken()
 	case "api-help":
 		showAPIHelp()
 	default:
@@ -734,6 +744,63 @@ func clearFailedWorkers(client *http.Client, baseURL, token string) {
 	fmt.Printf("✅ Cleared %d failed worker records\n", result.Deleted)
 }
 
+func listArtifacts(client *http.Client, baseURL, token, taskID string) {
+	body, err := apiRequest(client, "GET", baseURL+"/api/artifacts?task="+taskID, token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	var artifacts []struct {
+		ID          string `json:"id"`
+		TaskID      string `json:"task_id"`
+		WorkerID    string `json:"worker_id"`
+		Filename    string `json:"filename"`
+		Path        string `json:"path"`
+		URL         string `json:"url"`
+		SizeBytes   *int64 `json:"size_bytes"`
+		ContentType string `json:"content_type"`
+	}
+	json.Unmarshal(body, &artifacts)
+
+	if len(artifacts) == 0 {
+		fmt.Printf("No artifacts found for task %s\n", taskID)
+		return
+	}
+
+	fmt.Printf("📦 Artifacts for task %s (%d files):\n", taskID[:8], len(artifacts))
+	for _, a := range artifacts {
+		size := "unknown"
+		if a.SizeBytes != nil {
+			if *a.SizeBytes > 1024*1024 {
+				size = fmt.Sprintf("%.1f MB", float64(*a.SizeBytes)/(1024*1024))
+			} else if *a.SizeBytes > 1024 {
+				size = fmt.Sprintf("%.1f KB", float64(*a.SizeBytes)/1024)
+			} else {
+				size = fmt.Sprintf("%d B", *a.SizeBytes)
+			}
+		}
+		fmt.Printf("   📄 %s (%s)\n", a.Filename, size)
+		fmt.Printf("      Path: %s\n", a.Path)
+		fmt.Printf("      URL:  %s\n", a.URL)
+	}
+}
+
+func showToken() {
+	token := getCoordinatorToken()
+	if token == "" {
+		fmt.Fprintf(os.Stderr, "Error: Could not find coordinator API token.\n")
+		fmt.Fprintf(os.Stderr, "\nPossible causes:\n")
+		fmt.Fprintf(os.Stderr, "  - Coordinator is not running\n")
+		fmt.Fprintf(os.Stderr, "  - No token found in ~/.config/shelley/coordinator.db\n")
+		fmt.Fprintf(os.Stderr, "\nSuggested actions:\n")
+		fmt.Fprintf(os.Stderr, "  1. Start coordinator: shelley dashboard -auto-start\n")
+		fmt.Fprintf(os.Stderr, "  2. Check coordinator status: shelley status\n")
+		os.Exit(1)
+	}
+	fmt.Println(token)
+}
+
 func showAPIHelp() {
 	fmt.Println(`Coordinator API Reference
 =========================
@@ -742,15 +809,19 @@ All endpoints require authentication via:
   - Header: X-Coordinator-Token: <token>
   - Query param: ?token=<token>
 
+All error responses include suggestions:
+  {"error": "...", "code": "ERROR_CODE", "suggestions": ["..."]}
+
 Tasks
 -----
-POST /api/enqueue
+POST /api/tasks  (or POST /api/enqueue)
   Add a task to the queue
   Body: {"prompt": "...", "repo_url": "...", "base_branch": "..."}
-  Returns: {"id": "task-id"}
+  Returns: {"id": "task-id", "prompt": "...", "status": "queued", ...}
 
 GET /api/tasks
   List all tasks
+  Query params: ?status=queued|running|completed|failed&limit=100
   Returns: [{"id": "...", "status": "...", "prompt": "...", ...}]
 
 GET /api/task?id=<task-id>
@@ -763,14 +834,21 @@ POST /api/clear-tasks
 POST /api/reset-task?id=<task-id>
   Reset a stuck/orphaned task to queued status
 
+GET /api/stuck-tasks
+  List tasks that appear to be stuck (orphaned or timed out)
+
+POST /api/reset-stuck-tasks
+  Reset all stuck tasks to queued status
+
 Workers
 -------
 GET /api/workers
   List all workers
-  Returns: [{"id": "...", "status": "...", ...}]
+  Query params: ?show_failed=true
+  Returns: [{"id": "...", "status": "...", "health": "...", ...}]
 
 POST /api/scale?workers=<n>
-  Scale to n workers
+  Scale to n workers (creates or removes workers as needed)
 
 POST /api/drain
   Gracefully drain all workers (finish current tasks, then shut down)
@@ -778,20 +856,19 @@ POST /api/drain
 POST /api/cleanup-workers
   Remove stale worker entries from DB (VMs that no longer exist)
 
-Stats
------
-GET /api/stats
-  Get coordinator statistics
-  Returns: {"tasks": {"queued": N, "running": N, ...}, "workers": {"total": N, ...}}
+POST /api/workers/clear-failed
+  Remove all failed/deleted worker records from DB
 
 Groups
 ------
 POST /api/group/create
   Create a task group with multiple prompts
   Body: {"name": "...", "prompts": ["...", "..."], "repo_url": "...", "base_branch": "..."}
+  Returns: {"id": "...", "name": "...", "tasks_total": N, ...}
 
 GET /api/groups
   List all task groups
+  Query params: ?status=pending|running|completed|failed&limit=50
 
 GET /api/group?id=<group-id>
   Get details for a specific group
@@ -799,9 +876,38 @@ GET /api/group?id=<group-id>
 GET /api/group/tasks?id=<group-id>
   List tasks in a group
 
+Artifacts
+---------
+GET /api/artifacts?task=<task-id>
+  List artifacts produced by a task
+  Returns: [{"id": "...", "filename": "...", "path": "...", "url": "...", ...}]
+
+POST /api/artifact/upload
+  Upload artifact metadata (called by workers)
+  Body: {"task_id": "...", "worker_id": "...", "filename": "...", "path": "...", "url": "..."}
+
+Stats & Health
+--------------
+GET /api/stats
+  Get coordinator statistics
+  Returns: {"tasks": {"queued": N, ...}, "workers": {"total": N, ...}}
+
+POST /api/heartbeat?worker=<id>&task=<id>
+  Worker heartbeat (updates last_heartbeat, used for health monitoring)
+
 Other
 -----
 GET /api/shelley-bin
   Download the shelley binary (used by workers during install)
+
+POST /api/sync-conversation
+  Sync conversation from worker to main shelley DB
+  Body: {"conversation": {...}, "messages": [...], "task_id": "...", "worker_id": "..."}
+
+Token Management
+----------------
+The API token is persisted in the coordinator database and auto-loaded on restart.
+To view the current token: shelley coord-cli token
+Token is also saved to /tmp/coordinator-token for scripting.
 `)
 }
