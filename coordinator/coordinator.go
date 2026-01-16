@@ -970,40 +970,23 @@ func (c *Coordinator) setupWorker(workerID string) {
 }
 
 func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
-	// Start shelley serve on the worker so we can view progress via web UI
-	log.Printf("Starting shelley serve on %s...", workerID)
+	log.Printf("Starting worker loop on %s...", workerID)
 	
-	// Start shelley serve in the background on port 8000
-	// Must include -config flag so it can access the LLM gateway
-	serveCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'nohup /usr/local/bin/shelley -config /exe.dev/shelley.json -db /tmp/shelley-worker.db serve -port 8000 > /tmp/shelley-serve.log 2>&1 &'", workerID))
-	serveCmd.Run()
-	
-	// Wait for shelley serve to be ready
-	time.Sleep(2 * time.Second)
-	
-	// The worker agent script polls for tasks and uses the local shelley API
+	// The worker agent script polls for tasks and runs shelley chat directly
+	// (No shelley serve needed - simplifies worker setup)
 	pollScript := fmt.Sprintf(`#!/bin/bash
 set -e
 export PATH="$HOME/.local/bin:$PATH"
 COORD="https://%s:%d"
 WORKER_ID="%s"
 API_TOKEN="%s"
-SHELLEY_API="http://localhost:8000"
 SHELLEY_DB="/tmp/shelley-worker.db"
 IDLE_COUNT=0
 MAX_IDLE=360
 WORKDIR="$HOME/workspaces"
 
 mkdir -p "$WORKDIR"
-
-# Wait for shelley serve to be ready
-for i in $(seq 1 30); do
-    if curl -s "$SHELLEY_API/api/health" >/dev/null 2>&1; then
-        echo "Shelley API ready"
-        break
-    fi
-    sleep 1
-done
+echo "Worker loop started"
 
 while true; do
     RESPONSE=$(curl -s -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/next-task?worker=$WORKER_ID")
@@ -1066,12 +1049,11 @@ while true; do
         # Extract conversation ID from output (format: [Conversation: xxx])
         CONV_ID=$(echo "$OUTPUT" | grep -oP '\[Conversation: \K[^\]]+' | tail -1)
         if [ -z "$CONV_ID" ]; then
-            # Fallback: get from API
-            CONV_ID=$(curl -s "$SHELLEY_API/api/conversations" | jq -r '.[0].id // empty')
+            # Fallback: get most recent from DB
+            CONV_ID=$(sqlite3 "$SHELLEY_DB" "SELECT conversation_id FROM conversations ORDER BY created_at DESC LIMIT 1" 2>/dev/null)
         fi
         
         echo "Task execution complete (conversation: $CONV_ID)"
-        echo "View at: https://${WORKER_ID}.exe.xyz:8000/conversation/$CONV_ID"
         
         # Sync conversation to main shelley DB for viewing in main UI
         if [ -n "$CONV_ID" ]; then
