@@ -51,34 +51,30 @@ func runStatus(args []string) {
 	output.Hostname = hostname
 
 	// Check systemd services
+	// Services to check - for services with multiple ports, we'll show the running one
 	services := []struct {
-		name string
-		port int
+		name  string
+		ports []int // Check these ports in order, show first running or first if none running
 	}{
-		{"coordinator", 8080},
-		{"coordinator", 8081}, // Also check port 8081 (coord command default)
-		{"igor", 8099},
+		{"coordinator", []int{8080, 8081}}, // Dashboard on 8080, coord on 8081
+		{"igor", []int{8099}},
 	}
 
-	// Dedupe services - only show first running instance of each name
-	seenNames := make(map[string]bool)
 	for _, svc := range services {
-		status := checkSystemdService(svc.name, svc.port)
-		// Skip if we already found a running instance with this name
-		if seenNames[svc.name] {
+		var bestStatus *ServiceStatus
+		for _, port := range svc.ports {
+			status := checkSystemdService(svc.name, port)
 			if status.Status == "running" {
-				// Replace the stopped one with the running one
-				for i, existing := range output.Services {
-					if existing.Name == svc.name && existing.Status == "stopped" {
-						output.Services[i] = status
-						break
-					}
-				}
+				bestStatus = &status
+				break // Found a running instance, use it
 			}
-			continue
+			if bestStatus == nil {
+				bestStatus = &status // Keep first checked as fallback
+			}
 		}
-		seenNames[svc.name] = true
-		output.Services = append(output.Services, status)
+		if bestStatus != nil {
+			output.Services = append(output.Services, *bestStatus)
+		}
 	}
 
 	// Check coordinator API if running
