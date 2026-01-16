@@ -755,12 +755,15 @@ func (c *Coordinator) SpawnWorker() (*Worker, error) {
 // Since exe.dev VMs can't SSH directly to each other, we go through: ssh exe.dev ssh <vmname> <cmd...>
 // The command args must be quoted together because exe.dev's SSH command parses flags from all args
 func sshToWorker(workerID string, args ...string) *exec.Cmd {
-	// Join all args and wrap in quotes to prevent exe.dev from parsing flags like -p
+	// Join all args into a single quoted command string
+	// The exe.dev ssh command needs to receive "ssh <vmname> '<cmd>'" as a single argument
 	remoteCmd := strings.Join(args, " ")
-	// Use single quotes and escape any single quotes in the command
+	// Escape single quotes in the command by replacing ' with '"'"'
 	remoteCmd = strings.ReplaceAll(remoteCmd, "'", "'\"'\"'")
-	fullCmd := fmt.Sprintf("ssh exe.dev ssh %s '%s'", workerID, remoteCmd)
-	return exec.Command("bash", "-c", fullCmd)
+	// The full command string that ssh receives should be: ssh <vmname> '<cmd>'
+	// We need to pass this as a single argument to exe.dev, so we wrap it in double quotes
+	sshCmd := fmt.Sprintf(`ssh %s '%s'`, workerID, remoteCmd)
+	return exec.Command("ssh", "exe.dev", sshCmd)
 }
 
 func (c *Coordinator) setupWorker(workerID string) {
