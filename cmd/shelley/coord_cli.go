@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -87,7 +88,12 @@ func runCoordCLI(args []string) {
 }
 
 func apiRequest(client *http.Client, method, url, token string) ([]byte, error) {
-	req, err := http.NewRequest(method, url+"?token="+token, nil)
+	// Add token to URL - use & if URL already has query params, otherwise ?
+	sep := "?"
+	if strings.Contains(url, "?") {
+		sep = "&"
+	}
+	req, err := http.NewRequest(method, url+sep+"token="+token, nil)
 	if err != nil {
 		return nil, err
 	}
