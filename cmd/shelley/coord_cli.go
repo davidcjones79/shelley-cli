@@ -15,7 +15,7 @@ import (
 func runCoordCLI(args []string) {
 	fs := flag.NewFlagSet("coord-cli", flag.ExitOnError)
 	token := fs.String("token", "", "Coordinator API token (auto-detected if not provided)")
-	port := fs.Int("port", 8080, "Coordinator port")
+	port := fs.Int("port", 8081, "Coordinator port (8081 for coord, 8080 for dashboard)")
 	
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: shelley coord-cli [flags] <command>\n\n")

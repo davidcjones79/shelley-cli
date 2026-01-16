@@ -196,7 +196,7 @@ func checkCoordinatorAPI() *CoordinatorStatus {
 }
 
 func getCoordinatorToken() string {
-	// Method 1: Try to get token from process list
+	// Method 1: Try to get token from process list (if -token was specified)
 	cmd := exec.Command("ps", "aux")
 	out, err := cmd.Output()
 	if err == nil {
@@ -215,7 +215,28 @@ func getCoordinatorToken() string {
 		}
 	}
 
-	// Method 2: Try journalctl (may not work via exe.dev ssh proxy)
+	// Method 2: Check common log file locations for coordinator output
+	logFiles := []string{
+		"/tmp/coord.log",
+		os.ExpandEnv("$HOME/coord.log"),
+	}
+	for _, logFile := range logFiles {
+		if data, err := os.ReadFile(logFile); err == nil {
+			lines := strings.Split(string(data), "\n")
+			for _, line := range lines {
+				// Look for API TOKEN section
+				if strings.Contains(line, "==") && len(line) == 32 {
+					// This is likely the token line (32 hex chars)
+					token := strings.TrimSpace(line)
+					if len(token) == 32 {
+						return token
+					}
+				}
+			}
+		}
+	}
+
+	// Method 3: Try journalctl (may not work via exe.dev ssh proxy)
 	cmd = exec.Command("journalctl", "-u", "coordinator", "-n", "50", "--no-pager")
 	out, err = cmd.Output()
 	if err != nil {
