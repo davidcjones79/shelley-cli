@@ -185,6 +185,14 @@ func New(config Config) (*Coordinator, error) {
 		log.Printf("Worker prefix: %s", config.WorkerPrefix)
 	}
 
+	// Save API token to well-known file for easy scripting access
+	tokenFile := "/tmp/coordinator-token"
+	if err := os.WriteFile(tokenFile, []byte(config.APIToken), 0600); err != nil {
+		log.Printf("Warning: failed to save token to %s: %v", tokenFile, err)
+	} else {
+		log.Printf("API token saved to %s", tokenFile)
+	}
+
 	return &Coordinator{
 		db:       db,
 		config:   config,
@@ -212,8 +220,8 @@ func (c *Coordinator) periodicCleanup() {
 	c.ensureMinWorkers()
 
 	// Then run every minute for task checks, every 5 minutes for worker cleanup
-	taskTicker := time.NewTicker(1 * time.Minute)
-	workerTicker := time.NewTicker(5 * time.Minute)
+	taskTicker := time.NewTicker(30 * time.Second)  // Check stuck tasks every 30s
+	workerTicker := time.NewTicker(2 * time.Minute)  // Check stale workers every 2min
 	minWorkerTicker := time.NewTicker(30 * time.Second) // Check min workers more frequently
 	defer taskTicker.Stop()
 	defer workerTicker.Stop()
@@ -1046,13 +1054,36 @@ func runSSHWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
+// sshWithRetry runs an SSH command with timeout and exponential backoff retry.
+func sshWithRetry(timeout time.Duration, maxRetries int, args ...string) ([]byte, error) {
+	var lastErr error
+	var out []byte
+	
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 1s, 2s, 4s, ...
+			backoff := time.Duration(1<<(attempt-1)) * time.Second
+			log.Printf("SSH retry %d/%d after %v", attempt, maxRetries, backoff)
+			time.Sleep(backoff)
+		}
+		
+		out, lastErr = runSSHWithTimeout(timeout, args...)
+		if lastErr == nil {
+			return out, nil
+		}
+		log.Printf("SSH attempt %d failed: %v", attempt+1, lastErr)
+	}
+	
+	return out, lastErr
+}
+
 func (c *Coordinator) setupWorker(workerID string) {
 	workerHost := workerID + ".exe.xyz" // Still used for some operations
 
 	log.Printf("Spawning worker VM: %s", workerID)
-	cmd := exec.Command("ssh", "exe.dev", "new", "--name="+workerID, "--no-email", "--json")
 	log.Printf("Running command: ssh exe.dev new --name=%s --no-email --json", workerID)
-	output, err := cmd.CombinedOutput()
+	// Use retry for VM creation - can fail transiently
+	output, err := sshWithRetry(60*time.Second, 2, "exe.dev", "new", "--name="+workerID, "--no-email", "--json")
 	log.Printf("Spawn output for %s: %s", workerID, string(output))
 	if err != nil {
 		log.Printf("Failed to spawn %s: %v\n%s", workerID, err, output)
@@ -1064,8 +1095,9 @@ func (c *Coordinator) setupWorker(workerID string) {
 	log.Printf("Waiting for %s SSH...", workerID)
 	for i := 0; i < 60; i++ {
 		time.Sleep(3 * time.Second)
-		checkCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'echo ready'", workerID))
-		if out, err := checkCmd.CombinedOutput(); err == nil && strings.Contains(string(out), "ready") {
+		// Use retry for SSH check
+		out, err := sshWithRetry(15*time.Second, 1, "exe.dev", fmt.Sprintf("ssh %s 'echo ready'", workerID))
+		if err == nil && strings.Contains(string(out), "ready") {
 			break
 		}
 		if i == 59 {
@@ -1229,11 +1261,26 @@ while true; do
         echo "Starting autonomous shelley chat..."
         echo "View progress at: https://${WORKER_ID}.exe.xyz:8000/"
         
+        # Mark task as started (running)
+        curl -s -X POST -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/task-start?task=$TASK_ID&worker=$WORKER_ID" || true
+        
+        # Start background heartbeat to keep worker alive during long tasks
+        (
+            while true; do
+                sleep 30
+                curl -s -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/heartbeat?worker=$WORKER_ID&task=$TASK_ID" > /dev/null 2>&1 || true
+            done
+        ) &
+        HEARTBEAT_PID=$!
+        
         # Run shelley chat with full autonomy (-yes auto-approves all tool calls)
         # Uses the same DB as shelley serve, so conversation is viewable in real-time
         cd "$CWD"
         OUTPUT=$(shelley -db "$SHELLEY_DB" -config ~/.config/shelley/shelley.json \
             chat -yes -prompt "$PROMPT" 2>&1) || true
+        
+        # Stop background heartbeat
+        kill $HEARTBEAT_PID 2>/dev/null || true
         
         # Extract conversation ID from output (format: [Conversation: xxx])
         CONV_ID=$(echo "$OUTPUT" | grep -oP '\[Conversation: \K[^\]]+' | tail -1)
