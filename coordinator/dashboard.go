@@ -15,8 +15,10 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -109,6 +111,9 @@ func (d *Dashboard) Start() error {
 
 	d.cmd = exec.Command(d.config.ShelleyBin, args...)
 	
+	// Set process group so we can kill the coordinator when dashboard exits
+	d.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	
 	// Capture stdout/stderr
 	stdout, err := d.cmd.StdoutPipe()
 	if err != nil {
@@ -155,9 +160,15 @@ func (d *Dashboard) Stop() error {
 		return fmt.Errorf("coordinator not running")
 	}
 
-	if err := d.cmd.Process.Signal(os.Interrupt); err != nil {
-		// If interrupt fails, kill
-		d.cmd.Process.Kill()
+	// Kill the entire process group to ensure coordinator and any children die
+	pgid, err := syscall.Getpgid(d.cmd.Process.Pid)
+	if err == nil {
+		syscall.Kill(-pgid, syscall.SIGTERM)
+	} else {
+		// Fallback to just killing the process
+		if err := d.cmd.Process.Signal(os.Interrupt); err != nil {
+			d.cmd.Process.Kill()
+		}
 	}
 
 	d.addLogLocked("Stop signal sent")
@@ -462,6 +473,16 @@ func (d *Dashboard) Run() error {
 	log.Printf("Dashboard starting on port %d", d.config.Port)
 	log.Printf("Coordinator will run on port %d", d.config.CoordPort)
 	log.Printf("API Token: %s", d.apiToken)
+
+	// Set up signal handler to stop coordinator when dashboard is killed
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		log.Printf("Dashboard received shutdown signal, stopping coordinator...")
+		d.Stop()
+		os.Exit(0)
+	}()
 
 	return http.ListenAndServe(addr, mux)
 }
