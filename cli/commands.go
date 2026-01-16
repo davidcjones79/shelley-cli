@@ -346,6 +346,72 @@ Example:
 		m.showSystemMessage(m.deleteScript(parts[1]))
 		return nil
 
+	// Orchestration commands
+	case "/orchestrate":
+		if len(parts) < 2 {
+			m.showSystemMessage(`Usage: /orchestrate <plan>
+
+Parses a plan into tasks and executes them in parallel via the coordinator.
+
+The plan can be:
+  • Pipe-separated: "task1" | "task2" | "task3"
+  • A numbered list
+  • Bullet points
+  • Line-separated tasks
+
+Example:
+  /orchestrate "Create auth module" | "Create API routes" | "Create database schema"`)
+			return nil
+		}
+		plan := strings.Join(parts[1:], " ")
+		m.showSystemMessage(m.orchestrate(plan))
+		return nil
+
+	case "/coord":
+		if len(parts) < 2 {
+			m.showSystemMessage(`Coordinator commands:
+  /coord start     - Start coordinator dashboard
+  /coord stop      - Stop coordinator
+  /coord status    - Show coordinator stats
+  /coord workers   - List workers
+  /coord tasks     - List tasks
+  /coord scale N   - Scale to N workers
+  /coord drain     - Gracefully shutdown workers
+  /coord add <prompt> - Add a task`)
+			return nil
+		}
+
+		switch parts[1] {
+		case "start":
+			m.showSystemMessage(m.startCoordinator())
+		case "stop":
+			m.showSystemMessage(m.stopCoordinator())
+		case "status":
+			m.showSystemMessage(m.coordStatus())
+		case "workers":
+			m.showSystemMessage(m.coordWorkers())
+		case "tasks":
+			m.showSystemMessage(m.coordTasks())
+		case "scale":
+			if len(parts) < 3 {
+				m.showError("Usage: /coord scale <N>")
+				return nil
+			}
+			m.showSystemMessage(m.coordScale(parts[2]))
+		case "drain":
+			m.showSystemMessage(m.coordDrain())
+		case "add":
+			if len(parts) < 3 {
+				m.showError("Usage: /coord add <prompt>")
+				return nil
+			}
+			prompt := strings.Join(parts[2:], " ")
+			m.showSystemMessage(m.coordAddTask(prompt))
+		default:
+			m.showError(fmt.Sprintf("Unknown coord command: %s", parts[1]))
+		}
+		return nil
+
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
 		return nil
@@ -441,6 +507,10 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /script-show <name>  - View script contents\n")
 	sb.WriteString("  /script-run <name>   - Execute saved script\n")
 	sb.WriteString("  /script-delete       - Delete a script\n")
+
+	sb.WriteString("\nOrchestration:\n")
+	sb.WriteString("  /orchestrate <plan>  - Parse plan and execute via coordinator\n")
+	sb.WriteString("  /coord <cmd>         - Coordinator management (start/stop/status/scale)\n")
 
 	sb.WriteString("\n  /help          - Show this help")
 	sb.WriteString("\n  /keys          - Show keyboard shortcuts")

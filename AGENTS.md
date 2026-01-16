@@ -166,3 +166,60 @@ Then save it:
 2. **Use descriptive names** that indicate the script's purpose
 3. **Add descriptions** when saving to help future discovery
 4. **Test scripts** before saving to ensure they work correctly
+
+---
+
+## Auto-Orchestration
+
+Shelley can automatically detect parallelizable tasks and orchestrate them via the coordinator.
+
+### Using /orchestrate
+
+```
+/orchestrate "Create auth module" | "Create API routes" | "Create database schema"
+```
+
+This will:
+1. Start the coordinator if not running
+2. Parse the plan into discrete tasks
+3. Scale workers to match task count
+4. Add all tasks to the queue
+5. Provide monitoring links
+
+### Detecting Parallelization Opportunities
+
+When analyzing a user's request, consider if it would benefit from parallel execution:
+
+**Strong Indicators (Suggest /orchestrate)**
+- Request mentions "multiple", "several", "all", "each" items
+- Task involves processing a list of files, URLs, or entities
+- Request explicitly mentions "in parallel" or "simultaneously"
+- Task can be decomposed into 3+ independent subtasks
+- User provides a numbered plan or milestone list
+
+**Examples**
+- "Create landing pages for DOOM, Quake, Duke Nukem, and Warcraft" → 4 independent tasks
+- "Review all .go files in this repo for security issues" → Each file independent
+- "Implement this 5-step plan: 1. Auth 2. API 3. DB 4. Tests 5. Deploy" → Steps 1-4 may parallelize
+
+**When NOT to Parallelize**
+- Sequential dependencies between steps
+- Shared state that would cause conflicts
+- Single, focused task
+- User explicitly wants step-by-step guidance
+- Less than 3 tasks
+
+### Coordinator Commands
+
+Quick coordinator management from chat:
+
+```
+/coord start     - Start coordinator dashboard
+/coord stop      - Stop coordinator
+/coord status    - Show coordinator stats
+/coord workers   - List workers
+/coord tasks     - List tasks
+/coord scale N   - Scale to N workers
+/coord drain     - Gracefully shutdown workers
+/coord add <prompt> - Add a single task
+```
