@@ -974,7 +974,8 @@ func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
 	log.Printf("Starting shelley serve on %s...", workerID)
 	
 	// Start shelley serve in the background on port 8000
-	serveCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'nohup /usr/local/bin/shelley serve -port 8000 > /tmp/shelley-serve.log 2>&1 &'", workerID))
+	// Must include -config flag so it can access the LLM gateway
+	serveCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'nohup /usr/local/bin/shelley -config /exe.dev/shelley.json -db /tmp/shelley-worker.db serve -port 8000 > /tmp/shelley-serve.log 2>&1 &'", workerID))
 	serveCmd.Run()
 	
 	// Wait for shelley serve to be ready
