@@ -95,28 +95,48 @@ The VM names do NOT include `.exe.xyz` when using `ssh exe.dev ssh`.
 
 ---
 
-## Parallel Task Execution with Coordinator
+## Shelley CLI Commands
 
-To run tasks in parallel across multiple VMs, use the Shelley coordinator:
+### Status and Monitoring
 
 ```bash
-# ALWAYS use these exact ports:
-shelley dashboard -port 8080 -auto-start
+# Show status of all services (includes coordinator token)
+shelley status
+
+# Live CLI dashboard - watch workers and tasks in real-time
+shelley watch
 ```
 
-**Important port requirements:**
-- Dashboard MUST be on port **8080** (default)
-- Coordinator MUST be on port **8081** (default)
-- Do NOT use other ports - the exe.dev proxy expects 8080
+### Coordinator Management
 
-Access the dashboard at: `https://<vmname>.exe.xyz:8080/`
+The coordinator runs as a systemd service on port 8080. Manage it with:
 
-**To scale workers:**
 ```bash
-curl -X POST "http://localhost:8080/api/scale?workers=5" -H "X-Coordinator-Token: <token>"
+# Show stats
+shelley coord-cli stats
+
+# List workers and tasks
+shelley coord-cli workers
+shelley coord-cli tasks
+
+# Scale workers
+shelley coord-cli scale 5
+
+# Clear and reset
+shelley coord-cli clear-tasks   # Clear task queue
+shelley coord-cli clear-all     # Full reset (stops service, deletes DB, restarts)
+
+# Drain workers
+shelley coord-cli drain
 ```
 
-The token is displayed when the coordinator starts.
+### Important Notes
+
+- Dashboard runs on port **8080** (required by exe.dev proxy)
+- Coordinator API runs on port **8081**
+- Access dashboard at: `https://<vmname>.exe.xyz:8080/`
+- Token is auto-detected by CLI commands from journalctl
+- Use `shelley status` to see the current token
 EOF
 fi
 

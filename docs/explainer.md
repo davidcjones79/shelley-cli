@@ -246,3 +246,49 @@ Ensure workers reach "ready" state. Check:
 - Worker VM is accessible via SSH
 - shelley-cli installed successfully
 - shelley.json configured properly
+
+---
+
+## CLI Tools for Monitoring
+
+Instead of using the web dashboard, you can monitor and manage from the command line:
+
+### Quick Status Check
+
+```bash
+shelley status
+```
+
+Shows:
+- Service status (coordinator, igor)
+- Coordinator stats (workers, tasks)
+- Current API token
+- URLs for web access
+
+### Live Dashboard
+
+```bash
+shelley watch
+```
+
+A terminal-based dashboard that auto-refreshes every 2 seconds showing:
+- Worker status (idle/busy/spawning)
+- Task queue (queued/running/completed/failed)
+- Real-time updates
+
+### Coordinator Management
+
+```bash
+# View stats
+shelley coord-cli stats
+
+# Scale workers
+shelley coord-cli scale 5
+
+# List workers/tasks
+shelley coord-cli workers
+shelley coord-cli tasks
+
+# Reset everything
+shelley coord-cli clear-all
+```

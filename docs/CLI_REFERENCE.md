@@ -10,6 +10,9 @@ You have access to the Shelley CLI at `~/shelley-cli/bin/shelley` (aliased as `s
 | `shelley serve` | Start the web server |
 | `shelley dashboard` | Start dashboard with coordinator management UI |
 | `shelley coord` | Start coordinator server (headless) |
+| `shelley status` | Show status of all Shelley services |
+| `shelley watch` | Live CLI dashboard for coordinator |
+| `shelley coord-cli <cmd>` | Manage coordinator from CLI |
 | `shelley igor` | Start Igor file transfer server |
 | `shelley unpack-template <name> <dir>` | Unpack a project template |
 | `shelley version` | Print version information as JSON |
@@ -424,4 +427,148 @@ cat main.go | shelley chat -prompt "Review this code for bugs"
 
 # Generate code
 shelley chat -prompt "Write a Python function to parse JSON" -yes
+```
+
+---
+
+## `shelley status` - Service Status
+
+Shows the status of all Shelley services, including version info and coordinator details.
+
+```bash
+shelley status [flags]
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--json` | false | Output as JSON |
+
+### Example Output
+
+```
+🐡 Shelley Status
+================
+
+Commit:   e1e511b8958281d0fd07c70769868589f7d6184f
+Built:    2026-01-16T02:28:35Z
+Modified: false
+Hostname: panther-gecko
+
+📦 Services:
+  ✅ coordinator (port 8080) [PID 8532]
+  ✅ igor (port 8099) [PID 4625]
+
+🎛️  Coordinator:
+  Workers: 2
+  Tasks:   0 queued, 0 running, 5 completed, 0 failed
+  Token:   b133061fa13494039c1efae33ddd39de
+
+🔗 URLs:
+  Dashboard:    https://panther-gecko.exe.xyz:8080/
+  Igor:         https://panther-gecko.exe.xyz:8099/
+```
+
+---
+
+## `shelley watch` - Live CLI Dashboard
+
+A terminal-based dashboard that auto-refreshes, showing real-time coordinator status.
+
+```bash
+shelley watch [flags]
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-token` | (auto) | Coordinator API token (auto-detected from journalctl) |
+| `-port` | 8080 | Coordinator port |
+| `-interval` | 2s | Refresh interval |
+
+### Usage
+
+```bash
+# Start watching (token auto-detected)
+shelley watch
+
+# Custom refresh interval
+shelley watch -interval 1s
+
+# Explicit token
+shelley watch -token abc123
+```
+
+Press `Ctrl+C` to exit.
+
+---
+
+## `shelley coord-cli` - Coordinator Management
+
+Manage the coordinator from the command line without using the web UI.
+
+```bash
+shelley coord-cli [flags] <command>
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-token` | (auto) | Coordinator API token (auto-detected from journalctl) |
+| `-port` | 8080 | Coordinator port |
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `stats` | Show coordinator statistics |
+| `workers` | List all workers |
+| `tasks` | List all tasks |
+| `scale <n>` | Scale to n workers |
+| `drain` | Drain all workers |
+| `clear-tasks` | Clear all tasks from queue |
+| `clear-workers` | Remove all workers |
+| `clear-all` | Reset coordinator (stop, delete DB, restart) |
+
+### Examples
+
+```bash
+# Show stats
+shelley coord-cli stats
+
+# List workers
+shelley coord-cli workers
+
+# Scale to 5 workers
+shelley coord-cli scale 5
+
+# Clear everything and start fresh
+shelley coord-cli clear-all
+
+# Drain workers gracefully
+shelley coord-cli drain
+```
+
+### Example Output
+
+```bash
+$ shelley coord-cli stats
+📊 Coordinator Stats
+   Workers: 3 total (1 busy, 2 idle)
+   Tasks:   2 queued, 1 running, 5 completed, 0 failed
+
+$ shelley coord-cli workers
+👷 Workers (3):
+   ✅ wk-abc123 (idle)
+   🔨 wk-def456 (busy)
+   ✅ wk-ghi789 (idle)
+
+$ shelley coord-cli tasks
+📋 Tasks (8):
+   🔨 a1b2c3d4: Create a landing page for DOOM...
+   📥 e5f6g7h8: Create a landing page for Sonic...
+   ✅ i9j0k1l2: Create a landing page for Mario...
 ```
