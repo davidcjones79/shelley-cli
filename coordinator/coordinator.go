@@ -226,6 +226,9 @@ func (c *Coordinator) CleanupStaleWorkers() {
 
 	// Find orphaned VMs on exe.dev that aren't in our DB
 	c.cleanupOrphanedVMs()
+
+	// Find workers in DB whose VMs no longer exist (missing VMs)
+	c.cleanupMissingVMs()
 }
 
 // cleanupOrphanedVMs finds worker VMs on exe.dev that aren't tracked in the coordinator DB.
@@ -267,6 +270,53 @@ func (c *Coordinator) cleanupOrphanedVMs() {
 			// VM still exists but marked as deleted/failed in DB
 			log.Printf("Cleanup: deleting leftover VM %s (status: %s)", workerID, status)
 			exec.Command("ssh", "exe.dev", "rm", workerID).Run()
+		}
+	}
+}
+
+// cleanupMissingVMs finds workers in the DB whose VMs no longer exist on exe.dev.
+func (c *Coordinator) cleanupMissingVMs() {
+	// Get list of VMs from exe.dev
+	cmd := exec.Command("ssh", "exe.dev", "ls")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Cleanup: failed to list VMs for missing check: %v", err)
+		return
+	}
+
+	// Build set of existing VM names
+	existingVMs := make(map[string]bool)
+	prefix := c.config.WorkerPrefix + "-"
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "• ") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			vmName := strings.TrimPrefix(parts[1], "• ")
+			workerID := strings.TrimSuffix(vmName, ".exe.xyz")
+			if strings.HasPrefix(workerID, prefix) {
+				existingVMs[workerID] = true
+			}
+		}
+	}
+
+	// Find workers in DB that don't have corresponding VMs
+	rows, err := c.db.Query(`SELECT id, status FROM workers WHERE status NOT IN ('deleted', 'failed')`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var workerID, status string
+		rows.Scan(&workerID, &status)
+		if !existingVMs[workerID] {
+			log.Printf("Cleanup: removing missing worker %s from DB (VM no longer exists)", workerID)
+			c.LogEvent("worker.missing", "", workerID, map[string]interface{}{"previous_status": status})
+			c.db.Exec(`DELETE FROM workers WHERE id = ?`, workerID)
 		}
 	}
 }
