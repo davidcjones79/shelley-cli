@@ -92,6 +92,31 @@ ssh exe.dev ls
 3. Then SSH to it: `ssh exe.dev ssh myworker`
 
 The VM names do NOT include `.exe.xyz` when using `ssh exe.dev ssh`.
+
+---
+
+## Parallel Task Execution with Coordinator
+
+To run tasks in parallel across multiple VMs, use the Shelley coordinator:
+
+```bash
+# ALWAYS use these exact ports:
+shelley dashboard -port 8080 -auto-start
+```
+
+**Important port requirements:**
+- Dashboard MUST be on port **8080** (default)
+- Coordinator MUST be on port **8081** (default)
+- Do NOT use other ports - the exe.dev proxy expects 8080
+
+Access the dashboard at: `https://<vmname>.exe.xyz:8080/`
+
+**To scale workers:**
+```bash
+curl -X POST "http://localhost:8080/api/scale?workers=5" -H "X-Coordinator-Token: <token>"
+```
+
+The token is displayed when the coordinator starts.
 EOF
 fi
 
