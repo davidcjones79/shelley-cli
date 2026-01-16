@@ -73,6 +73,7 @@ type Worker struct {
 	Status         string     `json:"status"`
 	CurrentTaskID  *string    `json:"current_task_id,omitempty"`
 	Hostname       *string    `json:"hostname,omitempty"` // exe.dev hostname (stored in tailscale_ip column)
+	ShelleyVersion *string    `json:"shelley_version,omitempty"` // commit hash of shelley on worker
 	CreatedAt      time.Time  `json:"created_at"`
 	LastHeartbeat  *time.Time `json:"last_heartbeat,omitempty"`
 	TasksCompleted int        `json:"tasks_completed"`
@@ -1102,11 +1103,14 @@ IDLE_COUNT=0
 MAX_IDLE=360
 WORKDIR="$HOME/workspaces"
 
+# Get shelley version for reporting
+SHELLEY_VERSION=$(shelley version 2>/dev/null | jq -r '.commit // "unknown"' || echo "unknown")
+
 mkdir -p "$WORKDIR"
-echo "Worker loop started"
+echo "Worker loop started (shelley version: $SHELLEY_VERSION)"
 
 while true; do
-    RESPONSE=$(curl -s -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/next-task?worker=$WORKER_ID")
+    RESPONSE=$(curl -s -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/next-task?worker=$WORKER_ID&version=$SHELLEY_VERSION")
     TASK_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
     
     if [ -n "$TASK_ID" ]; then
@@ -1423,7 +1427,7 @@ func (c *Coordinator) ListTasks(status string, limit int) ([]Task, error) {
 
 // ListWorkers returns all non-deleted workers.
 func (c *Coordinator) ListWorkers() ([]Worker, error) {
-	rows, err := c.db.Query(`SELECT id, status, current_task_id, tailscale_ip, created_at, last_heartbeat, tasks_completed 
+	rows, err := c.db.Query(`SELECT id, status, current_task_id, tailscale_ip, shelley_version, created_at, last_heartbeat, tasks_completed 
 		FROM workers WHERE status != 'deleted' ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -1433,8 +1437,15 @@ func (c *Coordinator) ListWorkers() ([]Worker, error) {
 	var workers []Worker
 	for rows.Next() {
 		var w Worker
-		var currentTaskID, tailscaleIP, lastHeartbeat interface{}
-		rows.Scan(&w.ID, &w.Status, &currentTaskID, &tailscaleIP, &w.CreatedAt, &lastHeartbeat, &w.TasksCompleted)
+		var currentTaskID, tailscaleIP, shelleyVersion sql.NullString
+		var lastHeartbeatTime sql.NullTime
+		rows.Scan(&w.ID, &w.Status, &currentTaskID, &tailscaleIP, &shelleyVersion, &w.CreatedAt, &lastHeartbeatTime, &w.TasksCompleted)
+		if shelleyVersion.Valid {
+			w.ShelleyVersion = &shelleyVersion.String
+		}
+		if lastHeartbeatTime.Valid {
+			w.LastHeartbeat = &lastHeartbeatTime.Time
+		}
 		workers = append(workers, w)
 	}
 

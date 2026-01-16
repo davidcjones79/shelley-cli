@@ -66,6 +66,12 @@ func (c *Coordinator) HandleNextTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional: worker can report its shelley version
+	version := r.URL.Query().Get("version")
+	if version != "" {
+		c.db.Exec(`UPDATE workers SET shelley_version = ? WHERE id = ?`, version, workerID)
+	}
+
 	task, err := c.GetNextTask(workerID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

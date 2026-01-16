@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS workers (
     status TEXT NOT NULL DEFAULT 'starting',  -- starting, idle, busy, draining, offline, deleted
     current_task_id TEXT,
     tailscale_ip TEXT,
+    shelley_version TEXT,  -- commit hash of shelley-cli on worker
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_heartbeat DATETIME,
     tasks_completed INTEGER DEFAULT 0
