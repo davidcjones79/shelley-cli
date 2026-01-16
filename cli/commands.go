@@ -298,6 +298,54 @@ Example:
 		m.showSystemMessage(m.spawnParallel(input))
 		return nil
 
+	// Script registry commands
+	case "/scripts":
+		m.showSystemMessage(m.listScripts())
+		return nil
+
+	case "/script-save":
+		if len(parts) < 3 {
+			m.showSystemMessage(`Usage: /script-save <name> <file> [description]
+
+Saves a script to the registry for future use.
+
+Example:
+  /script-save parallel-reviews /tmp/my-script.sh "Run security reviews in parallel"`)
+			return nil
+		}
+		name := parts[1]
+		file := parts[2]
+		desc := ""
+		if len(parts) > 3 {
+			desc = strings.Join(parts[3:], " ")
+		}
+		m.showSystemMessage(m.saveScript(name, file, desc, nil))
+		return nil
+
+	case "/script-show":
+		if len(parts) < 2 {
+			m.showError("Usage: /script-show <name>")
+			return nil
+		}
+		m.showSystemMessage(m.showScript(parts[1]))
+		return nil
+
+	case "/script-run":
+		if len(parts) < 2 {
+			m.showError("Usage: /script-run <name>")
+			return nil
+		}
+		m.showSystemMessage(m.runScript(parts[1]))
+		return nil
+
+	case "/script-delete":
+		if len(parts) < 2 {
+			m.showError("Usage: /script-delete <name>")
+			return nil
+		}
+		m.showSystemMessage(m.deleteScript(parts[1]))
+		return nil
+
 	case "/help":
 		m.showSystemMessage(m.buildHelpText())
 		return nil
@@ -386,6 +434,13 @@ func (m *Model) buildHelpText() string {
 	sb.WriteString("  /spawn-wait          - Wait for all sub-agents\n")
 	sb.WriteString("  /spawn-clear         - Clear completed sub-agents\n")
 	sb.WriteString("  /parallel \"a\"|\"b\"    - Spawn multiple sub-agents\n")
+
+	sb.WriteString("\nScripts:\n")
+	sb.WriteString("  /scripts             - List saved scripts\n")
+	sb.WriteString("  /script-save         - Save a script to registry\n")
+	sb.WriteString("  /script-show <name>  - View script contents\n")
+	sb.WriteString("  /script-run <name>   - Execute saved script\n")
+	sb.WriteString("  /script-delete       - Delete a script\n")
 
 	sb.WriteString("\n  /help          - Show this help")
 	sb.WriteString("\n  /keys          - Show keyboard shortcuts")

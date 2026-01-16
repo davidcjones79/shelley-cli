@@ -107,3 +107,62 @@ For more than 3-4 parallel tasks, or when you need:
 - Worker health monitoring
 
 Use the coordinator system instead: `shelley dashboard -auto-start`
+
+---
+
+## Saved Scripts
+
+Shelley can save and reuse orchestration scripts across sessions. Before creating new automation, check if a relevant script exists.
+
+### Script Registry
+
+Scripts are stored in `~/.config/shelley/scripts/` with metadata in `registry.json`:
+
+```
+~/.config/shelley/scripts/
+├── registry.json           # Script metadata
+└── scripts/
+    ├── parallel-reviews.sh
+    ├── setup-project.sh
+    └── deploy-staging.sh
+```
+
+### Using Scripts
+
+From within a Shelley chat session:
+
+```
+/scripts                    # List all saved scripts
+/script-show <name>         # View script contents
+/script-run <name>          # Execute a saved script
+/script-delete <name>       # Remove a script
+```
+
+### Creating Reusable Scripts
+
+When you create a useful orchestration script, save it for future use:
+
+```bash
+# Create your script
+cat > /tmp/parallel-reviews.sh << 'EOF'
+#!/bin/bash
+for file in *.go; do
+  shelley chat -yes -no-sync -prompt "Review $file for security issues" &
+done
+wait
+echo "All reviews complete"
+EOF
+chmod +x /tmp/parallel-reviews.sh
+```
+
+Then save it:
+```
+/script-save parallel-reviews /tmp/parallel-reviews.sh "Run security reviews on all Go files in parallel"
+```
+
+### Best Practices
+
+1. **Check existing scripts first** before creating new automation
+2. **Use descriptive names** that indicate the script's purpose
+3. **Add descriptions** when saving to help future discovery
+4. **Test scripts** before saving to ensure they work correctly
