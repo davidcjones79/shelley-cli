@@ -1107,7 +1107,7 @@ done
 	sshToWorker(workerID, "chmod", "+x", "/tmp/worker-loop.sh").Run()
 
 	go func() {
-		cmd := sshToWorker(workerID, "bash", "-c", "nohup /tmp/worker-loop.sh > /tmp/worker.log 2>&1 &")
+		cmd := sshToWorker(workerID, "nohup /tmp/worker-loop.sh > /tmp/worker.log 2>&1 &")
 		cmd.Run()
 	}()
 
