@@ -519,20 +519,27 @@ shelley coord-cli [flags] <command>
 
 | Command | Description |
 |---------|-------------|
-| `stats` | Show coordinator statistics |
-| `workers` | List all workers |
+| `add-task <prompt>` | Add a task to the queue |
 | `tasks` | List all tasks |
+| `task <id>` | Show task details |
+| `workers` | List all workers |
 | `scale <n>` | Scale to n workers |
 | `drain` | Drain all workers |
+| `kill-worker <id>` | Force remove a worker and delete its VM |
+| `stats` | Show coordinator statistics |
 | `clear-tasks` | Clear all tasks from queue |
 | `clear-workers` | Remove all workers |
 | `clear-all` | Reset coordinator (stop, delete DB, restart) |
+| `api-help` | Show all API endpoints |
 
 ### Examples
 
 ```bash
-# Show stats
-shelley coord-cli stats
+# Add a task
+shelley coord-cli add-task "Create a landing page for a coffee shop"
+
+# Show task details
+shelley coord-cli task abc12345
 
 # List workers
 shelley coord-cli workers
@@ -540,8 +547,14 @@ shelley coord-cli workers
 # Scale to 5 workers
 shelley coord-cli scale 5
 
-# Clear everything and start fresh
-shelley coord-cli clear-all
+# Kill a hung worker
+shelley coord-cli kill-worker wk-abc-123
+
+# Show stats
+shelley coord-cli stats
+
+# Show all API endpoints
+shelley coord-cli api-help
 
 # Drain workers gracefully
 shelley coord-cli drain
@@ -566,4 +579,120 @@ $ shelley coord-cli tasks
    🔨 a1b2c3d4: Create a landing page for DOOM...
    📥 e5f6g7h8: Create a landing page for Sonic...
    ✅ i9j0k1l2: Create a landing page for Mario...
+```
+
+---
+
+# exe.dev SSH Quirks
+
+When using the exe.dev SSH proxy, be aware of these behaviors:
+
+## Flag Parsing
+
+The exe.dev SSH proxy intercepts and parses flags from your commands. This can break common patterns:
+
+```bash
+# These FAIL - flags get intercepted:
+ssh exe.dev ssh worker "curl -s http://example.com"     # -s intercepted
+ssh exe.dev ssh worker "base64 -d"                       # -d intercepted
+ssh exe.dev ssh worker "mkdir -p /path/to/dir"          # -p intercepted
+
+# These WORK - entire command quoted:
+ssh exe.dev "ssh worker 'curl -s http://example.com'"
+ssh exe.dev "ssh worker 'base64 -d'"
+ssh exe.dev "ssh worker 'mkdir -p /path/to/dir'"
+```
+
+**Rule:** Always wrap the entire remote command in quotes so exe.dev treats it as a single argument.
+
+## File Transfer Between VMs
+
+VMs cannot directly SSH or SCP to each other. All traffic goes through the exe.dev proxy.
+
+### Method 1: Base64 Encoding (Small Files)
+
+```bash
+# Encode file and transfer
+b64=$(cat /path/to/file.html | base64 -w0)
+ssh exe.dev "ssh targetvm 'echo $b64 | base64 -d > /path/to/dest.html'"
+```
+
+### Method 2: HTTP Server (Large Files)
+
+```bash
+# On source VM - start temp HTTP server
+cd /path/to/files && python3 -m http.server 8888 &
+
+# On target VM - download file
+ssh exe.dev "ssh targetvm 'curl -fsSL http://sourcevm.exe.xyz:8888/file.html -o /path/to/dest.html'"
+```
+
+### Method 3: Igor Upload Server
+
+```bash
+# On target VM
+shelley igor -port 8099
+
+# From browser - upload files to https://targetvm.exe.xyz:8099/
+```
+
+## Retrieving Files from Workers
+
+After a coordinator task completes, files exist on the **worker VM**, not the coordinator:
+
+```bash
+# Get file from worker
+ssh exe.dev "ssh wk-abc-123 'cat /home/exedev/output.html'" > local-output.html
+
+# Or copy to coordinator first
+ssh exe.dev "ssh wk-abc-123 'cat /home/exedev/output.html'" | ssh exe.dev "ssh coordinator 'cat > /home/exedev/output.html'"
+```
+
+---
+
+# Parallel Task Patterns
+
+## Creating Multiple Landing Pages
+
+```bash
+# Start coordinator
+shelley dashboard -auto-start
+
+# Add tasks
+for game in "DOOM" "Quake" "Duke-Nukem" "Warcraft"; do
+  shelley coord-cli add-task "Create a 90s-style landing page for $game. Save to /home/exedev/$game/index.html"
+done
+
+# Scale workers to match task count
+shelley coord-cli scale 4
+
+# Monitor progress
+shelley watch
+```
+
+## Aggregating Results from Workers
+
+After tasks complete, retrieve files from each worker:
+
+```bash
+# Get list of completed tasks with worker assignments
+shelley coord-cli tasks
+
+# For each completed task, copy file from worker
+for worker in wk-abc-1 wk-abc-2 wk-abc-3; do
+  ssh exe.dev "ssh $worker 'cat /home/exedev/output/index.html'" > results/$worker.html
+done
+```
+
+## Running Tests in Parallel
+
+```bash
+# Create task group for test suites
+shelley coord-cli add-task "cd /repo && go test ./pkg/auth/..."
+shelley coord-cli add-task "cd /repo && go test ./pkg/api/..."
+shelley coord-cli add-task "cd /repo && go test ./pkg/db/..."
+
+# Scale and wait
+shelley coord-cli scale 3
+shelley watch
 ```

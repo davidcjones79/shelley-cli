@@ -902,6 +902,8 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/group", coord.HandleGetGroup)
 	mux.HandleFunc("/api/group/create", coord.HandleCreateGroup)
 	mux.HandleFunc("/api/group/tasks", coord.HandleGetGroupTasks)
+	mux.HandleFunc("/api/cleanup-workers", coord.HandleCleanupWorkers)
+	mux.HandleFunc("/api/clear-tasks", coord.HandleClearTasks)
 	mux.HandleFunc("/shelley-bin", coord.HandleShelleyBinary)
 	mux.HandleFunc("/api/sync-conversation", coord.HandleSyncConversation)
 	mux.HandleFunc("/api/shelley-bin", coord.HandleShelleyBinary)

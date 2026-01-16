@@ -166,6 +166,42 @@ func (c *Coordinator) HandleDrain(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleCleanupWorkers triggers cleanup of stale workers.
+func (c *Coordinator) HandleCleanupWorkers(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	c.CleanupStaleWorkers()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// HandleClearTasks clears all tasks from the queue.
+func (c *Coordinator) HandleClearTasks(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	_, err := c.db.Exec(`DELETE FROM tasks`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 // HandleGetTask returns a specific task.
 func (c *Coordinator) HandleGetTask(w http.ResponseWriter, r *http.Request) {
 	if !c.CheckAuth(w, r) {
