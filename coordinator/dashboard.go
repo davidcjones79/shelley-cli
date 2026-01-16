@@ -93,9 +93,8 @@ func (d *Dashboard) Start() error {
 	if d.config.CoordHost != "" {
 		args = append(args, "-host", d.config.CoordHost)
 	}
-	if d.apiToken != "" {
-		args = append(args, "-token", d.apiToken)
-	}
+	// Note: Don't pass token - let coordinator load from DB for persistence
+	// We'll fetch the token from the coordinator after it starts
 	if d.config.GitToken != "" {
 		args = append(args, "-git-token", d.config.GitToken)
 	}
@@ -146,6 +145,24 @@ func (d *Dashboard) Start() error {
 			d.addLogLocked("Coordinator stopped")
 		}
 		d.mu.Unlock()
+	}()
+
+	// Fetch API token from coordinator DB (it persists tokens now)
+	go func() {
+		time.Sleep(500 * time.Millisecond) // Give coordinator time to start
+		db, err := sql.Open("sqlite", d.config.CoordDBPath)
+		if err != nil {
+			return
+		}
+		defer db.Close()
+		
+		var token string
+		if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'api_token'`).Scan(&token); err == nil {
+			d.mu.Lock()
+			d.apiToken = token
+			d.addLogLocked(fmt.Sprintf("API Token: %s", token))
+			d.mu.Unlock()
+		}
 	}()
 
 	return nil
