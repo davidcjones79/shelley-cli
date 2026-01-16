@@ -16,9 +16,22 @@ This VM automatically gets:
 
 ## Step 2: SSH into the VM
 
+**Important:** You cannot SSH directly from your local machine to a new VM. You must first connect to the exe.dev shell, then SSH from there to your VM:
+
 ```bash
-ssh coordinator.exe.dev
+# From your local machine:
+ssh exe.dev
+
+# From the exe.dev shell:
+ssh coordinator
 ```
+
+Alternatively, you can do this in one command:
+```bash
+ssh exe.dev ssh coordinator
+```
+
+> **Why?** Your local SSH key is registered with exe.dev, but not with the VM itself. The exe.dev shell acts as a jump host that can access all your VMs. If you want to SSH directly to `coordinator.exe.xyz` from your local machine, you would need to manually copy your local public key to the VM's `~/.ssh/authorized_keys`.
 
 ---
 
@@ -88,8 +101,10 @@ For each worker, the coordinator:
 
 3. **Installs shelley-cli using the install script:**
    ```bash
-   ssh wk-1.exe.dev "curl -fsSL https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh | bash"
+   ssh exe.dev ssh wk-1 "curl -fsSL https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh | bash"
    ```
+   
+   > **Note:** The coordinator SSH's through exe.dev to reach the worker VM, since the coordinator's SSH key is registered with exe.dev (not directly with the worker).
    
    The install script URL is determined by (in priority order):
    1. `-install-script` flag
@@ -144,7 +159,7 @@ The dashboard shows:
 │  └─────────────┘    └──────────────┬──────────────────┘    │
 │                                    │                        │
 │                          ssh exe.dev new                    │
-│                          ssh <worker> "curl ... | bash"     │
+│                          ssh exe.dev ssh <worker> "..."     │
 └────────────────────────────────────┼────────────────────────┘
                                      │
           ┌──────────────────────────┼──────────────────────────┐
