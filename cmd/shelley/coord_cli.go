@@ -21,8 +21,11 @@ func runCoordCLI(args []string) {
 		fmt.Fprintf(os.Stderr, "Usage: shelley coord-cli [flags] <command>\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
 		fmt.Fprintf(os.Stderr, "  add-task <prompt>   Add a task to the queue\n")
+		fmt.Fprintf(os.Stderr, "  add-group <name> <prompts...>  Create a task group (prompts separated by '|')\n")
 		fmt.Fprintf(os.Stderr, "  tasks               List tasks\n")
 		fmt.Fprintf(os.Stderr, "  task <id>           Show task details\n")
+		fmt.Fprintf(os.Stderr, "  groups              List task groups\n")
+		fmt.Fprintf(os.Stderr, "  group <id>          Show group details\n")
 		fmt.Fprintf(os.Stderr, "  workers             List workers\n")
 		fmt.Fprintf(os.Stderr, "  scale <n>           Scale to n workers\n")
 		fmt.Fprintf(os.Stderr, "  drain               Drain all workers\n")
@@ -33,6 +36,7 @@ func runCoordCLI(args []string) {
 		fmt.Fprintf(os.Stderr, "  stats               Show coordinator stats\n")
 		fmt.Fprintf(os.Stderr, "  clear-tasks         Clear all tasks from the queue\n")
 		fmt.Fprintf(os.Stderr, "  clear-workers       Remove all workers\n")
+		fmt.Fprintf(os.Stderr, "  clear-failed        Clear failed worker records\n")
 		fmt.Fprintf(os.Stderr, "  clear-all           Clear tasks and workers, reset DB\n")
 		fmt.Fprintf(os.Stderr, "  api-help            Show all API endpoints\n")
 		fmt.Fprintf(os.Stderr, "\nFlags:\n")
@@ -72,6 +76,27 @@ func runCoordCLI(args []string) {
 		}
 		prompt := strings.Join(cmdArgs[1:], " ")
 		addTask(client, baseURL, *token, prompt)
+	case "add-group":
+		if len(cmdArgs) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: shelley coord-cli add-group <name> <prompt1> | <prompt2> | ...\n")
+			fmt.Fprintf(os.Stderr, "Example: shelley coord-cli add-group 'Landing Pages' 'Create docker.html' | 'Create k8s.html'\n")
+			os.Exit(1)
+		}
+		name := cmdArgs[1]
+		promptsStr := strings.Join(cmdArgs[2:], " ")
+		prompts := strings.Split(promptsStr, "|")
+		for i := range prompts {
+			prompts[i] = strings.TrimSpace(prompts[i])
+		}
+		addGroup(client, baseURL, *token, name, prompts)
+	case "groups":
+		listGroups(client, baseURL, *token)
+	case "group":
+		if len(cmdArgs) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: shelley coord-cli group <id>\n")
+			os.Exit(1)
+		}
+		showGroup(client, baseURL, *token, cmdArgs[1])
 	case "task":
 		if len(cmdArgs) < 2 {
 			fmt.Fprintf(os.Stderr, "Usage: shelley coord-cli task <id>\n")
@@ -114,6 +139,8 @@ func runCoordCLI(args []string) {
 		clearTasks(client, baseURL, *token)
 	case "clear-workers":
 		clearWorkers(client, baseURL, *token)
+	case "clear-failed":
+		clearFailedWorkers(client, baseURL, *token)
 	case "clear-all":
 		clearAll(*port)
 	case "api-help":
@@ -530,6 +557,181 @@ func resetStuckTasks(client *http.Client, baseURL, token string) {
 		os.Exit(1)
 	}
 	fmt.Println("✅ All stuck tasks reset to queued")
+}
+
+func addGroup(client *http.Client, baseURL, token, name string, prompts []string) {
+	payload := map[string]interface{}{
+		"name":    name,
+		"prompts": prompts,
+	}
+	payloadBytes, _ := json.Marshal(payload)
+	
+	req, err := http.NewRequest("POST", baseURL+"/api/group/create?token="+token, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "Error %d: %s\n", resp.StatusCode, string(body))
+		os.Exit(1)
+	}
+	
+	var result struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		TasksTotal int    `json:"tasks_total"`
+	}
+	json.Unmarshal(body, &result)
+	
+	fmt.Printf("✅ Group created: %s\n", result.ID)
+	fmt.Printf("   Name: %s\n", result.Name)
+	fmt.Printf("   Tasks: %d\n", result.TasksTotal)
+	for i, p := range prompts {
+		if len(p) > 60 {
+			p = p[:60] + "..."
+		}
+		fmt.Printf("   %d. %s\n", i+1, p)
+	}
+}
+
+func listGroups(client *http.Client, baseURL, token string) {
+	body, err := apiRequest(client, "GET", baseURL+"/api/groups", token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	
+	var groups []struct {
+		ID             string `json:"id"`
+		Name           string `json:"name"`
+		Status         string `json:"status"`
+		TasksTotal     int    `json:"tasks_total"`
+		TasksCompleted int    `json:"tasks_completed"`
+		TasksFailed    int    `json:"tasks_failed"`
+	}
+	json.Unmarshal(body, &groups)
+	
+	if len(groups) == 0 {
+		fmt.Println("No groups")
+		return
+	}
+	
+	fmt.Printf("📁 Groups (%d):\n", len(groups))
+	for _, g := range groups {
+		icon := "⏳"
+		switch g.Status {
+		case "completed":
+			icon = "✅"
+		case "running":
+			icon = "🔨"
+		case "failed":
+			icon = "❌"
+		case "pending":
+			icon = "📥"
+		}
+		fmt.Printf("   %s %s: %s (%d/%d tasks", icon, g.ID[:8], g.Name, g.TasksCompleted, g.TasksTotal)
+		if g.TasksFailed > 0 {
+			fmt.Printf(", %d failed", g.TasksFailed)
+		}
+		fmt.Printf(")\n")
+	}
+}
+
+func showGroup(client *http.Client, baseURL, token, groupID string) {
+	body, err := apiRequest(client, "GET", baseURL+"/api/group?id="+groupID, token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	
+	var group struct {
+		ID             string `json:"id"`
+		Name           string `json:"name"`
+		Status         string `json:"status"`
+		TasksTotal     int    `json:"tasks_total"`
+		TasksCompleted int    `json:"tasks_completed"`
+		TasksFailed    int    `json:"tasks_failed"`
+		CreatedAt      string `json:"created_at"`
+	}
+	json.Unmarshal(body, &group)
+	
+	icon := "⏳"
+	switch group.Status {
+	case "completed":
+		icon = "✅"
+	case "running":
+		icon = "🔨"
+	case "failed":
+		icon = "❌"
+	}
+	
+	fmt.Printf("%s Group %s\n", icon, group.ID)
+	fmt.Printf("   Name:      %s\n", group.Name)
+	fmt.Printf("   Status:    %s\n", group.Status)
+	fmt.Printf("   Progress:  %d/%d completed", group.TasksCompleted, group.TasksTotal)
+	if group.TasksFailed > 0 {
+		fmt.Printf(", %d failed", group.TasksFailed)
+	}
+	fmt.Printf("\n")
+	fmt.Printf("   Created:   %s\n", group.CreatedAt)
+	
+	// Get tasks in group
+	tasksBody, err := apiRequest(client, "GET", baseURL+"/api/group/tasks?id="+groupID, token)
+	if err == nil {
+		var tasks []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Prompt string `json:"prompt"`
+		}
+		json.Unmarshal(tasksBody, &tasks)
+		
+		if len(tasks) > 0 {
+			fmt.Printf("\n   Tasks:\n")
+			for _, t := range tasks {
+				tIcon := "⏳"
+				switch t.Status {
+				case "completed":
+					tIcon = "✅"
+				case "running":
+					tIcon = "🔨"
+				case "failed":
+					tIcon = "❌"
+				case "queued":
+					tIcon = "📥"
+				}
+				prompt := t.Prompt
+				if len(prompt) > 50 {
+					prompt = prompt[:50] + "..."
+				}
+				fmt.Printf("   %s %s: %s\n", tIcon, t.ID[:8], prompt)
+			}
+		}
+	}
+}
+
+func clearFailedWorkers(client *http.Client, baseURL, token string) {
+	body, err := apiRequest(client, "POST", baseURL+"/api/workers/clear-failed", token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	
+	var result struct {
+		Deleted int64 `json:"deleted"`
+	}
+	json.Unmarshal(body, &result)
+	
+	fmt.Printf("✅ Cleared %d failed worker records\n", result.Deleted)
 }
 
 func showAPIHelp() {
