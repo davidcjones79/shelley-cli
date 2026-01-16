@@ -1,123 +1,140 @@
 # Shelley Coordinator Project Status
 
-**Last Updated:** 2026-01-16 03:50 UTC
+**Last Updated:** 2026-01-16 04:40 UTC
 
 ## Overview
 
-The Shelley coordinator system allows distributing tasks across multiple exe.dev worker VMs. This document tracks the current state and known issues.
+The Shelley coordinator system distributes tasks across multiple exe.dev worker VMs for parallel execution. Workers run shelley chat autonomously and report results back to the coordinator.
 
 ## Current Status: ✅ FULLY WORKING
 
-The coordinator can now:
-- Create worker VMs on exe.dev
-- Install shelley on workers via install script
-- Start shelley serve on workers for web UI access
-- Run worker polling loop that picks up and executes tasks
-- Track worker status accurately
-- Clean up missing/stale workers from the database
-- Workers stay alive for 30 minutes of idle time (was 2 minutes - fixed!)
+Successfully tested with:
+- 5 parallel tasks (90s video game landing pages)
+- 4-5 worker VMs processing simultaneously
+- Full end-to-end task execution with file creation
 
-## Quick Start on panther-gecko
+## Quick Start
 
 ```bash
-# SSH to panther-gecko
-ssh panther-gecko.exe.xyz
+# On your coordinator VM (e.g., panther-gecko)
+cd ~/shelley-cli
 
 # Start coordinator
-cd ~/shelley-cli
 nohup ./bin/shelley coord \
   -port 8081 \
-  -db /tmp/coord.db \
+  -db coordinator.db \
   -max-workers 10 \
   -prefix wk \
-  -host panther-gecko.exe.xyz \
-  -install-script scp \
+  -host $(hostname).exe.xyz \
   > /tmp/coord.log 2>&1 &
 
 # Get token from log
-cat /tmp/coord.log
+grep "API TOKEN" -A1 /tmp/coord.log | tail -1
 
-# Make port public (required for workers to download binary)
-ssh exe.dev share port panther-gecko 8081
-ssh exe.dev share set-public panther-gecko
+# Make port public (REQUIRED for workers)
+ssh exe.dev share port $(hostname) 8081
+ssh exe.dev share set-public $(hostname)
 
 # Scale workers
-curl -X POST "http://localhost:8081/api/scale?workers=2&token=<TOKEN>"
+curl -X POST "http://localhost:8081/api/scale?workers=5&token=<TOKEN>"
 
-# Submit a task
+# Submit tasks
 curl -X POST http://localhost:8081/api/enqueue \
   -H "Content-Type: application/json" \
   -H "X-Coordinator-Token: <TOKEN>" \
-  -d '{"prompt": "Say hello"}'
+  -d '{"prompt": "Create a file called test.txt with Hello World"}'
 
-# Check workers
-curl -H "X-Coordinator-Token: <TOKEN>" http://localhost:8081/api/workers
-
-# Check tasks
+# Monitor
 curl -H "X-Coordinator-Token: <TOKEN>" http://localhost:8081/api/tasks
+curl -H "X-Coordinator-Token: <TOKEN>" http://localhost:8081/api/workers
 ```
 
-## Recent Bug Fixes
+## Key Fixes Applied (This Session)
 
-### 1. Worker VMs Disappearing After 2 Minutes (FIXED)
+### 1. Worker Idle Timeout (CRITICAL)
+**Problem:** Workers self-shutdown after 2 minutes idle
+**Cause:** `MAX_IDLE=24` with 5s polling = 120 seconds
+**Fix:** Changed to `MAX_IDLE=360` (30 minutes)
+**Commit:** `a1ab108`
 
-**Problem:** Workers were self-shutting down after only 2 minutes of idle time.
+### 2. Shell Quoting Through SSH Proxy
+**Problem:** Commands with `bash -c` failed through exe.dev SSH proxy
+**Cause:** `sshToWorker()` joins args and wraps in quotes, breaking nested quoting
+**Fix:** Pass shell commands as single strings, not `bash -c` with separate args
 
-**Root Cause:** The worker polling script had `MAX_IDLE=24` with 5-second sleep = 120 seconds.
+```go
+// BAD - doesn't work
+sshToWorker(workerID, "bash", "-c", "nohup /usr/local/bin/shelley serve...")
 
-**Fix:** Changed `MAX_IDLE` to 360 (30 minutes).
+// GOOD - works
+sshToWorker(workerID, "nohup /usr/local/bin/shelley serve -port 8000 > /tmp/log 2>&1 &")
+```
+**Commits:** `96ec4b9`, `f9e5a73`
 
-**Commit:** `a1ab108` - "fix: increase worker idle timeout from 2 minutes to 30 minutes"
+### 3. Config File Not Written (CRITICAL)
+**Problem:** Workers had empty config, causing shelley chat to fail silently
+**Cause:** Config writing was only in HTTP download path, not install script path
+**Fix:** Write config in both paths using heredoc
 
-### 2. Shelley Serve Not Starting on Workers (FIXED)
+```go
+configCmd := exec.Command("ssh", "exe.dev", 
+    fmt.Sprintf("ssh %s 'cat > .config/shelley/shelley.json << EOF\n%s\nEOF'", 
+    workerID, configJSON))
+```
+**Commits:** `a542b10`, `9e7ddf7`, `611d64c`
 
-**Problem:** The `nohup` command was failing with "missing operand".
-
-**Root Cause:** The command was being passed through `sshToWorker` with multiple args like `"bash", "-c", "nohup..."` which got incorrectly joined.
-
-**Fix:** Pass the entire command as a single string: `sshToWorker(workerID, "nohup /usr/local/bin/shelley serve...")`
-
-**Commits:** 
-- `96ec4b9` - "fix: simplify shelley serve command to avoid quoting issues"
-- `f9e5a73` - "fix: simplify worker-loop startup to avoid quoting issues"
+### 4. Multi-Coordinator Conflicts
+**Problem:** Multiple coordinators with same prefix interfere with each other's workers
+**Fix:** Add random 3-char hex suffix to prefix at startup (e.g., `wk` → `wk-78b`)
+**Commit:** `2223b0d`
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    panther-gecko.exe.xyz                     │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Coordinator (port 8081)                            │    │
-│  │  - Manages worker lifecycle                         │    │
-│  │  - Serves /api/shelley-bin for worker downloads     │    │
-│  │  - Cleanup runs every 5 min (30s initial delay)     │    │
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              │ ssh exe.dev ssh <worker>
-                              │ https download of binary
-                              ▼
+│              Coordinator VM (e.g., panther-gecko)           │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  shelley coord -port 8081                           │   │
+│  │  - Task queue (SQLite)                              │   │
+│  │  - Worker lifecycle management                       │   │
+│  │  - /api/shelley-bin serves binary to workers        │   │
+│  │  - Cleanup every 5 min                              │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                            │                                │
+│              Port must be PUBLIC for workers!               │
+└────────────────────────────┼────────────────────────────────┘
+                             │
+          ssh exe.dev "ssh <worker> '<cmd>'"
+                             │
+                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                     Worker VMs (wk-xxx)                      │
-│  - Created via: ssh exe.dev new --name=wk-xxx               │
-│  - Shelley installed via install script or HTTP download    │
-│  - Runs shelley serve on port 8000 (web UI)                 │
-│  - Runs worker-loop.sh that polls for tasks                 │
-│  - Idle timeout: 30 minutes                                 │
+│                    Worker VMs (wk-xxx-*)                    │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  /tmp/worker-loop.sh (polls coordinator)            │   │
+│  │  shelley serve -port 8000 (web UI)                  │   │
+│  │  shelley chat -yes -prompt "..." (task execution)   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  Config: ~/.config/shelley/shelley.json                    │
+│  {"llm_gateway": "http://169.254.169.254/gateway/llm",     │
+│   "default_model": "claude-sonnet-4.5"}                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Key Technical Details
+## exe.dev SSH Proxy Limitations
 
-### exe.dev VM-to-VM SSH
+**Key Insight:** exe.dev VMs cannot SSH directly to each other. All SSH goes through the exe.dev proxy.
 
-exe.dev VMs cannot SSH directly to each other. Use the proxy pattern:
+### The Pattern
 ```bash
-ssh exe.dev "ssh <vmname> '<command>'"
+# Direct SSH (doesn't work for VM-to-VM)
+ssh worker.exe.xyz command
+
+# Through proxy (works!)
+ssh exe.dev "ssh worker 'command'"
 ```
 
 ### sshToWorker Helper
-
 ```go
 func sshToWorker(workerID string, args ...string) *exec.Cmd {
     remoteCmd := strings.Join(args, " ")
@@ -127,51 +144,98 @@ func sshToWorker(workerID string, args ...string) *exec.Cmd {
 }
 ```
 
-**Important:** When using shell operators (>, &, |), pass the entire command as a single string argument, not multiple args.
+### Quoting Rules
+1. **Single string for shell commands:** Pass `"cmd1 && cmd2 > file"` as one arg
+2. **No bash -c wrapper:** The outer quotes provide shell context
+3. **Heredocs work:** Use `<< EOF ... EOF` for multi-line content
+4. **Redirects work:** `>`, `>>`, `2>&1` work inside the quoted string
 
-### Worker Lifecycle
+## Worker Lifecycle
 
-1. **Spawn:** `ssh exe.dev new --name=<worker-id> --no-email --json`
-2. **Wait for SSH:** Poll until `ssh exe.dev ssh <worker> echo ready` succeeds
-3. **Install shelley:** Run install script or download from coordinator
-4. **Start shelley serve:** Background on port 8000 for web UI
-5. **Start worker loop:** Polls coordinator for tasks every 5 seconds
-6. **Execute tasks:** Run `shelley chat -yes -prompt "<prompt>"`
-7. **Idle timeout:** After 30 minutes without tasks, worker self-shuts down
+1. **Spawn:** `ssh exe.dev new --name=<prefix>-x<random> --no-email --json`
+2. **Wait for SSH:** Poll `ssh exe.dev ssh <worker> echo ready`
+3. **Install:** Run install script OR download binary from coordinator
+4. **Write Config:** Create `~/.config/shelley/shelley.json` with LLM gateway
+5. **Start Serve:** `nohup /usr/local/bin/shelley serve -port 8000`
+6. **Start Loop:** `/tmp/worker-loop.sh` polls for tasks every 5 seconds
+7. **Execute:** `shelley chat -yes -prompt "$PROMPT"` for each task
+8. **Idle Timeout:** Self-shutdown after 30 minutes without tasks
 
-## Cleanup Behavior
+## Common Issues & Solutions
 
-The coordinator runs cleanup every 5 minutes:
+### "Tasks completing instantly with no output"
+**Cause:** Empty or missing `~/.config/shelley/shelley.json`
+**Fix:** Ensure config is written in coordinator setup code
 
-1. **Failed/deleted workers:** Removed from DB after 1 hour
-2. **Stuck starting workers:** Deleted after 10 minutes
-3. **Idle workers:** Deleted after 30 minutes (via coordinator cleanup)
-4. **Worker self-shutdown:** After 30 minutes idle (via worker script)
-5. **Orphaned VMs:** VMs on exe.dev not in coordinator DB are deleted
-6. **Missing VMs:** Workers in DB whose VMs no longer exist are removed
+### "Workers disappearing after 2 minutes"
+**Cause:** Old `MAX_IDLE=24` value (2 minute timeout)
+**Fix:** Update to `MAX_IDLE=360` (30 minutes)
 
-## Git Commits (Recent)
+### "nohup: missing operand" in worker logs
+**Cause:** Command passed with `bash -c` through sshToWorker
+**Fix:** Pass command as single string without bash -c wrapper
 
+### "VM limit reached" errors
+**Cause:** exe.dev account has concurrent VM limit (often 15)
+**Fix:** Delete unused VMs or reduce worker count
+
+### "Port unbound" when accessing worker web UI
+**Cause:** Worker's shelley serve not running
+**Check:** `ssh exe.dev "ssh <worker> 'ps aux | grep shelley'"`
+
+## API Reference
+
+### Coordinator Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/enqueue` | POST | Add task `{"prompt": "..."}` |
+| `/api/tasks` | GET | List all tasks |
+| `/api/task?id=X` | GET | Get task details |
+| `/api/workers` | GET | List workers |
+| `/api/scale?workers=N` | POST | Scale to N workers |
+| `/api/drain` | POST | Shutdown all workers |
+| `/api/stats` | GET | Queue statistics |
+| `/api/shelley-bin` | GET | Download shelley binary |
+
+All endpoints require `X-Coordinator-Token` header or `?token=` param.
+
+## Files Changed
+
+### coordinator/coordinator.go
+- `MAX_IDLE=360` (was 24) - 30 minute idle timeout
+- Config written in both install script and HTTP download paths
+- Shell commands passed as single strings to sshToWorker
+- Random suffix added to worker prefix
+
+### cmd/shelley/main.go
+- Token auto-detection from `/tmp/coord.log`
+- Multi-port checking (8080, 8081)
+
+## Git Log (Recent)
 ```
+611d64c fix: write config in install script path too
+9e7ddf7 fix: use heredoc for writing config to avoid shell quoting issues
+a542b10 fix: remove bash -c wrapper from config write command
+2223b0d feat: add random suffix to worker prefix for multi-coordinator support
 f9e5a73 fix: simplify worker-loop startup to avoid quoting issues
 96ec4b9 fix: simplify shelley serve command to avoid quoting issues
-c275df7 fix: use 'which shelley' to find binary in worker startup
 a1ab108 fix: increase worker idle timeout from 2 minutes to 30 minutes
-bf71131 fix: cleanup removes workers from DB when VM no longer exists
 ```
 
 ## Testing Checklist
 
-- [x] Coordinator starts and logs token
-- [x] Port made public for worker downloads
-- [x] `scale N` creates N workers
-- [x] Workers install shelley successfully
-- [x] Workers start shelley serve on port 8000
+- [x] Coordinator starts and shows token
+- [x] Port made public for worker binary downloads
+- [x] Workers spawn successfully
+- [x] Workers install shelley binary
+- [x] Workers have valid config file
+- [x] Workers start shelley serve (port 8000)
 - [x] Workers start polling loop
-- [x] Task submission creates queued task
-- [x] Worker picks up and executes task
-- [x] Task status updates to completed
+- [x] Tasks picked up and executed
+- [x] Files created by tasks persist
 - [x] Workers stay alive for 30 minutes idle
-- [ ] Git integration for task branches
-- [ ] Dashboard UI on port 8080
-- [ ] Multiple workers processing tasks in parallel
+- [x] Multiple tasks run in parallel
+- [x] Task status updates correctly
+- [ ] Git integration (branches, commits)
+- [ ] Conversation sync to main DB
