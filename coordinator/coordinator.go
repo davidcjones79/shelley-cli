@@ -1307,11 +1307,12 @@ func (c *Coordinator) DeleteWorker(workerID string) error {
 	cmd := exec.Command("ssh", "exe.dev", "rm", workerID)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Printf("Warning: failed to delete VM %s: %v (output: %s)", workerID, err, string(out))
-		// Continue anyway - mark as deleted in DB even if VM deletion failed
+		// Continue anyway - remove from DB even if VM deletion failed
 		// The cleanup routine will catch orphaned VMs later
 	}
 
-	c.db.Exec(`UPDATE workers SET status = 'deleted' WHERE id = ?`, workerID)
+	// Remove from DB entirely (not just mark as deleted)
+	c.db.Exec(`DELETE FROM workers WHERE id = ?`, workerID)
 	c.LogEvent("worker.deleted", "", workerID, nil)
 	return nil
 }
@@ -1338,17 +1339,23 @@ func (c *Coordinator) DrainWorkers() (int, int) {
 	c.draining = true
 	c.mu.Unlock()
 
-	// Delete idle workers immediately
-	rows, _ := c.db.Query(`SELECT id FROM workers WHERE status = 'idle'`)
+	// Delete idle and starting workers immediately
+	rows, _ := c.db.Query(`SELECT id FROM workers WHERE status IN ('idle', 'starting')`)
 	var idleDeleted int
+	var toDelete []string
 	if rows != nil {
 		for rows.Next() {
 			var id string
 			rows.Scan(&id)
-			c.DeleteWorker(id)
-			idleDeleted++
+			toDelete = append(toDelete, id)
 		}
 		rows.Close()
+	}
+	
+	// Delete workers outside of query loop
+	for _, id := range toDelete {
+		c.DeleteWorker(id)
+		idleDeleted++
 	}
 
 	// Count busy workers that will drain after completing their task
