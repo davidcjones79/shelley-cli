@@ -197,19 +197,73 @@ func listWorkers(client *http.Client, baseURL, token string) {
 		return
 	}
 	
-	fmt.Printf("👷 Workers (%d):\n", len(workers))
+	// Get list of actual VMs from exe.dev to verify workers exist
+	existingVMs := getExeDevVMs()
+	
+	// Count actual vs stale workers
+	actualCount := 0
 	for _, w := range workers {
-		icon := "⏳"
-		switch w.Status {
-		case "ready", "idle":
-			icon = "✅"
-		case "busy":
-			icon = "🔨"
-		case "failed":
-			icon = "❌"
+		if existingVMs[w.ID] {
+			actualCount++
 		}
-		fmt.Printf("   %s %s (%s)\n", icon, w.ID, w.Status)
 	}
+	
+	fmt.Printf("👷 Workers (%d", len(workers))
+	if actualCount < len(workers) {
+		fmt.Printf(", %d actual", actualCount)
+	}
+	fmt.Println("):")
+	
+	for _, w := range workers {
+		exists := existingVMs[w.ID]
+		icon := "⏳"
+		statusStr := w.Status
+		
+		if !exists {
+			// VM doesn't exist on exe.dev
+			icon = "👻"
+			statusStr = "missing"
+		} else {
+			switch w.Status {
+			case "ready", "idle":
+				icon = "✅"
+			case "busy":
+				icon = "🔨"
+			case "failed":
+				icon = "❌"
+			}
+		}
+		fmt.Printf("   %s %s (%s)\n", icon, w.ID, statusStr)
+	}
+}
+
+// getExeDevVMs returns a map of VM names that exist on exe.dev
+func getExeDevVMs() map[string]bool {
+	vms := make(map[string]bool)
+	cmd := exec.Command("ssh", "exe.dev", "ls")
+	out, err := cmd.Output()
+	if err != nil {
+		return vms
+	}
+	
+	// Parse output like "  • vmname.exe.xyz - running (image)"
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "•") {
+			continue
+		}
+		// Extract VM name
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			vmName := strings.TrimPrefix(parts[1], "•")
+			vmName = strings.TrimSpace(vmName)
+			// Remove .exe.xyz suffix to get worker ID
+			workerID := strings.TrimSuffix(vmName, ".exe.xyz")
+			vms[workerID] = true
+		}
+	}
+	return vms
 }
 
 func listTasks(client *http.Client, baseURL, token string) {
