@@ -7,7 +7,7 @@ Type=exec
 User=exedev
 Group=exedev
 WorkingDirectory=/home/exedev
-ExecStart=/usr/local/bin/shelley dashboard -port 8080 -auto-start
+ExecStart=/usr/local/bin/shelley dashboard -port 8080 -install-script scp -auto-start
 Restart=on-failure
 RestartSec=5
 Environment=HOME=/home/exedev
