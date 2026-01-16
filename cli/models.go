@@ -412,6 +412,34 @@ func (m *Model) showStatus() tea.Cmd {
 		sb.WriteString("  State: ready\n")
 	}
 
+	// Sub-agents status
+	subAgentsMu.Lock()
+	totalAgents := len(subAgents)
+	runningAgents := 0
+	for _, agent := range subAgents {
+		if agent.Status == "running" {
+			runningAgents++
+		}
+	}
+	subAgentsMu.Unlock()
+	if totalAgents > 0 {
+		sb.WriteString(fmt.Sprintf("\nSub-Agents: %d total (%d running)\n", totalAgents, runningAgents))
+	}
+
+	// Coordinator status
+	if isCoordinatorRunning() {
+		stats, err := getCoordinatorStats()
+		if err == nil {
+			sb.WriteString("\nCoordinator:\n")
+			sb.WriteString(fmt.Sprintf("  Workers: %d (%d busy, %d idle)\n",
+				stats.WorkersTotal, stats.WorkersBusy, stats.WorkersIdle))
+			sb.WriteString(fmt.Sprintf("  Tasks: %d queued, %d running, %d completed\n",
+				stats.TasksQueued, stats.TasksRunning, stats.TasksCompleted))
+			hostname := getHostname()
+			sb.WriteString(fmt.Sprintf("  Dashboard: https://%s.exe.xyz:8080/\n", hostname))
+		}
+	}
+
 	m.messages = append(m.messages, renderedMessage{
 		role:    llm.MessageRoleAssistant,
 		content: m.styles.SystemMessage.Render(sb.String()),
