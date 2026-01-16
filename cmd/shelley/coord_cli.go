@@ -41,11 +41,15 @@ func runCoordCLI(args []string) {
 
 	// Auto-detect token if not provided
 	if *token == "" {
+		// Check environment variable first
+		*token = os.Getenv("COORD_TOKEN")
+	}
+	if *token == "" {
 		*token = getCoordinatorToken()
-		if *token == "" {
-			fmt.Fprintf(os.Stderr, "Error: Could not auto-detect token. Use -token flag.\n")
-			os.Exit(1)
-		}
+	}
+	if *token == "" {
+		fmt.Fprintf(os.Stderr, "Error: Could not auto-detect token. Use -token flag or COORD_TOKEN env var.\n")
+		os.Exit(1)
 	}
 
 	baseURL := fmt.Sprintf("http://localhost:%d", *port)
