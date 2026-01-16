@@ -70,7 +70,7 @@ type Worker struct {
 	ID             string     `json:"id"`
 	Status         string     `json:"status"`
 	CurrentTaskID  *string    `json:"current_task_id,omitempty"`
-	TailscaleIP    *string    `json:"tailscale_ip,omitempty"`
+	Hostname       *string    `json:"hostname,omitempty"` // exe.dev hostname (stored in tailscale_ip column)
 	CreatedAt      time.Time  `json:"created_at"`
 	LastHeartbeat  *time.Time `json:"last_heartbeat,omitempty"`
 	TasksCompleted int        `json:"tasks_completed"`
@@ -139,6 +139,9 @@ func New(config Config) (*Coordinator, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
+
+	// Set busy timeout to 5 seconds to reduce SQLITE_BUSY errors
+	db.Exec("PRAGMA busy_timeout = 5000")
 
 	schema, _ := schemaFS.ReadFile("schema.sql")
 	if _, err := db.Exec(string(schema)); err != nil {
@@ -642,14 +645,28 @@ func (c *Coordinator) CreateGroup(req GroupRequest) (*TaskGroup, error) {
 		"repo_url": req.RepoURL,
 	})
 
-	// If prompts provided, create tasks for each
-	for _, prompt := range req.Prompts {
-		_, err := c.EnqueueTask(TaskRequest{
-			Prompt:  prompt,
-			GroupID: req.ID,
-		})
-		if err != nil {
-			log.Printf("Failed to create task for group %s: %v", req.ID, err)
+	// If prompts provided, create tasks for each with retry logic
+	for i, prompt := range req.Prompts {
+		var lastErr error
+		for retry := 0; retry < 3; retry++ {
+			_, err := c.EnqueueTask(TaskRequest{
+				Prompt:  prompt,
+				GroupID: req.ID,
+			})
+			if err == nil {
+				lastErr = nil
+				break
+			}
+			lastErr = err
+			// Only retry on SQLITE_BUSY errors
+			if !strings.Contains(err.Error(), "SQLITE_BUSY") && !strings.Contains(err.Error(), "database is locked") {
+				break
+			}
+			log.Printf("Retrying task %d for group %s (attempt %d): %v", i+1, req.ID, retry+1, err)
+			time.Sleep(time.Duration(100*(1<<retry)) * time.Millisecond) // 100ms, 200ms, 400ms
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("create task %d for group: %w", i+1, lastErr)
 		}
 	}
 
@@ -815,7 +832,9 @@ func (c *Coordinator) SpawnWorker() (*Worker, error) {
 	// to ensure the hex suffix always contains at least one letter
 	workerID := fmt.Sprintf("%s-x%s", c.config.WorkerPrefix, hex.EncodeToString(b))
 
-	_, err := c.db.Exec(`INSERT INTO workers (id, status) VALUES (?, 'starting')`, workerID)
+	// Store worker hostname in tailscale_ip field (repurposed for exe.dev hostname)
+	workerHost := workerID + ".exe.xyz"
+	_, err := c.db.Exec(`INSERT INTO workers (id, status, tailscale_ip) VALUES (?, 'starting', ?)`, workerID, workerHost)
 	if err != nil {
 		return nil, err
 	}
@@ -1156,7 +1175,7 @@ func (c *Coordinator) GetWorker(id string) (*Worker, error) {
 		w.CurrentTaskID = &currentTaskID.String
 	}
 	if tailscaleIP.Valid {
-		w.TailscaleIP = &tailscaleIP.String
+		w.Hostname = &tailscaleIP.String
 	}
 	if lastHeartbeat.Valid {
 		w.LastHeartbeat = &lastHeartbeat.Time

@@ -221,11 +221,19 @@ func (d *Dashboard) HandleDashboardIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Require exe.dev authentication
+	// Require exe.dev authentication (or allow local access)
 	userID := r.Header.Get("X-Exedev-Userid")
 	if userID == "" {
-		http.Redirect(w, r, "/__exe.dev/login?redirect=/", http.StatusFound)
-		return
+		// Check if this is local access (no exe.dev proxy)
+		host := r.Host
+		if strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
+			// Allow local access without auth
+			userID = "local"
+		} else {
+			// Redirect to exe.dev login
+			http.Redirect(w, r, "/__exe.dev/login?redirect=/", http.StatusFound)
+			return
+		}
 	}
 
 	data, err := dashboardHTML.ReadFile("dashboard.html")
