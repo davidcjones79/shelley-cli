@@ -34,11 +34,38 @@ This installs the CLI with Igor file transfer service. See [cli/README.md](cli/R
 | `shelley serve` | Start the web server |
 | `shelley dashboard` | Start dashboard with coordinator management UI |
 | `shelley coord` | Start coordinator server (headless) |
+| `shelley coord-cli` | Manage coordinator from command line |
+| `shelley watch` | Live CLI dashboard for coordinator |
 | `shelley igor` | Start Igor file transfer server |
+| `shelley status` | Show status of all Shelley services |
 | `shelley unpack-template` | Unpack a project template |
 | `shelley version` | Print version information as JSON |
 
 Use `shelley <command> -h` for command-specific help.
+
+### Coordinator CLI (`shelley coord-cli`)
+
+Manage the coordinator programmatically without the web dashboard:
+
+```bash
+# Add a single task
+shelley coord-cli add-task "Create a landing page for Docker"
+
+# Create a task group with multiple parallel tasks
+shelley coord-cli add-group "Landing Pages" \
+  "Create docker.html" \| "Create k8s.html" \| "Create terraform.html"
+
+# Scale workers and monitor
+shelley coord-cli scale 3
+shelley coord-cli stats
+shelley coord-cli workers
+shelley coord-cli groups
+
+# Live dashboard (auto-refreshes)
+shelley watch
+```
+
+See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for complete documentation.
 
 ## Keyboard Shortcuts
 

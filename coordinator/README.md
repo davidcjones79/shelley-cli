@@ -28,6 +28,34 @@ shelley coord
 
 Runs the coordinator directly without the dashboard wrapper. Useful for automation or when you don't need the web UI.
 
+### CLI Mode (Programmatic Control)
+
+```bash
+# Add a single task
+shelley coord-cli add-task "Create a landing page for Docker"
+
+# Create a task group with multiple parallel tasks (prompts separated by |)
+shelley coord-cli add-group "Landing Pages" \
+  "Create docker.html" \| "Create k8s.html" \| "Create terraform.html"
+
+# Scale workers
+shelley coord-cli scale 3
+
+# Monitor progress
+shelley coord-cli stats
+shelley coord-cli workers
+shelley coord-cli groups
+shelley coord-cli tasks
+
+# Live auto-refreshing dashboard
+shelley watch
+
+# Clear failed worker records
+shelley coord-cli clear-failed
+```
+
+See `shelley coord-cli --help` for all commands.
+
 ## Architecture
 
 ```
