@@ -1,6 +1,6 @@
 # Shelley Coordinator Project Status
 
-**Last Updated:** 2026-01-16 05:45 UTC
+**Last Updated:** 2026-01-16 06:45 UTC
 
 ## Overview
 
@@ -212,3 +212,12 @@ a1ab108 fix: increase worker idle timeout from 2 minutes to 30 minutes
 - [ ] Git integration (branches, commits)
 - [ ] Conversation sync to main DB
 - [ ] Multiple tasks run in parallel (need to re-test)
+
+### 9. Simplified Worker Architecture
+**Change:** Removed shelley serve from workers
+**Reason:** Workers were running two shelley instances (port 8000 and systemd's port 9999), causing confusion
+**New approach:** 
+- Workers only run the worker-loop.sh script
+- Tasks execute via `shelley chat` CLI directly
+- No web UI monitoring per-worker (coordinator dashboard still shows task status)
+- Simpler, fewer moving parts
