@@ -939,9 +939,8 @@ func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
 	log.Printf("Starting shelley serve on %s...", workerID)
 	
 	// Start shelley serve in the background on port 8000
-	// Use 'which shelley' to find the binary since it may be in /usr/local/bin or ~/.local/bin
-	serveCmd := sshToWorker(workerID, "bash", "-c",
-		"nohup $(which shelley) -config .config/shelley/shelley.json -db /tmp/shelley-worker.db serve -port 8000 > /tmp/shelley-serve.log 2>&1 &")
+	// Pass as a single command string since we need shell operators (>, &)
+	serveCmd := sshToWorker(workerID, "nohup /usr/local/bin/shelley serve -port 8000 > /tmp/shelley-serve.log 2>&1 &")
 	serveCmd.Run()
 	
 	// Wait for shelley serve to be ready
