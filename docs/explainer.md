@@ -46,7 +46,17 @@ This installs shelley-cli to `~/shelley-cli/` and adds it to your PATH.
 
 ---
 
-## Step 4: Verify SSH access to exe.dev
+## Step 4: Register the VM's SSH key with exe.dev
+
+The new VM has its own SSH key pair, but it's not yet registered with your exe.dev account. To register it:
+
+```bash
+ssh exe.dev
+```
+
+The first time you run this, exe.dev will see an unrecognized key and send you an email with a magic link. Click the link to register the VM's SSH key with your exe.dev account.
+
+After clicking the link, verify it works:
 
 ```bash
 ssh exe.dev whoami
