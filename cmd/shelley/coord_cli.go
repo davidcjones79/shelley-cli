@@ -251,6 +251,8 @@ func scaleWorkers(client *http.Client, baseURL, token string, n int) {
 	_, err := apiRequest(client, "POST", url, token)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "URL: %s\n", url)
+		fmt.Fprintf(os.Stderr, "Token length: %d\n", len(token))
 		os.Exit(1)
 	}
 	fmt.Printf("✅ Scaling to %d workers\n", n)
