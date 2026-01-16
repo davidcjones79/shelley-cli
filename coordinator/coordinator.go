@@ -889,6 +889,11 @@ func (c *Coordinator) setupWorker(workerID string) {
 			return
 		}
 		log.Printf("Install script completed on %s", workerID)
+		// Write config for LLM gateway
+		sshToWorker(workerID, "mkdir", "-p", ".config/shelley").Run()
+		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
+		configCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'cat > .config/shelley/shelley.json << EOF\n%s\nEOF'", workerID, configJSON))
+		configCmd.Run()
 	} else {
 		// Create directories on worker
 		mkdirCmd := sshToWorker(workerID, "mkdir", "-p", ".local/bin", ".config/shelley")
