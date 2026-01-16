@@ -314,7 +314,8 @@ func (c *Coordinator) cleanupMissingVMs() {
 	}
 
 	// Find workers in DB that don't have corresponding VMs
-	rows, err := c.db.Query(`SELECT id, status FROM workers WHERE status NOT IN ('deleted', 'failed')`)
+	// Skip 'starting' workers as their VM might still be creating
+	rows, err := c.db.Query(`SELECT id, status FROM workers WHERE status NOT IN ('deleted', 'failed', 'starting')`)
 	if err != nil {
 		return
 	}
