@@ -169,13 +169,22 @@ func checkCoordinatorAPI() *CoordinatorStatus {
 }
 
 func getCoordinatorToken() string {
-	// Method 1: Try to get token from process list (works everywhere)
-	cmd := exec.Command("bash", "-c", "ps aux | grep 'shelley coord' | grep -v grep | grep -o '\\-token [^ ]*' | cut -d' ' -f2")
+	// Method 1: Try to get token from process list
+	cmd := exec.Command("ps", "aux")
 	out, err := cmd.Output()
 	if err == nil {
-		token := strings.TrimSpace(string(out))
-		if token != "" {
-			return token
+		lines := strings.Split(string(out), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "shelley coord") && strings.Contains(line, "-token") {
+				// Find -token and extract the value
+				parts := strings.Split(line, "-token ")
+				if len(parts) >= 2 {
+					tokenPart := strings.Fields(parts[1])
+					if len(tokenPart) > 0 {
+						return tokenPart[0]
+					}
+				}
+			}
 		}
 	}
 
