@@ -905,6 +905,8 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/cleanup-workers", coord.HandleCleanupWorkers)
 	mux.HandleFunc("/api/clear-tasks", coord.HandleClearTasks)
 	mux.HandleFunc("/api/reset-task", coord.HandleResetTask)
+	mux.HandleFunc("/api/stuck-tasks", coord.HandleStuckTasks)
+	mux.HandleFunc("/api/reset-stuck-tasks", coord.HandleResetStuckTasks)
 	mux.HandleFunc("/shelley-bin", coord.HandleShelleyBinary)
 	mux.HandleFunc("/api/sync-conversation", coord.HandleSyncConversation)
 	mux.HandleFunc("/api/shelley-bin", coord.HandleShelleyBinary)

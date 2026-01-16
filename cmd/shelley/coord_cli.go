@@ -28,6 +28,8 @@ func runCoordCLI(args []string) {
 		fmt.Fprintf(os.Stderr, "  drain               Drain all workers\n")
 		fmt.Fprintf(os.Stderr, "  kill-worker <id>    Force remove a worker and delete its VM\n")
 		fmt.Fprintf(os.Stderr, "  reset-task <id>     Reset a stuck task to queued status\n")
+		fmt.Fprintf(os.Stderr, "  stuck               Show stuck/orphaned tasks\n")
+		fmt.Fprintf(os.Stderr, "  reset-stuck         Reset all stuck tasks to queued\n")
 		fmt.Fprintf(os.Stderr, "  stats               Show coordinator stats\n")
 		fmt.Fprintf(os.Stderr, "  clear-tasks         Clear all tasks from the queue\n")
 		fmt.Fprintf(os.Stderr, "  clear-workers       Remove all workers\n")
@@ -102,6 +104,10 @@ func runCoordCLI(args []string) {
 			os.Exit(1)
 		}
 		resetTask(client, baseURL, *token, cmdArgs[1])
+	case "stuck":
+		showStuckTasks(client, baseURL, *token)
+	case "reset-stuck":
+		resetStuckTasks(client, baseURL, *token)
 	case "stats":
 		showStats(client, baseURL, *token)
 	case "clear-tasks":
@@ -478,6 +484,52 @@ func resetTask(client *http.Client, baseURL, token, taskID string) {
 		os.Exit(1)
 	}
 	fmt.Printf("✅ Task %s reset to queued\n", taskID)
+}
+
+func showStuckTasks(client *http.Client, baseURL, token string) {
+	body, err := apiRequest(client, "GET", baseURL+"/api/stuck-tasks", token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	var tasks []struct {
+		ID        string  `json:"id"`
+		Status    string  `json:"status"`
+		Prompt    string  `json:"prompt"`
+		WorkerID  *string `json:"worker_id"`
+		Reason    string  `json:"reason"`
+		Retries   int     `json:"retry_count"`
+	}
+	json.Unmarshal(body, &tasks)
+
+	if len(tasks) == 0 {
+		fmt.Println("No stuck tasks")
+		return
+	}
+
+	fmt.Printf("⚠️  Stuck Tasks (%d):\n", len(tasks))
+	for _, t := range tasks {
+		prompt := t.Prompt
+		if len(prompt) > 50 {
+			prompt = prompt[:50] + "..."
+		}
+		worker := "<none>"
+		if t.WorkerID != nil {
+			worker = *t.WorkerID
+		}
+		fmt.Printf("   %s: %s\n", t.ID[:8], prompt)
+		fmt.Printf("      Worker: %s | Reason: %s | Retries: %d\n", worker, t.Reason, t.Retries)
+	}
+}
+
+func resetStuckTasks(client *http.Client, baseURL, token string) {
+	_, err := apiRequest(client, "POST", baseURL+"/api/reset-stuck-tasks", token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("✅ All stuck tasks reset to queued")
 }
 
 func showAPIHelp() {

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	_ "modernc.org/sqlite" // SQLite driver for sync
 )
@@ -177,6 +178,100 @@ func (c *Coordinator) HandleCleanupWorkers(w http.ResponseWriter, r *http.Reques
 	}
 
 	c.CleanupStaleWorkers()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// HandleStuckTasks returns tasks that appear to be stuck.
+func (c *Coordinator) HandleStuckTasks(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	// Get task timeout (default 15 minutes)
+	taskTimeout := c.config.TaskTimeout
+	if taskTimeout == 0 {
+		taskTimeout = 15 * time.Minute
+	}
+	timeoutMinutes := int(taskTimeout.Minutes())
+
+	// Get active workers
+	activeWorkers := make(map[string]bool)
+	rows, err := c.db.Query(`SELECT id FROM workers WHERE status IN ('idle', 'busy', 'ready')`)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			rows.Scan(&id)
+			activeWorkers[id] = true
+		}
+		rows.Close()
+	}
+
+	type stuckTask struct {
+		ID        string  `json:"id"`
+		Status    string  `json:"status"`
+		Prompt    string  `json:"prompt"`
+		WorkerID  *string `json:"worker_id"`
+		Reason    string  `json:"reason"`
+		Retries   int     `json:"retry_count"`
+	}
+	var stuck []stuckTask
+
+	// Find orphaned tasks (assigned to non-existent workers)
+	rows, _ = c.db.Query(`SELECT id, status, prompt, worker_id, COALESCE(retry_count, 0) FROM tasks WHERE status IN ('assigned', 'running') AND worker_id IS NOT NULL`)
+	for rows.Next() {
+		var t stuckTask
+		var workerID string
+		rows.Scan(&t.ID, &t.Status, &t.Prompt, &workerID, &t.Retries)
+		t.WorkerID = &workerID
+		if !activeWorkers[workerID] {
+			t.Reason = "orphaned (worker missing)"
+			stuck = append(stuck, t)
+		}
+	}
+	rows.Close()
+
+	// Find timed out tasks
+	query := fmt.Sprintf(`SELECT id, status, prompt, worker_id, COALESCE(retry_count, 0) FROM tasks WHERE status = 'running' AND started_at < datetime('now', '-%d minutes')`, timeoutMinutes)
+	rows, _ = c.db.Query(query)
+	for rows.Next() {
+		var t stuckTask
+		var workerID sql.NullString
+		rows.Scan(&t.ID, &t.Status, &t.Prompt, &workerID, &t.Retries)
+		if workerID.Valid {
+			t.WorkerID = &workerID.String
+		}
+		// Don't double-count
+		alreadyStuck := false
+		for _, s := range stuck {
+			if s.ID == t.ID {
+				alreadyStuck = true
+				break
+			}
+		}
+		if !alreadyStuck {
+			t.Reason = fmt.Sprintf("timeout (>%d min)", timeoutMinutes)
+			stuck = append(stuck, t)
+		}
+	}
+	rows.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stuck)
+}
+
+// HandleResetStuckTasks resets all stuck tasks to queued.
+func (c *Coordinator) HandleResetStuckTasks(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	c.CleanupStuckTasks()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

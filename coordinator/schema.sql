@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- Execution tracking
     conversation_id TEXT,    -- shelley conversation ID for viewing
     source TEXT DEFAULT 'autonomous',  -- 'manual', 'autonomous', 'api'
+    -- Retry tracking
+    retry_count INTEGER DEFAULT 0,
     -- Timestamps
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     assigned_at DATETIME,

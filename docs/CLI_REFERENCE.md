@@ -527,6 +527,8 @@ shelley coord-cli [flags] <command>
 | `drain` | Drain all workers |
 | `kill-worker <id>` | Force remove a worker and delete its VM |
 | `reset-task <id>` | Reset a stuck/orphaned task to queued status |
+| `stuck` | Show all stuck/orphaned tasks |
+| `reset-stuck` | Reset all stuck tasks to queued |
 | `stats` | Show coordinator statistics |
 | `clear-tasks` | Clear all tasks from queue |
 | `clear-workers` | Remove all workers |

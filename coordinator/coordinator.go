@@ -39,6 +39,8 @@ type Config struct {
 	GitUser       string // Git username (default: git)
 	ShelleyDB     string // Path to main shelley DB for syncing conversations
 	InstallScript string // URL to install script (if set, uses this instead of scp binary)
+	TaskTimeout   time.Duration // Max time for a task before it's considered stuck (default: 15 min)
+	MaxRetries    int           // Max retries for failed tasks (default: 2)
 }
 
 // Task represents a unit of work.
@@ -183,14 +185,19 @@ func (c *Coordinator) periodicCleanup() {
 	// Run initial cleanup after a short delay
 	time.Sleep(30 * time.Second)
 	c.CleanupStaleWorkers()
+	c.CleanupStuckTasks()
 
-	// Then run every 5 minutes
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
+	// Then run every minute for task checks, every 5 minutes for worker cleanup
+	taskTicker := time.NewTicker(1 * time.Minute)
+	workerTicker := time.NewTicker(5 * time.Minute)
+	defer taskTicker.Stop()
+	defer workerTicker.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-taskTicker.C:
+			c.CleanupStuckTasks()
+		case <-workerTicker.C:
 			c.CleanupStaleWorkers()
 		case <-c.shutdown:
 			return
@@ -347,6 +354,110 @@ func (c *Coordinator) cleanupMissingVMs() {
 		if err != nil {
 			log.Printf("Cleanup: failed to delete worker %s: %v", w.id, err)
 		}
+	}
+}
+
+// CleanupStuckTasks finds and resets tasks that are stuck.
+// A task is considered stuck if:
+// - Status is 'assigned' or 'running' but assigned worker doesn't exist
+// - Status is 'running' for longer than TaskTimeout (default 15 min)
+func (c *Coordinator) CleanupStuckTasks() {
+	log.Printf("Running stuck task cleanup...")
+
+	// Get task timeout (default 15 minutes)
+	taskTimeout := c.config.TaskTimeout
+	if taskTimeout == 0 {
+		taskTimeout = 15 * time.Minute
+	}
+	timeoutMinutes := int(taskTimeout.Minutes())
+
+	// Get max retries (default 2)
+	maxRetries := c.config.MaxRetries
+	if maxRetries == 0 {
+		maxRetries = 2
+	}
+
+	// Get list of active workers
+	activeWorkers := make(map[string]bool)
+	rows, err := c.db.Query(`SELECT id FROM workers WHERE status IN ('idle', 'busy', 'ready')`)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			rows.Scan(&id)
+			activeWorkers[id] = true
+		}
+		rows.Close()
+	}
+
+	// Find tasks assigned to non-existent workers (orphaned)
+	rows, err = c.db.Query(`SELECT id, worker_id, COALESCE(retry_count, 0) as retries FROM tasks WHERE status IN ('assigned', 'running') AND worker_id IS NOT NULL`)
+	if err != nil {
+		log.Printf("Cleanup: failed to query tasks: %v", err)
+		return
+	}
+
+	type stuckTask struct {
+		id       string
+		workerID string
+		retries  int
+		reason   string
+	}
+	var stuck []stuckTask
+
+	for rows.Next() {
+		var id, workerID string
+		var retries int
+		rows.Scan(&id, &workerID, &retries)
+		if !activeWorkers[workerID] {
+			stuck = append(stuck, stuckTask{id, workerID, retries, "orphaned (worker missing)"})
+		}
+	}
+	rows.Close()
+
+	// Find tasks that have been running too long (timed out)
+	query := fmt.Sprintf(`SELECT id, worker_id, COALESCE(retry_count, 0) as retries FROM tasks WHERE status = 'running' AND started_at < datetime('now', '-%d minutes')`, timeoutMinutes)
+	rows, err = c.db.Query(query)
+	if err == nil {
+		for rows.Next() {
+			var id, workerID string
+			var retries int
+			rows.Scan(&id, &workerID, &retries)
+			// Don't double-count tasks already marked as orphaned
+			alreadyStuck := false
+			for _, s := range stuck {
+				if s.id == id {
+					alreadyStuck = true
+					break
+				}
+			}
+			if !alreadyStuck {
+				stuck = append(stuck, stuckTask{id, workerID, retries, fmt.Sprintf("timeout (>%d min)", timeoutMinutes)})
+			}
+		}
+		rows.Close()
+	}
+
+	// Reset or fail stuck tasks
+	for _, t := range stuck {
+		if t.retries >= maxRetries {
+			// Max retries exceeded, mark as failed
+			log.Printf("Cleanup: task %s failed after %d retries (%s)", t.id, t.retries, t.reason)
+			c.db.Exec(`UPDATE tasks SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?`,
+				fmt.Sprintf("Max retries exceeded: %s", t.reason), t.id)
+		} else {
+			// Reset to queued for retry
+			log.Printf("Cleanup: resetting stuck task %s (%s), retry %d/%d", t.id, t.reason, t.retries+1, maxRetries)
+			c.db.Exec(`UPDATE tasks SET status = 'queued', worker_id = NULL, assigned_at = NULL, started_at = NULL, retry_count = COALESCE(retry_count, 0) + 1 WHERE id = ?`, t.id)
+		}
+
+		// If worker was busy with this task, mark it as potentially dead
+		if t.workerID != "" && activeWorkers[t.workerID] {
+			c.db.Exec(`UPDATE workers SET status = 'idle' WHERE id = ? AND status = 'busy'`, t.workerID)
+		}
+	}
+
+	if len(stuck) > 0 {
+		log.Printf("Cleanup: processed %d stuck tasks", len(stuck))
 	}
 }
 
