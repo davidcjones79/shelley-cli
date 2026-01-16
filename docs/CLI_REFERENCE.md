@@ -445,6 +445,79 @@ The token is displayed when the coordinator starts.
 
 ---
 
+# Chat Slash Commands - Orchestration
+
+These slash commands are available within `shelley chat` for managing sub-agents and orchestration.
+
+## Sub-Agent Commands
+
+Spawn additional Shelley instances to work in parallel:
+
+| Command | Description |
+|---------|-------------|
+| `/spawn <prompt>` | Spawn a background sub-agent with the given prompt |
+| `/spawns` | List all sub-agents with their status |
+| `/spawn-output <id>` | View output from a specific sub-agent |
+| `/spawn-wait` | Wait for all running sub-agents to complete |
+| `/spawn-clear` | Clear completed/failed sub-agents from tracking |
+| `/parallel "a"\|"b"\|"c"` | Spawn multiple sub-agents in parallel |
+
+### Examples
+
+```
+/spawn "Review auth.go for security issues"
+/spawns
+/spawn-output agent-1
+/parallel "Review auth.go" | "Review api.go" | "Review db.go"
+```
+
+## Script Registry Commands
+
+Save and reuse orchestration scripts across sessions:
+
+| Command | Description |
+|---------|-------------|
+| `/scripts` | List all saved scripts |
+| `/script-save <name> <file> [desc]` | Save a script to the registry |
+| `/script-show <name>` | View script contents |
+| `/script-run <name>` | Execute a saved script |
+| `/script-delete <name>` | Delete a script from the registry |
+
+### Examples
+
+```
+/script-save parallel-reviews /tmp/my-script.sh "Run security reviews in parallel"
+/scripts
+/script-run parallel-reviews
+```
+
+## Orchestration Commands
+
+Parse plans and execute via the coordinator:
+
+| Command | Description |
+|---------|-------------|
+| `/orchestrate <plan>` | Parse plan into tasks and execute via coordinator |
+| `/coord start` | Start coordinator dashboard |
+| `/coord stop` | Stop coordinator |
+| `/coord status` | Show coordinator stats |
+| `/coord workers` | List workers |
+| `/coord tasks` | List tasks |
+| `/coord scale N` | Scale to N workers |
+| `/coord drain` | Gracefully shutdown all workers |
+| `/coord add <prompt>` | Add a single task to the queue |
+
+### Examples
+
+```
+/orchestrate "Create auth module" | "Create API routes" | "Create database schema"
+/coord start
+/coord scale 5
+/coord status
+```
+
+---
+
 # Common Workflows
 
 ## Parallelize Tasks Across VMs
