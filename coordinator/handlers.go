@@ -69,7 +69,8 @@ func (c *Coordinator) HandleNextTask(w http.ResponseWriter, r *http.Request) {
 	// Optional: worker can report its shelley version
 	version := r.URL.Query().Get("version")
 	if version != "" {
-		c.db.Exec(`UPDATE workers SET shelley_version = ? WHERE id = ?`, version, workerID)
+		// Set ready_at on first version report (marks worker as fully provisioned)
+		c.db.Exec(`UPDATE workers SET shelley_version = ?, ready_at = COALESCE(ready_at, CURRENT_TIMESTAMP) WHERE id = ?`, version, workerID)
 	}
 
 	task, err := c.GetNextTask(workerID)

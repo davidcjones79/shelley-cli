@@ -665,7 +665,7 @@
                         <div class="list-item-info">
                             <span class="status-dot ${w.status}"></span>
                             <span class="list-item-name">${w.id}</span>
-                            <span class="list-item-meta">Tasks: ${w.tasks_completed || 0}${w.shelley_version ? ` · v${w.shelley_version.substring(0, 7)}` : ''}</span>
+                            <span class="list-item-meta">Tasks: ${w.tasks_completed || 0}${w.shelley_version ? ` · v${w.shelley_version.substring(0, 7)}` : ' · provisioning...'}${w.provisioning_sec ? ` · ${w.provisioning_sec}s` : ''}</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <a href="https://${w.id}.exe.xyz:8000/" target="_blank" 

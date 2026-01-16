@@ -69,14 +69,15 @@ type Task struct {
 
 // Worker represents a VM in the pool.
 type Worker struct {
-	ID             string     `json:"id"`
-	Status         string     `json:"status"`
-	CurrentTaskID  *string    `json:"current_task_id,omitempty"`
-	Hostname       *string    `json:"hostname,omitempty"` // exe.dev hostname (stored in tailscale_ip column)
-	ShelleyVersion *string    `json:"shelley_version,omitempty"` // commit hash of shelley on worker
-	CreatedAt      time.Time  `json:"created_at"`
-	LastHeartbeat  *time.Time `json:"last_heartbeat,omitempty"`
-	TasksCompleted int        `json:"tasks_completed"`
+	ID              string     `json:"id"`
+	Status          string     `json:"status"`
+	CurrentTaskID   *string    `json:"current_task_id,omitempty"`
+	ShelleyVersion  *string    `json:"shelley_version,omitempty"` // commit hash of shelley on worker
+	CreatedAt       time.Time  `json:"created_at"`
+	ReadyAt         *time.Time `json:"ready_at,omitempty"`         // when worker first reported version
+	ProvisioningSec *int       `json:"provisioning_sec,omitempty"` // seconds from created to ready
+	LastHeartbeat   *time.Time `json:"last_heartbeat,omitempty"`
+	TasksCompleted  int        `json:"tasks_completed"`
 }
 
 // TaskRequest contains parameters for creating a task.
@@ -950,9 +951,7 @@ func (c *Coordinator) SpawnWorker() (*Worker, error) {
 	// to ensure the hex suffix always contains at least one letter
 	workerID := fmt.Sprintf("%s-x%s", c.config.WorkerPrefix, hex.EncodeToString(b))
 
-	// Store worker hostname in tailscale_ip field (repurposed for exe.dev hostname)
-	workerHost := workerID + ".exe.xyz"
-	_, err := c.db.Exec(`INSERT INTO workers (id, status, tailscale_ip) VALUES (?, 'starting', ?)`, workerID, workerHost)
+	_, err := c.db.Exec(`INSERT INTO workers (id, status) VALUES (?, 'starting')`, workerID)
 	if err != nil {
 		return nil, err
 	}
@@ -1265,12 +1264,12 @@ done
 // GetWorker retrieves a worker by ID.
 func (c *Coordinator) GetWorker(id string) (*Worker, error) {
 	var w Worker
-	var currentTaskID, tailscaleIP sql.NullString
-	var lastHeartbeat sql.NullTime
+	var currentTaskID, shelleyVersion sql.NullString
+	var readyAt, lastHeartbeat sql.NullTime
 
-	err := c.db.QueryRow(`SELECT id, status, current_task_id, tailscale_ip, created_at, last_heartbeat, tasks_completed 
+	err := c.db.QueryRow(`SELECT id, status, current_task_id, shelley_version, created_at, ready_at, last_heartbeat, tasks_completed 
 		FROM workers WHERE id = ?`, id).Scan(
-		&w.ID, &w.Status, &currentTaskID, &tailscaleIP, &w.CreatedAt, &lastHeartbeat, &w.TasksCompleted)
+		&w.ID, &w.Status, &currentTaskID, &shelleyVersion, &w.CreatedAt, &readyAt, &lastHeartbeat, &w.TasksCompleted)
 	if err != nil {
 		return nil, err
 	}
@@ -1278,8 +1277,13 @@ func (c *Coordinator) GetWorker(id string) (*Worker, error) {
 	if currentTaskID.Valid {
 		w.CurrentTaskID = &currentTaskID.String
 	}
-	if tailscaleIP.Valid {
-		w.Hostname = &tailscaleIP.String
+	if shelleyVersion.Valid {
+		w.ShelleyVersion = &shelleyVersion.String
+	}
+	if readyAt.Valid {
+		w.ReadyAt = &readyAt.Time
+		provSec := int(readyAt.Time.Sub(w.CreatedAt).Seconds())
+		w.ProvisioningSec = &provSec
 	}
 	if lastHeartbeat.Valid {
 		w.LastHeartbeat = &lastHeartbeat.Time
@@ -1427,7 +1431,7 @@ func (c *Coordinator) ListTasks(status string, limit int) ([]Task, error) {
 
 // ListWorkers returns all non-deleted workers.
 func (c *Coordinator) ListWorkers() ([]Worker, error) {
-	rows, err := c.db.Query(`SELECT id, status, current_task_id, tailscale_ip, shelley_version, created_at, last_heartbeat, tasks_completed 
+	rows, err := c.db.Query(`SELECT id, status, current_task_id, shelley_version, created_at, ready_at, last_heartbeat, tasks_completed 
 		FROM workers WHERE status != 'deleted' ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -1437,11 +1441,17 @@ func (c *Coordinator) ListWorkers() ([]Worker, error) {
 	var workers []Worker
 	for rows.Next() {
 		var w Worker
-		var currentTaskID, tailscaleIP, shelleyVersion sql.NullString
-		var lastHeartbeatTime sql.NullTime
-		rows.Scan(&w.ID, &w.Status, &currentTaskID, &tailscaleIP, &shelleyVersion, &w.CreatedAt, &lastHeartbeatTime, &w.TasksCompleted)
+		var currentTaskID, shelleyVersion sql.NullString
+		var readyAtTime, lastHeartbeatTime sql.NullTime
+		rows.Scan(&w.ID, &w.Status, &currentTaskID, &shelleyVersion, &w.CreatedAt, &readyAtTime, &lastHeartbeatTime, &w.TasksCompleted)
 		if shelleyVersion.Valid {
 			w.ShelleyVersion = &shelleyVersion.String
+		}
+		if readyAtTime.Valid {
+			w.ReadyAt = &readyAtTime.Time
+			// Calculate provisioning time in seconds
+			provSec := int(readyAtTime.Time.Sub(w.CreatedAt).Seconds())
+			w.ProvisioningSec = &provSec
 		}
 		if lastHeartbeatTime.Valid {
 			w.LastHeartbeat = &lastHeartbeatTime.Time
