@@ -308,15 +308,30 @@ func (c *Coordinator) cleanupMissingVMs() {
 	if err != nil {
 		return
 	}
-	defer rows.Close()
-
+	
+	// Collect missing workers first (can't modify DB while iterating)
+	type missingWorker struct {
+		id     string
+		status string
+	}
+	var missing []missingWorker
+	
 	for rows.Next() {
 		var workerID, status string
 		rows.Scan(&workerID, &status)
 		if !existingVMs[workerID] {
-			log.Printf("Cleanup: removing missing worker %s from DB (VM no longer exists)", workerID)
-			c.LogEvent("worker.missing", "", workerID, map[string]interface{}{"previous_status": status})
-			c.db.Exec(`DELETE FROM workers WHERE id = ?`, workerID)
+			missing = append(missing, missingWorker{workerID, status})
+		}
+	}
+	rows.Close()
+	
+	// Now delete the missing workers
+	for _, w := range missing {
+		log.Printf("Cleanup: removing missing worker %s from DB (VM no longer exists)", w.id)
+		c.LogEvent("worker.missing", "", w.id, map[string]interface{}{"previous_status": w.status})
+		_, err := c.db.Exec(`DELETE FROM workers WHERE id = ?`, w.id)
+		if err != nil {
+			log.Printf("Cleanup: failed to delete worker %s: %v", w.id, err)
 		}
 	}
 }
