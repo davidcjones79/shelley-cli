@@ -754,7 +754,7 @@ func (c *Coordinator) setupWorker(workerID string) {
 	workerHost := workerID + ".exe.xyz"
 
 	log.Printf("Spawning worker VM: %s", workerID)
-	cmd := exec.Command("ssh", "exe.dev", fmt.Sprintf(`new --name=%s --prompt="Worker VM" --no-email --json`, workerID))
+	cmd := exec.Command("ssh", "exe.dev", "new", "--name="+workerID, "--no-email", "--json")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("Failed to spawn %s: %v\n%s", workerID, err, output)
