@@ -332,7 +332,7 @@ All API endpoints require the `X-Coordinator-Token` header or `?token=` query pa
 - Manual cleanup: `pkill -f "shelley coord"`
 
 ### Worker install fails
-- The default `http` method downloads the binary from the coordinator
+- The default `https` method downloads the binary from the coordinator
 - Verify the coordinator's `/api/shelley-bin` endpoint is accessible
 - Alternative: use `-install-script scp` to copy via SSH
 
@@ -383,7 +383,7 @@ watch -n 5 "curl -s -H 'X-Coordinator-Token: $TOKEN' http://localhost:8081/api/s
 
 ## Tips
 
-1. **Use the default `http` install method** - Workers download the binary from the coordinator (fast and reliable)
+1. **Use the default `https` install method** - Workers download the binary from the coordinator (fast and reliable)
 2. **Start with 2-3 workers** - Scale up once you verify things work
 3. **Monitor the dashboard** - It shows real-time logs and task status
 4. **Use meaningful task prompts** - Be specific about what you want created and where to save files

@@ -118,7 +118,7 @@ For each worker, the coordinator:
    > **Note:** The coordinator SSH's through exe.dev to reach the worker VM, since the coordinator's SSH key is registered with exe.dev (not directly with the worker).
    
    The install method is determined by the `-install-script` flag:
-   - `http` (default): Workers download binary from coordinator's `/api/shelley-bin` endpoint
+   - `https` (default): Workers download binary from coordinator's `/api/shelley-bin` endpoint
    - `scp`: Copy binary via SSH
    - URL: Run a custom install script (e.g., `https://raw.githubusercontent.com/user/repo/main/install.sh`)
 

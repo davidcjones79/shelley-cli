@@ -114,12 +114,12 @@ The `-install-script` flag controls how shelley is installed on worker VMs:
 
 | Value | Description | Speed |
 |-------|-------------|-------|
-| `http` **(default)** | Workers download binary from coordinator's `/api/shelley-bin` | ~30 sec |
+| `https` **(default)** | Workers download binary from coordinator's `/api/shelley-bin` | ~30 sec |
 | `scp` | Copies coordinator's binary to workers via SSH | ~30 sec |
 | URL | Runs custom install script (e.g., GitHub raw URL) | varies |
 | (empty) | Falls back to building from source | ~2 min |
 
-**Note:** The `http` method is the default and recommended approach. It reliably transfers the binary without SSH/SCP issues.
+**Note:** The `https` method is the default and recommended approach. It reliably transfers the binary without SSH/SCP issues.
 
 ### Examples
 
