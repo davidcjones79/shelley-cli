@@ -609,12 +609,22 @@ func (c *Coordinator) GetNextTask(workerID string) (*Task, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Update existing worker or re-register if missing (e.g., after coordinator restart)
-	result, _ := c.db.Exec(`UPDATE workers SET last_heartbeat = CURRENT_TIMESTAMP, status = 'idle' WHERE id = ?`, workerID)
-	if rows, _ := result.RowsAffected(); rows == 0 {
-		// Worker not in DB - re-register it
+	// Check if this is the first poll from a starting worker
+	var currentStatus string
+	c.db.QueryRow(`SELECT status FROM workers WHERE id = ?`, workerID).Scan(&currentStatus)
+	
+	if currentStatus == "" {
+		// Worker not in DB - re-register it (e.g., after coordinator restart)
 		log.Printf("Re-registering worker %s (not in DB)", workerID)
 		c.db.Exec(`INSERT INTO workers (id, status, last_heartbeat) VALUES (?, 'idle', CURRENT_TIMESTAMP)`, workerID)
+	} else if currentStatus == "starting" {
+		// First poll from a new worker - it's now ready!
+		log.Printf("Worker %s is now ready (first poll received)", workerID)
+		c.db.Exec(`UPDATE workers SET status = 'idle', last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?`, workerID)
+		c.LogEvent("worker.ready", "", workerID, nil)
+	} else {
+		// Regular heartbeat update
+		c.db.Exec(`UPDATE workers SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = ? AND status != 'busy'`, workerID)
 	}
 
 	var taskID string
@@ -1256,9 +1266,8 @@ done
 		startCmd.Run()
 	}()
 
-	c.db.Exec(`UPDATE workers SET status = 'idle', last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?`, workerID)
-	c.LogEvent("worker.ready", "", workerID, nil)
-	log.Printf("Worker %s is ready - view at https://%s.exe.xyz:8000/", workerID, workerID)
+	// Keep status as 'starting' - will change to 'idle' when worker first polls and reports version
+	log.Printf("Worker %s setup complete, waiting for first poll...", workerID)
 }
 
 // GetWorker retrieves a worker by ID.
