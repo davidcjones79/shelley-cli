@@ -894,6 +894,7 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/group/tasks", coord.HandleGetGroupTasks)
 	mux.HandleFunc("/shelley-bin", coord.HandleShelleyBinary)
 	mux.HandleFunc("/api/sync-conversation", coord.HandleSyncConversation)
+	mux.HandleFunc("/api/shelley-bin", coord.HandleShelleyBinary)
 
 	addr := fmt.Sprintf(":%d", *port)
 	if err := http.ListenAndServe(addr, mux); err != nil {

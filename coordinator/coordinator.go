@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"embed"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -806,8 +805,8 @@ func (c *Coordinator) setupWorker(workerID string) {
 		installScript = "https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh"
 	}
 
-	// Use install script (default) or fall back to scp if explicitly set to "scp"
-	if installScript != "scp" {
+	// Use install script (default) or download from coordinator if set to "scp" or "http"
+	if installScript != "scp" && installScript != "http" {
 		log.Printf("Running install script on %s...", workerID)
 		installCmd := sshToWorker(workerID, "bash", "-c", fmt.Sprintf("curl -fsSL %s | bash", installScript))
 		if out, err := installCmd.CombinedOutput(); err != nil {
@@ -825,20 +824,15 @@ func (c *Coordinator) setupWorker(workerID string) {
 			return
 		}
 
-		// Transfer shelley binary via cat through exe.dev proxy
-		// (SCP doesn't work through exe.dev proxy)
-		log.Printf("Copying shelley binary to %s...", workerID)
-		binaryData, err := os.ReadFile(c.config.ShelleyBin)
-		if err != nil {
-			log.Printf("Failed to read shelley binary: %v", err)
-			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
-			return
-		}
-		// Base64 encode and transfer (exe.dev proxy may have issues with binary)
-		encoded := base64.StdEncoding.EncodeToString(binaryData)
-		transferCmd := sshToWorker(workerID, "bash", "-c", "echo "+encoded+" | base64 -d > .local/bin/shelley && chmod +x .local/bin/shelley")
-		if out, err := transferCmd.CombinedOutput(); err != nil {
-			log.Printf("Failed to transfer shelley to %s: %v\n%s", workerID, err, out)
+		// Download shelley binary from coordinator host
+		// The coordinator serves the binary on its HTTP port at /api/shelley-bin
+		// exe.dev proxies HTTPS to the coordinator port
+		log.Printf("Downloading shelley binary to %s from coordinator...", workerID)
+		downloadURL := fmt.Sprintf("https://%s:%d/api/shelley-bin?token=%s", c.config.CoordHost, c.config.Port, c.config.APIToken)
+		downloadCmd := sshToWorker(workerID, "bash", "-c", 
+			fmt.Sprintf("curl -fsSL '%s' -o .local/bin/shelley && chmod +x .local/bin/shelley", downloadURL))
+		if out, err := downloadCmd.CombinedOutput(); err != nil {
+			log.Printf("Failed to download shelley to %s: %v\n%s", workerID, err, out)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
 			return
 		}
