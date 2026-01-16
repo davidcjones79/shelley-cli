@@ -1,0 +1,21 @@
+[Unit]
+Description=Shelley Coordinator Dashboard
+After=network.target
+
+[Service]
+Type=exec
+User=exedev
+Group=exedev
+WorkingDirectory=/home/exedev
+ExecStart=/usr/local/bin/shelley dashboard -port 8080 -auto-start
+Restart=on-failure
+RestartSec=5
+Environment=HOME=/home/exedev
+Environment=USER=exedev
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shelley-coordinator
+
+[Install]
+WantedBy=multi-user.target

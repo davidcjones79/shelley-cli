@@ -124,7 +124,7 @@ fi
 echo "🔗 Installing shelley command..."
 sudo ln -sf ~/shelley-cli/bin/shelley /usr/local/bin/shelley
 
-# Install Igor service
+# Install services
 if [ -d "/exe.dev" ]; then
     echo "⚡ Installing Igor file transfer service..."
     sudo cp ~/shelley-cli/igor.service /etc/systemd/system/
@@ -132,13 +132,20 @@ if [ -d "/exe.dev" ]; then
     sudo systemctl enable igor
     sudo systemctl start igor
     
+    echo "⚡ Installing Coordinator dashboard service..."
+    sudo cp ~/shelley-cli/coordinator.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable coordinator
+    sudo systemctl start coordinator
+    
     HOSTNAME=$(hostname)
     echo ""
     echo "✅ Shelley CLI installed!"
     echo ""
     echo "   Run:  shelley chat"
     echo ""
-    echo "   Igor: https://${HOSTNAME}.exe.xyz:8099/"
+    echo "   Igor:       https://${HOSTNAME}.exe.xyz:8099/"
+    echo "   Coordinator: https://${HOSTNAME}.exe.xyz:8080/"
 else
     echo ""
     echo "✅ Shelley CLI installed!"
