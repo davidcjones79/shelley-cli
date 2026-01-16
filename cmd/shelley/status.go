@@ -56,11 +56,28 @@ func runStatus(args []string) {
 		port int
 	}{
 		{"coordinator", 8080},
+		{"coordinator", 8081}, // Also check port 8081 (coord command default)
 		{"igor", 8099},
 	}
 
+	// Dedupe services - only show first running instance of each name
+	seenNames := make(map[string]bool)
 	for _, svc := range services {
 		status := checkSystemdService(svc.name, svc.port)
+		// Skip if we already found a running instance with this name
+		if seenNames[svc.name] {
+			if status.Status == "running" {
+				// Replace the stopped one with the running one
+				for i, existing := range output.Services {
+					if existing.Name == svc.name && existing.Status == "stopped" {
+						output.Services[i] = status
+						break
+					}
+				}
+			}
+			continue
+		}
+		seenNames[svc.name] = true
 		output.Services = append(output.Services, status)
 	}
 
@@ -96,28 +113,38 @@ func checkSystemdService(name string, port int) ServiceStatus {
 		Port: port,
 	}
 
-	// Check if systemctl exists and service is running
+	// First check if systemctl exists and service is running
 	cmd := exec.Command("systemctl", "is-active", name)
 	out, err := cmd.Output()
-	if err != nil {
-		status.Status = "stopped"
-		return status
-	}
+	if err == nil {
+		state := strings.TrimSpace(string(out))
+		if state == "active" {
+			status.Status = "running"
 
-	state := strings.TrimSpace(string(out))
-	if state == "active" {
-		status.Status = "running"
-
-		// Get PID
-		cmd = exec.Command("systemctl", "show", name, "--property=MainPID", "--value")
-		out, err = cmd.Output()
-		if err == nil {
-			fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &status.PID)
+			// Get PID
+			cmd = exec.Command("systemctl", "show", name, "--property=MainPID", "--value")
+			out, err = cmd.Output()
+			if err == nil {
+				fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &status.PID)
+			}
+			return status
 		}
-	} else {
-		status.Status = state
 	}
 
+	// If not running as systemd service, check if something is listening on the port
+	// This handles the case where coordinator is run manually (e.g., nohup shelley coord ...)
+	cmd = exec.Command("lsof", "-i", fmt.Sprintf(":%d", port), "-t")
+	out, err = cmd.Output()
+	if err == nil && len(strings.TrimSpace(string(out))) > 0 {
+		pids := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(pids) > 0 {
+			fmt.Sscanf(pids[0], "%d", &status.PID)
+			status.Status = "running"
+			return status
+		}
+	}
+
+	status.Status = "stopped"
 	return status
 }
 
