@@ -700,3 +700,43 @@ shelley coord-cli add-task "cd /repo && go test ./pkg/db/..."
 shelley coord-cli scale 3
 shelley watch
 ```
+
+## Starting Background Processes on Remote VMs
+
+**Problem:** This pattern HANGS:
+```bash
+ssh exe.dev "ssh vm 'nohup python3 -m http.server 8000 &'"
+```
+
+**Solutions:**
+
+### Option 1: Use `timeout` to limit wait time
+```bash
+ssh exe.dev "ssh vm 'timeout 2 sh -c \"python3 -m http.server 8000 &\"'" || true
+```
+
+### Option 2: Use systemd (recommended for persistent services)
+```bash
+ssh exe.dev "ssh vm 'cat > /tmp/myserver.service << SERVICE
+[Unit]
+Description=My HTTP Server
+[Service]
+WorkingDirectory=/home/exedev/mysite
+ExecStart=/usr/bin/python3 -m http.server 8000
+Restart=always
+SERVICE
+sudo mv /tmp/myserver.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start myserver'"
+```
+
+### Option 3: Check if already running first
+```bash
+# Check if server is running, only start if not
+ssh exe.dev "ssh vm 'pgrep -f \"http.server 8000\" || (cd /home/exedev/site && python3 -m http.server 8000 &)'" &
+```
+
+### Option 4: Use `at` for fire-and-forget
+```bash
+ssh exe.dev "ssh vm 'echo \"cd /home/exedev/site && python3 -m http.server 8000\" | at now'"
+```
