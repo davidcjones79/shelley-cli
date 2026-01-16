@@ -780,11 +780,20 @@ func (c *Coordinator) setupWorker(workerID string) {
 
 	log.Printf("Installing shelley-cli on %s...", workerID)
 
-	// Use install script if configured, otherwise fall back to scp
-	if c.config.InstallScript != "" {
+	// Determine install script: config > env var > default
+	installScript := c.config.InstallScript
+	if installScript == "" {
+		installScript = os.Getenv("SHELLEY_INSTALL_SCRIPT")
+	}
+	if installScript == "" {
+		installScript = "https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh"
+	}
+
+	// Use install script (default) or fall back to scp if explicitly set to "scp"
+	if installScript != "scp" {
 		log.Printf("Running install script on %s...", workerID)
 		installCmd := exec.Command("ssh", "-o", "ConnectTimeout=300", "-o", "StrictHostKeyChecking=no",
-			workerHost, "bash", "-c", fmt.Sprintf("curl -fsSL %s | bash", c.config.InstallScript))
+			workerHost, "bash", "-c", fmt.Sprintf("curl -fsSL %s | bash", installScript))
 		if out, err := installCmd.CombinedOutput(); err != nil {
 			log.Printf("Failed to run install script on %s: %v\n%s", workerID, err, out)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
