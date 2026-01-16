@@ -3,6 +3,104 @@
 This document describes the changes made to improve coordinator reliability and usability.
 Use this as a reference if you need to understand or extend these features.
 
+## Latest Changes (Health Monitoring & File Transfer)
+
+### 9. Heartbeat Staleness Detection (P0 - Critical)
+
+**Problem:** Workers showed `status: "idle"` but their agent processes had died. Heartbeat timestamps were 11+ minutes old but system didn't alert or act.
+
+**Solution:** Add health thresholds and auto-replacement of dead workers.
+
+**File:** `coordinator/coordinator.go`
+
+```go
+// Heartbeat health thresholds
+const (
+    HeartbeatWarningAge = 60 * time.Second   // Yellow indicator
+    HeartbeatStaleAge   = 120 * time.Second  // Unhealthy (orange)
+    HeartbeatDeadAge    = 300 * time.Second  // Auto-replace (red)
+)
+
+// Worker struct now includes health fields
+type Worker struct {
+    // ... existing fields ...
+    Health           string `json:"health,omitempty"`           // healthy/warning/unhealthy/dead
+    HeartbeatAgeSec  *int   `json:"heartbeat_age_sec,omitempty"` // seconds since last heartbeat
+    HeartbeatWarning bool   `json:"heartbeat_warning"`          // true if stale
+}
+```
+
+### 10. Auto-Replace Dead Workers (P0 - Critical)
+
+**Problem:** Dead workers were never replaced, tasks stuck forever.
+
+**Solution:** New `cleanupDeadWorkers()` function runs every 2 minutes.
+
+```go
+func (c *Coordinator) cleanupDeadWorkers() {
+    // Find workers with no heartbeat for >5 minutes
+    // Reset any in-progress task to "queued"
+    // Delete dead worker VM
+    // Spawn replacement worker
+}
+```
+
+### 11. Worker HTTP File Server (P1 - High)
+
+**Problem:** File transfer between VMs was painful - stdin piping through nested SSH didn't work, flags got consumed by exe.dev wrapper.
+
+**Solution:** Workers now start HTTP server on port 8000 at startup.
+
+**File:** `coordinator/coordinator.go` - Worker loop script
+
+```bash
+# Added to worker startup
+cd $HOME && nohup python3 -m http.server 8000 > /tmp/http-server.log 2>&1 &
+echo "HTTP server started - files available at https://${WORKER_ID}.exe.xyz:8000/"
+```
+
+Files can now be pulled from any VM:
+```bash
+curl -o output.html https://wk-abc-123.exe.xyz:8000/workspaces/task-id/output.html
+```
+
+### 12. Dashboard Health Indicators (P1 - High)
+
+**Problem:** Dashboard showed misleading "idle" status for dead workers.
+
+**Solution:** Color-coded heartbeat display and alert banner.
+
+**File:** `coordinator/dashboard.html`
+
+- Green dot + "5s ago" for healthy workers
+- Yellow dot + "1m ago" for warning
+- Orange banner + "⚠️ UNHEALTHY" for stale workers
+- Red indicator for dead workers (auto-replaced)
+- Alert banner at top when any workers unhealthy/dead
+
+### 13. Task Artifacts Table (P2 - Future)
+
+**File:** `coordinator/schema.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS task_artifacts (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    worker_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    path TEXT NOT NULL,
+    url TEXT NOT NULL,  -- https://worker.exe.xyz:8000/path
+    size_bytes INTEGER,
+    content_type TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+```
+
+---
+
+## Earlier Changes
+
 ## Summary of Changes
 
 ### 1. Persistent Worker Prefix (P1 - Reliability)
@@ -202,6 +300,12 @@ shelley coord-cli clear-failed
 
 | File | Changes |
 |------|---------|
+| `coordinator/coordinator.go` | Health thresholds, `cleanupDeadWorkers()`, `calculateWorkerHealth()`, HTTP server in worker script |
+| `coordinator/dashboard.html` | Health indicators, alert banner, "Files" button |
+| `coordinator/schema.sql` | `task_artifacts` table |
+| `coordinator/README.md` | HTTP pull pattern, SSH workaround, health monitoring docs |
+| `docs/CLI_REFERENCE.md` | Worker health monitoring, file transfer docs |
+| `docs/COORDINATOR_SETUP_GUIDE.md` | HTTP pull pattern, health thresholds |
 | `coordinator/coordinator.go` | Persistent prefix, startup cleanup, reduced retention, worker error field, list workers filter, conversation sync fix |
 | `coordinator/handlers.go` | `HandleClearFailedWorkers`, `HandleListWorkers` with `show_failed` param |
 | `coordinator/dashboard.html` | Show failed checkbox, clear failed button, error display, failed count badge |

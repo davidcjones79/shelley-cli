@@ -344,11 +344,47 @@ curl -X POST https://your-vm.exe.xyz:8080/api/drain \
 ## Worker Behavior
 
 1. **Spawning**: Workers are exe.dev VMs created with `ssh exe.dev new --name=<prefix>-<id>`
-2. **Execution**: Worker clones repo (if specified), runs Shelley with the prompt
-3. **Git Integration**: Creates branch `task-{id}`, commits changes, pushes
-4. **Completion**: Reports results, syncs conversation to main DB
-5. **Auto-shutdown**: Idle workers shut down after 30 minutes
-6. **Deletion**: Workers are removed with `ssh exe.dev rm <worker-id>`
+2. **HTTP Server**: Workers start an HTTP file server on port 8000 at startup
+3. **Execution**: Worker clones repo (if specified), runs Shelley with the prompt
+4. **Heartbeats**: Workers send heartbeats every 30 seconds during task execution
+5. **Git Integration**: Creates branch `task-{id}`, commits changes, pushes
+6. **Completion**: Reports results, syncs conversation to main DB
+7. **Auto-shutdown**: Idle workers shut down after 30 minutes
+8. **Deletion**: Workers are removed with `ssh exe.dev rm <worker-id>`
+
+## Worker Health Monitoring
+
+The coordinator monitors worker heartbeats to detect and auto-replace unhealthy workers:
+
+| Health Status | Heartbeat Age | Dashboard Indicator | Action |
+|---------------|---------------|---------------------|--------|
+| Healthy       | < 60 sec      | Green dot           | Normal operation |
+| Warning       | 60-120 sec    | Yellow dot          | Warning indicator |
+| Unhealthy     | 120-300 sec   | Orange banner       | Alert shown |
+| Dead          | > 300 sec     | Red, removed        | Auto-replaced, task reset |
+
+When a worker is detected as dead:
+1. Any in-progress task is reset to "queued" for retry
+2. The dead worker VM is deleted
+3. A replacement worker is automatically spawned (unless draining)
+
+## Worker File Server
+
+Workers automatically serve their home directory via HTTP on port 8000:
+
+```
+https://worker-id.exe.xyz:8000/
+```
+
+This enables easy file retrieval using HTTP pull:
+
+```bash
+# List files on a worker
+curl https://wk-abc-123.exe.xyz:8000/
+
+# Download a specific file
+curl -o output.html https://wk-abc-123.exe.xyz:8000/workspaces/task-id/output.html
+```
 
 ## API Reference
 
@@ -371,9 +407,35 @@ curl -X POST https://your-vm.exe.xyz:8080/api/drain \
 ### Workers
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/workers` | GET | List workers |
+| `/api/workers` | GET | List workers (includes health status) |
+| `/api/workers?show_failed=true` | GET | List workers including failed ones |
 | `/api/scale?workers=N` | POST | Scale worker count |
 | `/api/drain` | POST | Gracefully shut down all |
+| `/api/workers/clear-failed` | POST | Clear failed worker records |
+| `/api/heartbeat?worker=ID` | GET | Worker heartbeat (internal) |
+
+#### Worker Response Fields
+
+```json
+{
+  "id": "wk-abc-123",
+  "status": "busy",
+  "health": "healthy",
+  "heartbeat_age_sec": 5,
+  "heartbeat_warning": false,
+  "last_heartbeat": "2026-01-16T20:10:54Z",
+  "current_task_id": "task-456",
+  "shelley_version": "e1e511b8",
+  "tasks_completed": 3,
+  "provisioning_sec": 45
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `health` | Health status: `healthy`, `warning`, `unhealthy`, `dead`, `initializing` |
+| `heartbeat_age_sec` | Seconds since last heartbeat |
+| `heartbeat_warning` | True if heartbeat is stale (>60 sec) |
 
 ### Authentication
 
@@ -661,7 +723,30 @@ ssh exe.dev "ssh worker 'mkdir -p /path/to/dir'"
 
 VMs cannot directly SSH or SCP to each other. All traffic goes through the exe.dev proxy.
 
-### Method 1: Base64 Encoding (Small Files)
+### Method 1: HTTP Pull (Recommended)
+
+Workers automatically run an HTTP server on port 8000. Use curl/wget to pull files:
+
+```bash
+# From any VM, download file from a worker:
+curl -o /path/to/dest.html https://wk-abc-123.exe.xyz:8000/workspaces/task-id/output.html
+
+# List files on worker:
+curl https://wk-abc-123.exe.xyz:8000/
+
+# Download multiple files:
+for f in file1.html file2.html file3.html; do
+  curl -o /dest/$f https://wk-abc-123.exe.xyz:8000/$f
+done
+```
+
+**Benefits:**
+- No SSH flag parsing issues
+- Works reliably with exe.dev proxy
+- Parallel downloads possible
+- Easy to verify with HEAD requests
+
+### Method 2: Base64 Encoding (Small Files)
 
 ```bash
 # Encode file and transfer
@@ -669,17 +754,17 @@ b64=$(cat /path/to/file.html | base64 -w0)
 ssh exe.dev "ssh targetvm 'echo $b64 | base64 -d > /path/to/dest.html'"
 ```
 
-### Method 2: HTTP Server (Large Files)
+### Method 3: Temporary HTTP Server (Non-Workers)
 
 ```bash
 # On source VM - start temp HTTP server
 cd /path/to/files && python3 -m http.server 8888 &
 
 # On target VM - download file
-ssh exe.dev "ssh targetvm 'curl -fsSL http://sourcevm.exe.xyz:8888/file.html -o /path/to/dest.html'"
+curl -o /path/to/dest.html https://sourcevm.exe.xyz:8888/file.html
 ```
 
-### Method 3: Igor Upload Server
+### Method 4: Igor Upload Server
 
 ```bash
 # On target VM
@@ -690,14 +775,26 @@ shelley igor -port 8099
 
 ## Retrieving Files from Workers
 
-After a coordinator task completes, files exist on the **worker VM**, not the coordinator:
+After a coordinator task completes, files exist on the **worker VM**. Use HTTP pull (recommended):
 
 ```bash
-# Get file from worker
-ssh exe.dev "ssh wk-abc-123 'cat /home/exedev/output.html'" > local-output.html
+# Download via HTTP (workers serve files on port 8000)
+curl -o output.html https://wk-abc-123.exe.xyz:8000/workspaces/task-id/output.html
 
-# Or copy to coordinator first
-ssh exe.dev "ssh wk-abc-123 'cat /home/exedev/output.html'" | ssh exe.dev "ssh coordinator 'cat > /home/exedev/output.html'"
+# Or via SSH (if HTTP server not running)
+ssh exe.dev "ssh wk-abc-123 'cat /home/exedev/output.html'" > local-output.html
+```
+
+### Consolidating Files from Multiple Workers
+
+```bash
+# Get list of completed tasks
+shelley coord-cli tasks
+
+# Pull files from each worker via HTTP
+curl -o results/doom.html https://wk-abc-001.exe.xyz:8000/workspaces/task-1/index.html
+curl -o results/quake.html https://wk-abc-002.exe.xyz:8000/workspaces/task-2/index.html
+curl -o results/duke.html https://wk-abc-003.exe.xyz:8000/workspaces/task-3/index.html
 ```
 
 ---
