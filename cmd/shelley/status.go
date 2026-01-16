@@ -195,6 +195,16 @@ func checkCoordinatorAPI() *CoordinatorStatus {
 	return status
 }
 
+// isHexString checks if a string contains only hexadecimal characters
+func isHexString(s string) bool {
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 func getCoordinatorToken() string {
 	// Method 1: Try to get token from process list (if -token was specified)
 	cmd := exec.Command("ps", "aux")
@@ -223,13 +233,22 @@ func getCoordinatorToken() string {
 	for _, logFile := range logFiles {
 		if data, err := os.ReadFile(logFile); err == nil {
 			lines := strings.Split(string(data), "\n")
+			inTokenSection := false
 			for _, line := range lines {
-				// Look for API TOKEN section
-				if strings.Contains(line, "==") && len(line) == 32 {
-					// This is likely the token line (32 hex chars)
-					token := strings.TrimSpace(line)
-					if len(token) == 32 {
-						return token
+				line = strings.TrimSpace(line)
+				// Look for API TOKEN section marker
+				if strings.Contains(line, "=== API TOKEN ===") {
+					inTokenSection = true
+					continue
+				}
+				if inTokenSection {
+					// End of token section
+					if strings.HasPrefix(line, "===") {
+						break
+					}
+					// This should be the token (32 hex chars)
+					if len(line) == 32 && isHexString(line) {
+						return line
 					}
 				}
 			}
