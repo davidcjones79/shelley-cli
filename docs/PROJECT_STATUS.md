@@ -155,11 +155,16 @@ The coordinator runs cleanup every 5 minutes (30 second initial delay):
 
 ## Known Issues / TODO
 
-1. **Worker idle timeout (30 min) may be too aggressive** - Workers get deleted even when coordinator is working correctly
+1. **⚠️ CRITICAL: Worker VMs disappearing unexpectedly** - Worker VMs are being deleted even when coordinator hasn't cleaned them up. Possible causes:
+   - exe.dev has a VM limit or auto-cleanup
+   - Some other process is deleting them
+   - Need to investigate exe.dev's VM lifecycle policies
 
-2. **No task execution tested yet** - We've verified worker creation but haven't tested actual task distribution
+2. **Worker idle timeout (30 min) may be too aggressive** - Workers get deleted even when coordinator is working correctly
 
-3. **Dashboard (port 8080) not tested** - We've been using coord command directly on 8081
+3. **No task execution tested yet** - We've verified worker creation but haven't tested actual task distribution
+
+4. **Dashboard (port 8080) not tested** - We've been using coord command directly on 8081
 
 ## Git Commits (Recent)
 
