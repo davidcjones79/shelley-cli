@@ -88,7 +88,7 @@ Shelley reads AGENTS.md, sees the coordinator documentation, and decides to:
 
 1. **Start the coordinator/dashboard:**
    ```bash
-   shelley dashboard -port 8080 -auto-start &
+   shelley dashboard -auto-start &
    ```
 
 2. **Scale to 5 workers via API:**
@@ -109,17 +109,18 @@ For each worker, the coordinator:
 
 2. **Waits for VM to be ready** (SSH accessible)
 
-3. **Installs shelley-cli using the install script:**
+3. **Installs shelley-cli via HTTP download (default):**
    ```bash
-   ssh exe.dev ssh wk-1 "curl -fsSL https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh | bash"
+   # Worker downloads binary from coordinator
+   ssh exe.dev ssh wk-1 "curl -fsSL https://<coordinator>.exe.xyz:8080/api/shelley-bin -o ~/.local/bin/shelley && chmod +x ~/.local/bin/shelley"
    ```
    
    > **Note:** The coordinator SSH's through exe.dev to reach the worker VM, since the coordinator's SSH key is registered with exe.dev (not directly with the worker).
    
-   The install script URL is determined by (in priority order):
-   1. `-install-script` flag
-   2. `SHELLEY_INSTALL_SCRIPT` environment variable
-   3. Default: `https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh`
+   The install method is determined by the `-install-script` flag:
+   - `http` (default): Workers download binary from coordinator's `/api/shelley-bin` endpoint
+   - `scp`: Copy binary via SSH
+   - URL: Run a custom install script (e.g., `https://raw.githubusercontent.com/user/repo/main/install.sh`)
 
 4. **Configures the worker** (shelley.json, git credentials if set)
 
@@ -190,20 +191,19 @@ The dashboard shows:
 
 ## Configuration Options
 
-### Install Script
+### Install Method
 
-The coordinator uses an install script to set up shelley-cli on worker VMs. You can customize this:
+The coordinator uses HTTP download by default to install shelley-cli on worker VMs. You can customize this:
 
 ```bash
-# Via environment variable
-export SHELLEY_INSTALL_SCRIPT="https://example.com/my-install.sh"
+# Default: HTTP download from coordinator (recommended)
 shelley dashboard -auto-start
 
-# Via flag
-shelley dashboard -install-script "https://example.com/my-install.sh" -auto-start
-
-# Use SCP instead (copies binary directly)
+# Use SCP instead (copies binary directly via SSH)
 shelley dashboard -install-script scp -auto-start
+
+# Use custom install script (downloads and builds from source)
+shelley dashboard -install-script "https://example.com/my-install.sh" -auto-start
 ```
 
 ### Git Integration

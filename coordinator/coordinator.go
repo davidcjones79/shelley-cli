@@ -891,16 +891,16 @@ func (c *Coordinator) setupWorker(workerID string) {
 
 	log.Printf("Installing shelley-cli on %s...", workerID)
 
-	// Determine install script: config > env var > default
+	// Determine install method: config > env var > default (http)
 	installScript := c.config.InstallScript
 	if installScript == "" {
 		installScript = os.Getenv("SHELLEY_INSTALL_SCRIPT")
 	}
 	if installScript == "" {
-		installScript = "https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh"
+		installScript = "http" // Default: workers download binary from coordinator
 	}
 
-	// Use install script (default) or download from coordinator if set to "scp" or "http"
+	// Use HTTP download (default), SCP, or custom install script URL
 	if installScript != "scp" && installScript != "http" {
 		log.Printf("Running install script on %s...", workerID)
 		installCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'curl -fsSL %s | bash'", workerID, installScript))

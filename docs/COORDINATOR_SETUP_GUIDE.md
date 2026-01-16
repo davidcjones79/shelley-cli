@@ -104,8 +104,7 @@ cd ~/shelley-cli
   -db coordinator.db \
   -max-workers 10 \
   -prefix wk \
-  -auto-start \
-  -install-script scp
+  -auto-start
 ```
 
 **Flags explained:**
@@ -114,7 +113,8 @@ cd ~/shelley-cli
 - `-max-workers 10`: Maximum concurrent workers
 - `-prefix wk`: Worker VM name prefix (e.g., `wk-abc-x123456`)
 - `-auto-start`: Start coordinator automatically
-- `-install-script scp`: Copy binary to workers (faster than building from source)
+
+**Note:** Workers automatically download the shelley binary from the coordinator via HTTP (the default `-install-script http` method).
 
 Access the dashboard at: `https://my-coordinator.exe.xyz:8080/`
 
@@ -130,8 +130,7 @@ cd ~/shelley-cli
   -db coordinator.db \
   -max-workers 10 \
   -prefix wk \
-  -host my-coordinator.exe.xyz \
-  -install-script scp
+  -host my-coordinator.exe.xyz
 ```
 
 The coordinator will print an API token on startup - save this for API access.
@@ -263,7 +262,7 @@ To keep the coordinator running after you disconnect:
 ```bash
 cd ~/shelley-cli
 nohup ./bin/shelley dashboard -port 8080 -db coordinator.db \
-  -max-workers 10 -prefix wk -auto-start -install-script scp \
+  -max-workers 10 -prefix wk -auto-start \
   > /tmp/dashboard.log 2>&1 &
 ```
 
@@ -280,7 +279,7 @@ After=network.target
 Type=simple
 User=exedev
 WorkingDirectory=/home/exedev/shelley-cli
-ExecStart=/home/exedev/shelley-cli/bin/shelley dashboard -port 8080 -db coordinator.db -max-workers 10 -prefix wk -auto-start -install-script scp
+ExecStart=/home/exedev/shelley-cli/bin/shelley dashboard -port 8080 -db coordinator.db -max-workers 10 -prefix wk -auto-start
 Restart=on-failure
 RestartSec=5
 
@@ -332,9 +331,10 @@ All API endpoints require the `X-Coordinator-Token` header or `?token=` query pa
 - Fixed in latest version - dashboard now properly kills coordinator on shutdown
 - Manual cleanup: `pkill -f "shelley coord"`
 
-### Worker install takes too long
-- Use `-install-script scp` flag to copy pre-built binary (~30 seconds)
-- Default install builds from source (~2 minutes)
+### Worker install fails
+- The default `http` method downloads the binary from the coordinator
+- Verify the coordinator's `/api/shelley-bin` endpoint is accessible
+- Alternative: use `-install-script scp` to copy via SSH
 
 ## Example: Parallel Web Page Generation
 
@@ -347,7 +347,7 @@ ssh my-coordinator.exe.xyz
 # 2. Start coordinator (if not already running)
 cd ~/shelley-cli
 nohup ./bin/shelley dashboard -port 8080 -db coordinator.db \
-  -max-workers 5 -prefix wk -auto-start -install-script scp \
+  -max-workers 5 -prefix wk -auto-start \
   > /tmp/dashboard.log 2>&1 &
 
 # 3. Get token
@@ -383,7 +383,7 @@ watch -n 5 "curl -s -H 'X-Coordinator-Token: $TOKEN' http://localhost:8081/api/s
 
 ## Tips
 
-1. **Use `-install-script scp`** - Much faster than building from source on each worker
+1. **Use the default `http` install method** - Workers download the binary from the coordinator (fast and reliable)
 2. **Start with 2-3 workers** - Scale up once you verify things work
 3. **Monitor the dashboard** - It shows real-time logs and task status
 4. **Use meaningful task prompts** - Be specific about what you want created and where to save files

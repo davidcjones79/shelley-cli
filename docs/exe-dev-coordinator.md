@@ -31,14 +31,16 @@ The key points:
 
 ## Binary Transfer
 
-**SCP doesn't work through the exe.dev proxy.** Solutions:
+**SCP doesn't always work reliably through the exe.dev proxy.** The recommended solution:
 
-1. **HTTP Download (Recommended)**: Serve the binary from the coordinator via HTTPS
-   - Make coordinator's port public: `ssh exe.dev share set-public <coordinator-vm>`
-   - Workers download via curl from `https://<coordinator>.exe.xyz:<port>/api/shelley-bin`
+**HTTP Download (Default)**: Workers download the binary from the coordinator via HTTPS.
+- This is the default behavior when starting the coordinator
+- Workers download via curl from `https://<coordinator>.exe.xyz:<port>/api/shelley-bin`
+- Fast (~30 seconds) and reliable
 
-2. **Install Script**: Workers can run an install script that clones and builds
-   (slower, but doesn't require HTTP setup)
+Alternative methods:
+- **`scp`**: Copies coordinator's binary to workers via SSH (may have issues with exe.dev proxy)
+- **Install Script URL**: Workers run a custom install script that clones and builds (slower, ~2 min)
 
 ## Coordinator Setup on exe.dev
 
@@ -58,9 +60,10 @@ The key points:
      -max-workers 10 \
      -prefix wk \
      -host <your-vm>.exe.xyz \
-     -install-script scp \
      > /tmp/coord.log 2>&1 &
    ```
+   
+   Note: Workers will use HTTP to download the shelley binary from the coordinator (default behavior).
 
 3. Scale workers:
    ```bash

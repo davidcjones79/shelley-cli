@@ -114,12 +114,12 @@ The `-install-script` flag controls how shelley is installed on worker VMs:
 
 | Value | Description | Speed |
 |-------|-------------|-------|
-| (empty/default) | Downloads install script from GitHub, builds from source | ~2 min |
-| `scp` | Copies coordinator's binary to workers | ~30 sec |
-| `http` | Workers download binary from coordinator's `/api/shelley-bin` | ~30 sec |
-| URL | Runs custom install script | varies |
+| `http` **(default)** | Workers download binary from coordinator's `/api/shelley-bin` | ~30 sec |
+| `scp` | Copies coordinator's binary to workers via SSH | ~30 sec |
+| URL | Runs custom install script (e.g., GitHub raw URL) | varies |
+| (empty) | Falls back to building from source | ~2 min |
 
-**Recommended:** Use `-install-script scp` for fastest worker startup.
+**Note:** The `http` method is the default and recommended approach. It reliably transfers the binary without SSH/SCP issues.
 
 ### Examples
 
@@ -128,13 +128,13 @@ The `-install-script` flag controls how shelley is installed on worker VMs:
 shelley dashboard
 
 # Start with coordinator auto-started (recommended)
-shelley dashboard -auto-start -install-script scp
+shelley dashboard -auto-start
 
 # Start with git integration for worker commits
 export GITHUB_TOKEN=ghp_xxx
-shelley dashboard -git-token $GITHUB_TOKEN -auto-start -install-script scp
+shelley dashboard -git-token $GITHUB_TOKEN -auto-start
 
-# Use full install script (workers get complete repo with docs)
+# Use custom install script (workers get complete repo with docs)
 shelley dashboard \
   -install-script 'https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh' \
   -auto-start
@@ -153,29 +153,6 @@ shelley coord [flags]
 ```
 
 Same flags as dashboard except no `-coord-port` or `-auto-start`.
-
----
-
-## Worker Installation Methods
-
-When spawning worker VMs, the coordinator can install shelley-cli in two ways:
-
-### Default: SCP Binary (fast)
-Copies the coordinator's shelley binary directly to the worker via scp.
-- **Pros**: Fast (~5 seconds)
-- **Cons**: Workers don't have AGENTS.md or CLI docs
-
-### Install Script (recommended)
-Runs a remote install script that clones and builds from source.
-- **Pros**: Workers get full repo with AGENTS.md, docs, and latest code
-- **Cons**: Slower (~60-90 seconds per worker)
-
-```bash
-# Enable with:
-shelley dashboard -install-script 'https://raw.githubusercontent.com/user/repo/main/install-cli.sh'
-```
-
-With the install script approach, workers automatically get updates when you push to GitHub — no manual rebuild needed on the coordinator.
 
 ---
 
