@@ -33,6 +33,7 @@ type DashboardConfig struct {
 	GitToken      string
 	GitUser       string
 	ShelleyDB     string // Path to main shelley DB for syncing conversations
+	InstallScript string // URL to install script for workers
 }
 
 // Dashboard manages the coordinator subprocess and serves the web UI.
@@ -101,6 +102,9 @@ func (d *Dashboard) Start() error {
 	}
 	if d.config.ShelleyDB != "" {
 		args = append(args, "-shelley-db", d.config.ShelleyDB)
+	}
+	if d.config.InstallScript != "" {
+		args = append(args, "-install-script", d.config.InstallScript)
 	}
 
 	d.cmd = exec.Command(d.config.ShelleyBin, args...)

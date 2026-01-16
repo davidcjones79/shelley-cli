@@ -792,6 +792,7 @@ func runCoord(global GlobalConfig, args []string) {
 	gitToken := fs.String("git-token", "", "GitHub/GitLab token for worker git push (env: GITHUB_TOKEN)")
 	gitUser := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
 	shelleyDB := fs.String("shelley-db", "", "Path to main shelley DB for syncing conversations (enables viewing worker chats in main UI)")
+	installScript := fs.String("install-script", "", "URL to install script for workers (if set, uses this instead of scp binary)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley coord [flags]\n\n")
@@ -833,17 +834,18 @@ func runCoord(global GlobalConfig, args []string) {
 	}
 
 	config := coordinator.Config{
-		Port:         *port,
-		DBPath:       *dbPath,
-		WorkerPrefix: *workerPrefix,
-		MaxWorkers:   *maxWorkers,
-		ShelleyBin:   *shelleyBin,
-		CoordHost:    *coordHost,
-		APIToken:     *apiToken,
-		GitLogging:   *gitLogging,
-		GitToken:     *gitToken,
-		GitUser:      *gitUser,
-		ShelleyDB:    *shelleyDB,
+		Port:          *port,
+		DBPath:        *dbPath,
+		WorkerPrefix:  *workerPrefix,
+		MaxWorkers:    *maxWorkers,
+		ShelleyBin:    *shelleyBin,
+		CoordHost:     *coordHost,
+		APIToken:      *apiToken,
+		GitLogging:    *gitLogging,
+		GitToken:      *gitToken,
+		GitUser:       *gitUser,
+		ShelleyDB:     *shelleyDB,
+		InstallScript: *installScript,
 	}
 
 	coord, err := coordinator.New(config)
@@ -906,6 +908,7 @@ func runDashboard(global GlobalConfig, args []string) {
 	gitTokenDash := fs.String("git-token", "", "GitHub/GitLab token for worker git push (env: GITHUB_TOKEN)")
 	gitUserDash := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
 	shelleyDBDash := fs.String("shelley-db", "/home/exedev/.config/shelley/shelley.db", "Path to main shelley DB for syncing conversations")
+	installScriptDash := fs.String("install-script", "", "URL to install script for workers (if set, uses this instead of scp binary)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley dashboard [flags]\n\n")
@@ -947,17 +950,18 @@ func runDashboard(global GlobalConfig, args []string) {
 	}
 
 	config := coordinator.DashboardConfig{
-		Port:         *port,
-		CoordPort:    *coordPort,
-		CoordDBPath:  *dbPath,
-		ShelleyBin:   *shelleyBin,
-		MaxWorkers:   *maxWorkers,
-		WorkerPrefix: *workerPrefix,
-		CoordHost:    *coordHost,
-		APIToken:     *apiToken,
-		GitToken:     *gitTokenDash,
-		GitUser:      *gitUserDash,
-		ShelleyDB:    *shelleyDBDash,
+		Port:          *port,
+		CoordPort:     *coordPort,
+		CoordDBPath:   *dbPath,
+		ShelleyBin:    *shelleyBin,
+		MaxWorkers:    *maxWorkers,
+		WorkerPrefix:  *workerPrefix,
+		CoordHost:     *coordHost,
+		APIToken:      *apiToken,
+		GitToken:      *gitTokenDash,
+		GitUser:       *gitUserDash,
+		ShelleyDB:     *shelleyDBDash,
+		InstallScript: *installScriptDash,
 	}
 
 	dash := coordinator.NewDashboard(config)

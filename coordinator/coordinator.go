@@ -34,9 +34,10 @@ type Config struct {
 	CoordHost    string
 	APIToken     string
 	GitLogging   bool
-	GitToken     string // GitHub/GitLab token for HTTPS auth
-	GitUser      string // Git username (default: git)
-	ShelleyDB    string // Path to main shelley DB for syncing conversations
+	GitToken      string // GitHub/GitLab token for HTTPS auth
+	GitUser       string // Git username (default: git)
+	ShelleyDB     string // Path to main shelley DB for syncing conversations
+	InstallScript string // URL to install script (if set, uses this instead of scp binary)
 }
 
 // Task represents a unit of work.
@@ -779,39 +780,52 @@ func (c *Coordinator) setupWorker(workerID string) {
 
 	log.Printf("Installing shelley-cli on %s...", workerID)
 
-	// Create directories on worker
-	mkdirCmd := exec.Command("ssh", "-o", "ConnectTimeout=60", "-o", "StrictHostKeyChecking=no",
-		workerHost, "mkdir", "-p", ".local/bin", ".config/shelley")
-	if _, err := mkdirCmd.CombinedOutput(); err != nil {
-		log.Printf("Failed to create directories on %s: %v", workerID, err)
-		c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
-		return
-	}
+	// Use install script if configured, otherwise fall back to scp
+	if c.config.InstallScript != "" {
+		log.Printf("Running install script on %s...", workerID)
+		installCmd := exec.Command("ssh", "-o", "ConnectTimeout=300", "-o", "StrictHostKeyChecking=no",
+			workerHost, "bash", "-c", fmt.Sprintf("curl -fsSL %s | bash", c.config.InstallScript))
+		if out, err := installCmd.CombinedOutput(); err != nil {
+			log.Printf("Failed to run install script on %s: %v\n%s", workerID, err, out)
+			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
+			return
+		}
+		log.Printf("Install script completed on %s", workerID)
+	} else {
+		// Create directories on worker
+		mkdirCmd := exec.Command("ssh", "-o", "ConnectTimeout=60", "-o", "StrictHostKeyChecking=no",
+			workerHost, "mkdir", "-p", ".local/bin", ".config/shelley")
+		if _, err := mkdirCmd.CombinedOutput(); err != nil {
+			log.Printf("Failed to create directories on %s: %v", workerID, err)
+			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
+			return
+		}
 
-	// SCP the shelley binary directly (avoids exe.dev auth proxy issues)
-	log.Printf("Copying shelley binary to %s via scp...", workerID)
-	scpCmd := exec.Command("scp", "-o", "ConnectTimeout=120", "-o", "StrictHostKeyChecking=no",
-		c.config.ShelleyBin, workerHost+":.local/bin/shelley")
-	if out, err := scpCmd.CombinedOutput(); err != nil {
-		log.Printf("Failed to scp shelley to %s: %v\n%s", workerID, err, out)
-		c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
-		return
-	}
+		// SCP the shelley binary directly (avoids exe.dev auth proxy issues)
+		log.Printf("Copying shelley binary to %s via scp...", workerID)
+		scpCmd := exec.Command("scp", "-o", "ConnectTimeout=120", "-o", "StrictHostKeyChecking=no",
+			c.config.ShelleyBin, workerHost+":.local/bin/shelley")
+		if out, err := scpCmd.CombinedOutput(); err != nil {
+			log.Printf("Failed to scp shelley to %s: %v\n%s", workerID, err, out)
+			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
+			return
+		}
 
-	// Make executable
-	chmodCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
-		workerHost, "chmod", "+x", ".local/bin/shelley")
-	if _, err := chmodCmd.CombinedOutput(); err != nil {
-		log.Printf("Failed to chmod shelley on %s: %v", workerID, err)
-		c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
-		return
-	}
+		// Make executable
+		chmodCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
+			workerHost, "chmod", "+x", ".local/bin/shelley")
+		if _, err := chmodCmd.CombinedOutput(); err != nil {
+			log.Printf("Failed to chmod shelley on %s: %v", workerID, err)
+			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
+			return
+		}
 
-	configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
-	configCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
-		workerHost, "tee", ".config/shelley/shelley.json")
-	configCmd.Stdin = strings.NewReader(configJSON)
-	configCmd.Run()
+		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
+		configCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
+			workerHost, "tee", ".config/shelley/shelley.json")
+		configCmd.Stdin = strings.NewReader(configJSON)
+		configCmd.Run()
+	}
 
 	// Configure git credentials if token provided
 	if c.config.GitToken != "" {
