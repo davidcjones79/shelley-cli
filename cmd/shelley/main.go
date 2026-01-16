@@ -65,6 +65,7 @@ func main() {
 		fmt.Fprintf(flag.CommandLine.Output(), "  igor [flags]                  Start Igor file transfer server\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  status [flags]                Show status of Shelley services\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  coord-cli [flags] <cmd>       Manage coordinator (clear-tasks, scale, etc)\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  watch [flags]                 Live CLI dashboard for coordinator\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "  version                       Print version information as JSON\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "\nUse '%s <command> -h' for command-specific help\n", os.Args[0])
 	}
@@ -104,6 +105,8 @@ func main() {
 		runStatus(args[1:])
 	case "coord-cli":
 		runCoordCLI(args[1:])
+	case "watch":
+		runCoordWatch(args[1:])
 	case "version":
 		runVersion()
 	default:
