@@ -102,6 +102,7 @@ shelley dashboard [flags]
 | `-git-user` | | Git username for HTTPS auth |
 | `-shelley-db` | ~/.config/shelley/shelley.db | Main shelley DB for conversation sync |
 | `-auto-start` | false | Start coordinator automatically |
+| `-install-script` | | URL to install script for workers (see below) |
 
 ### Examples
 
@@ -112,6 +113,12 @@ shelley dashboard
 # Start with coordinator auto-started and git integration
 export GITHUB_TOKEN=ghp_xxx
 shelley dashboard -git-token $GITHUB_TOKEN -auto-start
+
+# Use install script so workers have full shelley-cli repo with docs
+shelley dashboard \
+  -install-script 'https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh' \
+  -git-token $GITHUB_TOKEN \
+  -auto-start
 ```
 
 Access at `https://your-vm.exe.xyz:8080/`
@@ -127,6 +134,29 @@ shelley coord [flags]
 ```
 
 Same flags as dashboard except no `-coord-port` or `-auto-start`.
+
+---
+
+## Worker Installation Methods
+
+When spawning worker VMs, the coordinator can install shelley-cli in two ways:
+
+### Default: SCP Binary (fast)
+Copies the coordinator's shelley binary directly to the worker via scp.
+- **Pros**: Fast (~5 seconds)
+- **Cons**: Workers don't have AGENTS.md or CLI docs
+
+### Install Script (recommended)
+Runs a remote install script that clones and builds from source.
+- **Pros**: Workers get full repo with AGENTS.md, docs, and latest code
+- **Cons**: Slower (~60-90 seconds per worker)
+
+```bash
+# Enable with:
+shelley dashboard -install-script 'https://raw.githubusercontent.com/user/repo/main/install-cli.sh'
+```
+
+With the install script approach, workers automatically get updates when you push to GitHub — no manual rebuild needed on the coordinator.
 
 ---
 
@@ -316,9 +346,12 @@ The token is displayed when the coordinator starts.
 ## Parallelize Tasks Across VMs
 
 ```bash
-# 1. Start dashboard with git integration
+# 1. Start dashboard with git integration and install script
 export GITHUB_TOKEN=ghp_xxx
-shelley dashboard -git-token $GITHUB_TOKEN -auto-start
+shelley dashboard \
+  -install-script 'https://raw.githubusercontent.com/davidcjones79/shelley-cli/main/install-cli.sh' \
+  -git-token $GITHUB_TOKEN \
+  -auto-start
 
 # 2. Open https://your-vm.exe.xyz:8080/
 # 3. Create a task group with multiple prompts
