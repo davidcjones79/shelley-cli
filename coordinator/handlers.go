@@ -190,6 +190,29 @@ func (c *Coordinator) HandleCleanupWorkers(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// HandleClearFailedWorkers immediately deletes all failed/deleted worker records from DB.
+func (c *Coordinator) HandleClearFailedWorkers(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	result, err := c.db.Exec(`DELETE FROM workers WHERE status IN ('failed', 'deleted')`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	count, _ := result.RowsAffected()
+	log.Printf("Cleared %d failed/deleted worker records", count)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int64{"deleted": count})
+}
+
 // HandleStuckTasks returns tasks that appear to be stuck.
 func (c *Coordinator) HandleStuckTasks(w http.ResponseWriter, r *http.Request) {
 	if !c.CheckAuth(w, r) {
@@ -280,6 +303,57 @@ func (c *Coordinator) HandleResetStuckTasks(w http.ResponseWriter, r *http.Reque
 
 	c.CleanupStuckTasks()
 
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// HandleHeartbeat receives heartbeats from workers during task execution.
+func (c *Coordinator) HandleHeartbeat(w http.ResponseWriter, r *http.Request) {
+	workerID := r.URL.Query().Get("worker")
+	taskID := r.URL.Query().Get("task")
+	if workerID == "" {
+		http.Error(w, "worker param required", http.StatusBadRequest)
+		return
+	}
+
+	c.db.Exec(`UPDATE workers SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?`, workerID)
+	
+	// Optionally log task progress
+	if taskID != "" {
+		log.Printf("Heartbeat: worker %s, task %s", workerID, taskID)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// HandleTaskStart marks a task as started (running) when a worker begins execution.
+func (c *Coordinator) HandleTaskStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	taskID := r.URL.Query().Get("task")
+	workerID := r.URL.Query().Get("worker")
+	if taskID == "" || workerID == "" {
+		http.Error(w, "task and worker params required", http.StatusBadRequest)
+		return
+	}
+
+	result, err := c.db.Exec(`UPDATE tasks SET status = 'running', started_at = CURRENT_TIMESTAMP WHERE id = ? AND worker_id = ?`, taskID, workerID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		http.Error(w, "task not found or not assigned to this worker", http.StatusNotFound)
+		return
+	}
+
+	log.Printf("Task %s started by worker %s", taskID, workerID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -384,12 +458,14 @@ func (c *Coordinator) HandleListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleListWorkers returns all workers.
+// Optional query param: show_failed=true to include failed workers
 func (c *Coordinator) HandleListWorkers(w http.ResponseWriter, r *http.Request) {
 	if !c.CheckAuth(w, r) {
 		return
 	}
 
-	workers, err := c.ListWorkers()
+	showFailed := r.URL.Query().Get("show_failed") == "true"
+	workers, err := c.ListWorkers(showFailed)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

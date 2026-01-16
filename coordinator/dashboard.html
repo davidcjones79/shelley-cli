@@ -404,8 +404,13 @@
         <!-- Workers -->
         <div class="section" id="workers-section">
             <div class="section-header">
-                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg> Workers</span>
+                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg> Workers <span id="failed-count" style="font-size:11px;font-weight:normal;color:#dc2626;margin-left:8px;"></span></span>
                 <div class="input-group">
+                    <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#737373;cursor:pointer;">
+                        <input type="checkbox" id="show-failed" onchange="refresh()" style="cursor:pointer;">
+                        Show failed
+                    </label>
+                    <button onclick="clearFailedWorkers()" class="btn" title="Remove failed worker records from database"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear Failed</button>
                     <input type="number" id="workerCount" value="1" min="0" max="10" class="input" style="width:60px">
                     <button onclick="scaleWorkers()" class="btn">Scale</button>
                     <button onclick="drainWorkers()" class="btn btn-danger" title="Stop assigning new tasks to workers"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Drain</button>
@@ -662,14 +667,25 @@
                     <div class="stat-card"><div class="stat-value">${stats.workers?.total || 0}</div><div class="stat-label">Workers</div></div>
                 `;
 
-                const workers = await api('/api/workers');
+                const showFailed = document.getElementById('show-failed')?.checked;
+                const workers = await api('/api/workers' + (showFailed ? '?show_failed=true' : ''));
+                
+                // Count failed workers for badge
+                const failedCountRes = await api('/api/workers?show_failed=true');
+                const failedCount = failedCountRes?.filter(w => w.status === 'failed').length || 0;
+                document.getElementById('failed-count').textContent = failedCount > 0 ? `(${failedCount} failed)` : '';
+                
                 document.getElementById('workers').innerHTML = workers?.length ? workers.map(w => {
                     // Determine worker state for display
                     let statusText = w.status;
                     let statusClass = w.status === 'busy' ? 'info' : 'neutral';
                     let metaText = '';
                     
-                    if (w.shelley_version) {
+                    if (w.status === 'failed') {
+                        // Failed worker - show error
+                        statusClass = 'danger';
+                        metaText = w.error ? `Error: ${w.error.substring(0, 60)}${w.error.length > 60 ? '...' : ''}` : 'Failed (unknown error)';
+                    } else if (w.shelley_version) {
                         // Worker is ready - has reported version
                         metaText = `Tasks: ${w.tasks_completed || 0} · v${w.shelley_version.substring(0, 7)}`;
                         if (w.provisioning_sec) {
@@ -812,6 +828,17 @@
             try {
                 const result = await api('/api/drain', { method: 'POST' });
                 addLog(`Draining workers: ${result.idle_deleted} idle deleted, ${result.busy_draining} busy will drain`);
+                refresh();
+            } catch (e) {
+                alert('Failed: ' + e.message);
+            }
+        }
+
+        async function clearFailedWorkers() {
+            if (!coordRunning) return alert('Start coordinator first');
+            try {
+                const result = await api('/api/workers/clear-failed', { method: 'POST' });
+                addLog(`Cleared ${result.deleted} failed worker records`);
                 refresh();
             } catch (e) {
                 alert('Failed: ' + e.message);

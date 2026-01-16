@@ -79,6 +79,7 @@ type Worker struct {
 	ProvisioningSec *int       `json:"provisioning_sec,omitempty"` // seconds from created to ready
 	LastHeartbeat   *time.Time `json:"last_heartbeat,omitempty"`
 	TasksCompleted  int        `json:"tasks_completed"`
+	Error           *string    `json:"error,omitempty"` // error message if status is 'failed'
 }
 
 // TaskRequest contains parameters for creating a task.
@@ -176,13 +177,22 @@ func New(config Config) (*Coordinator, error) {
 		db.Exec(`INSERT OR REPLACE INTO settings (key, value) VALUES ('api_token', ?)`, config.APIToken)
 	}
 
-	// Add random suffix to worker prefix so multiple coordinators don't conflict
+	// Load or create persistent worker prefix so coordinator can find workers after restart
 	// Format: wk-abc where abc is a random 3-char hex string
 	if config.WorkerPrefix != "" {
-		b := make([]byte, 2)
-		rand.Read(b)
-		config.WorkerPrefix = fmt.Sprintf("%s-%s", config.WorkerPrefix, hex.EncodeToString(b)[:3])
-		log.Printf("Worker prefix: %s", config.WorkerPrefix)
+		var savedPrefix string
+		err := db.QueryRow(`SELECT value FROM settings WHERE key = 'worker_prefix'`).Scan(&savedPrefix)
+		if err == nil && savedPrefix != "" {
+			config.WorkerPrefix = savedPrefix
+			log.Printf("Loaded worker prefix from database: %s", config.WorkerPrefix)
+		} else {
+			// Generate new prefix and persist it
+			b := make([]byte, 2)
+			rand.Read(b)
+			config.WorkerPrefix = fmt.Sprintf("%s-%s", config.WorkerPrefix, hex.EncodeToString(b)[:3])
+			db.Exec(`INSERT OR REPLACE INTO settings (key, value) VALUES ('worker_prefix', ?)`, config.WorkerPrefix)
+			log.Printf("Generated and saved new worker prefix: %s", config.WorkerPrefix)
+		}
 	}
 
 	// Save API token to well-known file for easy scripting access
@@ -208,6 +218,11 @@ func (c *Coordinator) Config() Config {
 
 // StartBackgroundTasks starts periodic background tasks like cleanup.
 func (c *Coordinator) StartBackgroundTasks() {
+	// Run immediate cleanup on startup to handle orphans from previous run
+	log.Printf("Running startup cleanup...")
+	c.CleanupStaleWorkers()
+	c.CleanupStuckTasks()
+	
 	go c.periodicCleanup()
 }
 
@@ -275,8 +290,8 @@ func (c *Coordinator) ensureMinWorkers() {
 func (c *Coordinator) CleanupStaleWorkers() {
 	log.Printf("Running worker cleanup...")
 
-	// Clean up failed/deleted workers from DB (older than 1 hour)
-	res, _ := c.db.Exec(`DELETE FROM workers WHERE status IN ('failed', 'deleted') AND created_at < datetime('now', '-1 hour')`)
+	// Clean up failed/deleted workers from DB (older than 10 minutes)
+	res, _ := c.db.Exec(`DELETE FROM workers WHERE status IN ('failed', 'deleted') AND created_at < datetime('now', '-10 minutes')`)
 	if n, _ := res.RowsAffected(); n > 0 {
 		log.Printf("Cleanup: removed %d failed/deleted worker records", n)
 	}
@@ -1553,9 +1568,17 @@ func (c *Coordinator) ListTasks(status string, limit int) ([]Task, error) {
 }
 
 // ListWorkers returns all non-deleted workers.
-func (c *Coordinator) ListWorkers() ([]Worker, error) {
-	rows, err := c.db.Query(`SELECT id, status, current_task_id, shelley_version, created_at, ready_at, last_heartbeat, tasks_completed 
-		FROM workers WHERE status != 'deleted' ORDER BY created_at DESC`)
+// ListWorkers returns all workers. If showFailed is false, failed workers are excluded.
+func (c *Coordinator) ListWorkers(showFailed bool) ([]Worker, error) {
+	query := `SELECT id, status, current_task_id, shelley_version, created_at, ready_at, last_heartbeat, tasks_completed 
+		FROM workers WHERE status != 'deleted'`
+	if !showFailed {
+		query = `SELECT id, status, current_task_id, shelley_version, created_at, ready_at, last_heartbeat, tasks_completed 
+			FROM workers WHERE status NOT IN ('deleted', 'failed')`
+	}
+	query += " ORDER BY created_at DESC"
+	
+	rows, err := c.db.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -1579,6 +1602,21 @@ func (c *Coordinator) ListWorkers() ([]Worker, error) {
 		if lastHeartbeatTime.Valid {
 			w.LastHeartbeat = &lastHeartbeatTime.Time
 		}
+		
+		// For failed workers, get error from events table
+		if w.Status == "failed" {
+			var details sql.NullString
+			c.db.QueryRow(`SELECT details FROM events WHERE worker_id = ? AND event_type = 'worker.failed' ORDER BY timestamp DESC LIMIT 1`, w.ID).Scan(&details)
+			if details.Valid {
+				var d map[string]interface{}
+				if json.Unmarshal([]byte(details.String), &d) == nil {
+					if errMsg, ok := d["error"].(string); ok {
+						w.Error = &errMsg
+					}
+				}
+			}
+		}
+		
 		workers = append(workers, w)
 	}
 
