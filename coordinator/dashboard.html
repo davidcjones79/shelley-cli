@@ -113,6 +113,7 @@
         .badge-danger { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
         .badge-info { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
         .badge-neutral { background: #f5f5f5; color: #525252; border: 1px solid #e5e5e5; }
+        .badge-warning { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
         
         /* Status dot */
         .status-dot {
@@ -125,6 +126,8 @@
         .status-dot.stopped { background: #ef4444; }
         .status-dot.idle { background: #a3a3a3; }
         .status-dot.busy { background: #3b82f6; }
+        .status-dot.starting { background: #f59e0b; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         
         /* Main content */
         .container {
@@ -660,12 +663,34 @@
                 `;
 
                 const workers = await api('/api/workers');
-                document.getElementById('workers').innerHTML = workers?.length ? workers.map(w => `
+                document.getElementById('workers').innerHTML = workers?.length ? workers.map(w => {
+                    // Determine worker state for display
+                    let statusText = w.status;
+                    let statusClass = w.status === 'busy' ? 'info' : 'neutral';
+                    let metaText = '';
+                    
+                    if (w.shelley_version) {
+                        // Worker is ready - has reported version
+                        metaText = `Tasks: ${w.tasks_completed || 0} · v${w.shelley_version.substring(0, 7)}`;
+                        if (w.provisioning_sec) {
+                            metaText += ` · ready in ${w.provisioning_sec}s`;
+                        }
+                    } else if (w.status === 'starting') {
+                        // Still spawning VM or installing shelley
+                        statusText = 'installing';
+                        statusClass = 'warning';
+                        metaText = 'Installing shelley-cli...';
+                    } else {
+                        // Idle/busy but no version yet (shouldn't happen normally)
+                        metaText = `Tasks: ${w.tasks_completed || 0} · waiting for version...`;
+                    }
+                    
+                    return `
                     <div class="list-item">
                         <div class="list-item-info">
                             <span class="status-dot ${w.status}"></span>
                             <span class="list-item-name">${w.id}</span>
-                            <span class="list-item-meta">Tasks: ${w.tasks_completed || 0}${w.shelley_version ? ` · v${w.shelley_version.substring(0, 7)}` : ' · provisioning...'}${w.provisioning_sec ? ` · ${w.provisioning_sec}s` : ''}</span>
+                            <span class="list-item-meta">${metaText}</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <a href="https://${w.id}.exe.xyz:8000/" target="_blank" 
@@ -677,10 +702,10 @@
                                 </svg>
                                 View
                             </a>
-                            <span class="badge badge-${w.status === 'busy' ? 'info' : 'neutral'}">${w.status}</span>
+                            <span class="badge badge-${statusClass}">${statusText}</span>
                         </div>
                     </div>
-                `).join('') : '<div class="list-empty">No workers</div>';
+                `}).join('') : '<div class="list-empty">No workers</div>';
 
                 // Fetch groups
                 const groups = await api('/api/groups?limit=20');
