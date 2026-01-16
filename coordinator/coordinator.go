@@ -914,8 +914,9 @@ func (c *Coordinator) setupWorker(workerID string) {
 		chmodCmd := sshToWorker(workerID, "chmod", "+x", ".local/bin/shelley")
 		chmodCmd.Run()
 
+		// Write config using tee to avoid shell quoting issues with redirects
 		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
-		configCmd := sshToWorker(workerID, "echo '"+configJSON+"' > .config/shelley/shelley.json")
+		configCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'cat > .config/shelley/shelley.json << EOF\n%s\nEOF'", workerID, configJSON))
 		configCmd.Run()
 	}
 
