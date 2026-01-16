@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	_ "modernc.org/sqlite"
 	"shelley.exe.dev/version"
 )
 
@@ -202,6 +204,25 @@ func isHexString(s string) bool {
 }
 
 func getCoordinatorToken() string {
+	// Method 0: Read from coordinator DB (persistent token)
+	dbPaths := []string{
+		os.ExpandEnv("$HOME/.config/shelley/coordinator.db"),
+		"coordinator.db",
+	}
+	for _, dbPath := range dbPaths {
+		if _, err := os.Stat(dbPath); err == nil {
+			db, err := sql.Open("sqlite", dbPath)
+			if err == nil {
+				var token string
+				if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'api_token'`).Scan(&token); err == nil && token != "" {
+					db.Close()
+					return token
+				}
+				db.Close()
+			}
+		}
+	}
+
 	// Method 1: Try to get token from process list (if -token was specified)
 	cmd := exec.Command("ps", "aux")
 	out, err := cmd.Output()
