@@ -182,6 +182,38 @@ func (c *Coordinator) HandleCleanupWorkers(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// HandleResetTask resets a stuck task to queued status.
+func (c *Coordinator) HandleResetTask(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	taskID := r.URL.Query().Get("id")
+	if taskID == "" {
+		http.Error(w, "id param required", http.StatusBadRequest)
+		return
+	}
+
+	result, err := c.db.Exec(`UPDATE tasks SET status = 'queued', worker_id = NULL, assigned_at = NULL, started_at = NULL WHERE id = ? OR id LIKE ?`, taskID, taskID+"%")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		http.Error(w, "task not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 // HandleClearTasks clears all tasks from the queue.
 func (c *Coordinator) HandleClearTasks(w http.ResponseWriter, r *http.Request) {
 	if !c.CheckAuth(w, r) {

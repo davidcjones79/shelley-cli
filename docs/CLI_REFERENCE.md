@@ -526,6 +526,7 @@ shelley coord-cli [flags] <command>
 | `scale <n>` | Scale to n workers |
 | `drain` | Drain all workers |
 | `kill-worker <id>` | Force remove a worker and delete its VM |
+| `reset-task <id>` | Reset a stuck/orphaned task to queued status |
 | `stats` | Show coordinator statistics |
 | `clear-tasks` | Clear all tasks from queue |
 | `clear-workers` | Remove all workers |
@@ -549,6 +550,9 @@ shelley coord-cli scale 5
 
 # Kill a hung worker
 shelley coord-cli kill-worker wk-abc-123
+
+# Reset a stuck task (e.g., assigned to dead worker)
+shelley coord-cli reset-task abc12345
 
 # Show stats
 shelley coord-cli stats

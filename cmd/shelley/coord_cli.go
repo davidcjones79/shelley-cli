@@ -27,6 +27,7 @@ func runCoordCLI(args []string) {
 		fmt.Fprintf(os.Stderr, "  scale <n>           Scale to n workers\n")
 		fmt.Fprintf(os.Stderr, "  drain               Drain all workers\n")
 		fmt.Fprintf(os.Stderr, "  kill-worker <id>    Force remove a worker and delete its VM\n")
+		fmt.Fprintf(os.Stderr, "  reset-task <id>     Reset a stuck task to queued status\n")
 		fmt.Fprintf(os.Stderr, "  stats               Show coordinator stats\n")
 		fmt.Fprintf(os.Stderr, "  clear-tasks         Clear all tasks from the queue\n")
 		fmt.Fprintf(os.Stderr, "  clear-workers       Remove all workers\n")
@@ -95,6 +96,12 @@ func runCoordCLI(args []string) {
 			os.Exit(1)
 		}
 		killWorker(client, baseURL, *token, cmdArgs[1])
+	case "reset-task":
+		if len(cmdArgs) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: shelley coord-cli reset-task <task-id>\n")
+			os.Exit(1)
+		}
+		resetTask(client, baseURL, *token, cmdArgs[1])
 	case "stats":
 		showStats(client, baseURL, *token)
 	case "clear-tasks":
@@ -464,6 +471,15 @@ func killWorker(client *http.Client, baseURL, token, workerID string) {
 	fmt.Printf("✅ Worker %s killed\n", workerID)
 }
 
+func resetTask(client *http.Client, baseURL, token, taskID string) {
+	_, err := apiRequest(client, "POST", baseURL+"/api/reset-task?id="+taskID, token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("✅ Task %s reset to queued\n", taskID)
+}
+
 func showAPIHelp() {
 	fmt.Println(`Coordinator API Reference
 =========================
@@ -489,6 +505,9 @@ GET /api/task?id=<task-id>
 
 POST /api/clear-tasks
   Clear all tasks from the queue
+
+POST /api/reset-task?id=<task-id>
+  Reset a stuck/orphaned task to queued status
 
 Workers
 -------
