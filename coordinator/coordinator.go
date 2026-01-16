@@ -2,6 +2,7 @@
 package coordinator
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"embed"
@@ -208,12 +209,15 @@ func (c *Coordinator) periodicCleanup() {
 	time.Sleep(30 * time.Second)
 	c.CleanupStaleWorkers()
 	c.CleanupStuckTasks()
+	c.ensureMinWorkers()
 
 	// Then run every minute for task checks, every 5 minutes for worker cleanup
 	taskTicker := time.NewTicker(1 * time.Minute)
 	workerTicker := time.NewTicker(5 * time.Minute)
+	minWorkerTicker := time.NewTicker(30 * time.Second) // Check min workers more frequently
 	defer taskTicker.Stop()
 	defer workerTicker.Stop()
+	defer minWorkerTicker.Stop()
 
 	for {
 		select {
@@ -221,8 +225,35 @@ func (c *Coordinator) periodicCleanup() {
 			c.CleanupStuckTasks()
 		case <-workerTicker.C:
 			c.CleanupStaleWorkers()
+		case <-minWorkerTicker.C:
+			c.ensureMinWorkers()
 		case <-c.shutdown:
 			return
+		}
+	}
+}
+
+// ensureMinWorkers spawns workers if below minimum threshold.
+func (c *Coordinator) ensureMinWorkers() {
+	if c.config.MinWorkers <= 0 || c.draining {
+		return
+	}
+
+	var idleCount, totalCount int
+	c.db.QueryRow(`SELECT COUNT(*) FROM workers WHERE status = 'idle'`).Scan(&idleCount)
+	c.db.QueryRow(`SELECT COUNT(*) FROM workers WHERE status IN ('starting', 'idle', 'busy')`).Scan(&totalCount)
+
+	// Spawn workers if we're below minimum idle count
+	if idleCount < c.config.MinWorkers && totalCount < c.config.MaxWorkers {
+		needed := c.config.MinWorkers - idleCount
+		if totalCount+needed > c.config.MaxWorkers {
+			needed = c.config.MaxWorkers - totalCount
+		}
+		if needed > 0 {
+			log.Printf("Pre-warming: spawning %d workers (idle: %d, min: %d)", needed, idleCount, c.config.MinWorkers)
+			for i := 0; i < needed; i++ {
+				go c.SpawnWorker()
+			}
 		}
 	}
 }
@@ -1007,6 +1038,14 @@ func sshToWorker(workerID string, args ...string) *exec.Cmd {
 	return exec.Command("ssh", "exe.dev", sshCmd)
 }
 
+// runSSHWithTimeout runs an SSH command with a timeout, preventing hangs.
+func runSSHWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	return cmd.CombinedOutput()
+}
+
 func (c *Coordinator) setupWorker(workerID string) {
 	workerHost := workerID + ".exe.xyz" // Still used for some operations
 
@@ -1324,8 +1363,9 @@ func (c *Coordinator) GetWorker(id string) (*Worker, error) {
 // DeleteWorker removes a worker VM.
 func (c *Coordinator) DeleteWorker(workerID string) error {
 	log.Printf("Deleting worker: %s", workerID)
-	cmd := exec.Command("ssh", "exe.dev", "rm", workerID)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	// Use timeout to prevent SSH from hanging
+	out, err := runSSHWithTimeout(30*time.Second, "exe.dev", "rm", workerID)
+	if err != nil {
 		log.Printf("Warning: failed to delete VM %s: %v (output: %s)", workerID, err, string(out))
 		// Continue anyway - remove from DB even if VM deletion failed
 		// The cleanup routine will catch orphaned VMs later

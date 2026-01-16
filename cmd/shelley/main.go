@@ -803,6 +803,7 @@ func runCoord(global GlobalConfig, args []string) {
 	port := fs.Int("port", 8080, "HTTP server port")
 	dbPath := fs.String("db", defaultCoordinatorDBPath(), "SQLite database path")
 	workerPrefix := fs.String("prefix", "wk", "Worker VM name prefix")
+	minWorkers := fs.Int("min-workers", 0, "Minimum idle workers to maintain (pre-warm pool)")
 	maxWorkers := fs.Int("max-workers", 10, "Maximum workers allowed")
 	shelleyBin := fs.String("shelley-bin", "", "Path to shelley binary (default: this binary)")
 	coordHost := fs.String("host", "", "Coordinator hostname (auto-detected)")
@@ -847,6 +848,7 @@ func runCoord(global GlobalConfig, args []string) {
 		Port:          *port,
 		DBPath:        *dbPath,
 		WorkerPrefix:  *workerPrefix,
+		MinWorkers:    *minWorkers,
 		MaxWorkers:    *maxWorkers,
 		ShelleyBin:    *shelleyBin,
 		CoordHost:     *coordHost,
@@ -916,6 +918,7 @@ func runDashboard(global GlobalConfig, args []string) {
 	coordPort := fs.Int("coord-port", 8081, "Coordinator internal port")
 	dbPath := fs.String("db", defaultCoordinatorDBPath(), "SQLite database path")
 	workerPrefix := fs.String("prefix", "wk", "Worker VM name prefix")
+	minWorkers := fs.Int("min-workers", 0, "Minimum idle workers to maintain (pre-warm pool)")
 	maxWorkers := fs.Int("max-workers", 10, "Maximum workers allowed")
 	shelleyBin := fs.String("shelley-bin", "", "Path to shelley binary (default: this binary)")
 	coordHost := fs.String("host", "", "Coordinator hostname (auto-detected)")
@@ -961,6 +964,7 @@ func runDashboard(global GlobalConfig, args []string) {
 		CoordPort:     *coordPort,
 		CoordDBPath:   *dbPath,
 		ShelleyBin:    *shelleyBin,
+		MinWorkers:    *minWorkers,
 		MaxWorkers:    *maxWorkers,
 		WorkerPrefix:  *workerPrefix,
 		CoordHost:     *coordHost,

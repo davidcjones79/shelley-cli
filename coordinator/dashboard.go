@@ -28,6 +28,7 @@ type DashboardConfig struct {
 	CoordPort     int
 	CoordDBPath   string
 	ShelleyBin    string
+	MinWorkers    int
 	MaxWorkers    int
 	WorkerPrefix  string
 	CoordHost     string
@@ -87,6 +88,7 @@ func (d *Dashboard) Start() error {
 		"coord",
 		"-port", fmt.Sprintf("%d", d.config.CoordPort),
 		"-db", d.config.CoordDBPath,
+		"-min-workers", fmt.Sprintf("%d", d.config.MinWorkers),
 		"-max-workers", fmt.Sprintf("%d", d.config.MaxWorkers),
 		"-prefix", d.config.WorkerPrefix,
 	}
