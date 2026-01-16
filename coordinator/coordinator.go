@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -750,12 +751,22 @@ func (c *Coordinator) SpawnWorker() (*Worker, error) {
 	return c.GetWorker(workerID)
 }
 
+// sshToWorker creates an exec.Command to SSH into a worker via exe.dev proxy
+// Since exe.dev VMs can't SSH directly to each other, we go through: ssh exe.dev ssh <vmname> <cmd...>
+func sshToWorker(workerID string, args ...string) *exec.Cmd {
+	cmdArgs := []string{"exe.dev", "ssh", workerID}
+	cmdArgs = append(cmdArgs, args...)
+	return exec.Command("ssh", cmdArgs...)
+}
+
 func (c *Coordinator) setupWorker(workerID string) {
-	workerHost := workerID + ".exe.xyz"
+	workerHost := workerID + ".exe.xyz" // Still used for some operations
 
 	log.Printf("Spawning worker VM: %s", workerID)
 	cmd := exec.Command("ssh", "exe.dev", "new", "--name="+workerID, "--no-email", "--json")
+	log.Printf("Running command: ssh exe.dev new --name=%s --no-email --json", workerID)
 	output, err := cmd.CombinedOutput()
+	log.Printf("Spawn output for %s: %s", workerID, string(output))
 	if err != nil {
 		log.Printf("Failed to spawn %s: %v\n%s", workerID, err, output)
 		c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
@@ -766,8 +777,7 @@ func (c *Coordinator) setupWorker(workerID string) {
 	log.Printf("Waiting for %s SSH...", workerID)
 	for i := 0; i < 60; i++ {
 		time.Sleep(3 * time.Second)
-		checkCmd := exec.Command("ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
-			workerHost, "echo", "ready")
+		checkCmd := sshToWorker(workerID, "echo", "ready")
 		if out, err := checkCmd.CombinedOutput(); err == nil && strings.Contains(string(out), "ready") {
 			break
 		}
@@ -792,8 +802,7 @@ func (c *Coordinator) setupWorker(workerID string) {
 	// Use install script (default) or fall back to scp if explicitly set to "scp"
 	if installScript != "scp" {
 		log.Printf("Running install script on %s...", workerID)
-		installCmd := exec.Command("ssh", "-o", "ConnectTimeout=300", "-o", "StrictHostKeyChecking=no",
-			workerHost, "bash", "-c", fmt.Sprintf("curl -fsSL %s | bash", installScript))
+		installCmd := sshToWorker(workerID, "bash", "-c", fmt.Sprintf("curl -fsSL %s | bash", installScript))
 		if out, err := installCmd.CombinedOutput(); err != nil {
 			log.Printf("Failed to run install script on %s: %v\n%s", workerID, err, out)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
@@ -802,37 +811,33 @@ func (c *Coordinator) setupWorker(workerID string) {
 		log.Printf("Install script completed on %s", workerID)
 	} else {
 		// Create directories on worker
-		mkdirCmd := exec.Command("ssh", "-o", "ConnectTimeout=60", "-o", "StrictHostKeyChecking=no",
-			workerHost, "mkdir", "-p", ".local/bin", ".config/shelley")
-		if _, err := mkdirCmd.CombinedOutput(); err != nil {
-			log.Printf("Failed to create directories on %s: %v", workerID, err)
+		mkdirCmd := sshToWorker(workerID, "mkdir", "-p", ".local/bin", ".config/shelley")
+		if out, err := mkdirCmd.CombinedOutput(); err != nil {
+			log.Printf("Failed to create directories on %s: %v\nOutput: %s", workerID, err, string(out))
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
 			return
 		}
 
-		// SCP the shelley binary directly (avoids exe.dev auth proxy issues)
-		log.Printf("Copying shelley binary to %s via scp...", workerID)
-		scpCmd := exec.Command("scp", "-o", "ConnectTimeout=120", "-o", "StrictHostKeyChecking=no",
-			c.config.ShelleyBin, workerHost+":.local/bin/shelley")
-		if out, err := scpCmd.CombinedOutput(); err != nil {
-			log.Printf("Failed to scp shelley to %s: %v\n%s", workerID, err, out)
+		// Transfer shelley binary via cat through exe.dev proxy
+		// (SCP doesn't work through exe.dev proxy)
+		log.Printf("Copying shelley binary to %s...", workerID)
+		binaryData, err := os.ReadFile(c.config.ShelleyBin)
+		if err != nil {
+			log.Printf("Failed to read shelley binary: %v", err)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
 			return
 		}
-
-		// Make executable
-		chmodCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
-			workerHost, "chmod", "+x", ".local/bin/shelley")
-		if _, err := chmodCmd.CombinedOutput(); err != nil {
-			log.Printf("Failed to chmod shelley on %s: %v", workerID, err)
+		// Base64 encode and transfer (exe.dev proxy may have issues with binary)
+		encoded := base64.StdEncoding.EncodeToString(binaryData)
+		transferCmd := sshToWorker(workerID, "bash", "-c", "echo "+encoded+" | base64 -d > .local/bin/shelley && chmod +x .local/bin/shelley")
+		if out, err := transferCmd.CombinedOutput(); err != nil {
+			log.Printf("Failed to transfer shelley to %s: %v\n%s", workerID, err, out)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
 			return
 		}
 
 		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
-		configCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
-			workerHost, "tee", ".config/shelley/shelley.json")
-		configCmd.Stdin = strings.NewReader(configJSON)
+		configCmd := sshToWorker(workerID, "bash", "-c", "echo '"+configJSON+"' > .config/shelley/shelley.json")
 		configCmd.Run()
 	}
 
@@ -849,14 +854,12 @@ func (c *Coordinator) setupWorker(workerID string) {
 			{"git", "config", "--global", "user.name", fmt.Sprintf("Shelley Worker (%s)", workerID)},
 		}
 		for _, args := range gitSetupCmds {
-			exec.Command("ssh", append([]string{"-o", "StrictHostKeyChecking=no", workerHost}, args...)...).Run()
+			sshToWorker(workerID, args...).Run()
 		}
-		// Store credentials for GitHub
-		credentials := fmt.Sprintf("https://%s:%s@github.com\n", gitUser, c.config.GitToken)
-		credCmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", workerHost, "tee", ".git-credentials")
-		credCmd.Stdin = strings.NewReader(credentials)
+		// Store credentials for GitHub - escape the URL
+		credentials := fmt.Sprintf("https://%s:%s@github.com", gitUser, c.config.GitToken)
+		credCmd := sshToWorker(workerID, "bash", "-c", fmt.Sprintf("echo '%s' > .git-credentials && chmod 600 .git-credentials", credentials))
 		credCmd.Run()
-		exec.Command("ssh", "-o", "StrictHostKeyChecking=no", workerHost, "chmod", "600", ".git-credentials").Run()
 	}
 
 	c.startWorkerLoop(workerID, workerHost)
@@ -867,10 +870,8 @@ func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
 	log.Printf("Starting shelley serve on %s...", workerID)
 	
 	// Start shelley serve in the background on port 8000
-	serveCmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", workerHost,
-		"nohup", ".local/bin/shelley", "-config", ".config/shelley/shelley.json",
-		"-db", "/tmp/shelley-worker.db", "serve", "-port", "8000",
-		">", "/tmp/shelley-serve.log", "2>&1", "&")
+	serveCmd := sshToWorker(workerID, "bash", "-c",
+		"nohup .local/bin/shelley -config .config/shelley/shelley.json -db /tmp/shelley-worker.db serve -port 8000 > /tmp/shelley-serve.log 2>&1 &")
 	serveCmd.Run()
 	
 	// Wait for shelley serve to be ready
@@ -1031,17 +1032,13 @@ while true; do
 done
 `, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken)
 
-	scriptCmd := exec.Command("ssh", "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
-		workerHost, "tee", "/tmp/worker-loop.sh")
-	scriptCmd.Stdin = strings.NewReader(pollScript)
+	scriptCmd := sshToWorker(workerID, "bash", "-c", fmt.Sprintf("cat > /tmp/worker-loop.sh << 'SCRIPTEOF'\n%s\nSCRIPTEOF", pollScript))
 	scriptCmd.Run()
 
-	exec.Command("ssh", "-o", "StrictHostKeyChecking=no", workerHost,
-		"chmod", "+x", "/tmp/worker-loop.sh").Run()
+	sshToWorker(workerID, "chmod", "+x", "/tmp/worker-loop.sh").Run()
 
 	go func() {
-		cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=30",
-			workerHost, "nohup", "/tmp/worker-loop.sh", ">", "/tmp/worker.log", "2>&1", "&")
+		cmd := sshToWorker(workerID, "bash", "-c", "nohup /tmp/worker-loop.sh > /tmp/worker.log 2>&1 &")
 		cmd.Run()
 	}()
 
