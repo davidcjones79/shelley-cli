@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1114,10 +1115,10 @@ while true; do
 done
 `, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken)
 
-	// Write the worker loop script using exec.Command directly to handle the heredoc properly
-	// The sshToWorker helper has issues with multi-line content
+	// Write the worker loop script using base64 encoding to avoid shell quoting issues
+	scriptB64 := base64.StdEncoding.EncodeToString([]byte(pollScript))
 	scriptCmd := exec.Command("ssh", "exe.dev",
-		fmt.Sprintf("ssh %s 'cat > /tmp/worker-loop.sh << '\"'\"'SCRIPTEOF'\"'\"'\n%s\nSCRIPTEOF'", workerID, pollScript))
+		fmt.Sprintf("ssh %s 'echo %s | base64 -d > /tmp/worker-loop.sh'", workerID, scriptB64))
 	if out, err := scriptCmd.CombinedOutput(); err != nil {
 		log.Printf("Failed to write worker loop script on %s: %v\nOutput: %s", workerID, err, string(out))
 	}
