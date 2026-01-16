@@ -607,7 +607,13 @@ func (c *Coordinator) GetNextTask(workerID string) (*Task, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.db.Exec(`UPDATE workers SET last_heartbeat = CURRENT_TIMESTAMP, status = 'idle' WHERE id = ?`, workerID)
+	// Update existing worker or re-register if missing (e.g., after coordinator restart)
+	result, _ := c.db.Exec(`UPDATE workers SET last_heartbeat = CURRENT_TIMESTAMP, status = 'idle' WHERE id = ?`, workerID)
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		// Worker not in DB - re-register it
+		log.Printf("Re-registering worker %s (not in DB)", workerID)
+		c.db.Exec(`INSERT INTO workers (id, status, last_heartbeat) VALUES (?, 'idle', CURRENT_TIMESTAMP)`, workerID)
+	}
 
 	var taskID string
 	err := c.db.QueryRow(`SELECT id FROM tasks WHERE status = 'queued' ORDER BY priority DESC, created_at ASC LIMIT 1`).Scan(&taskID)
