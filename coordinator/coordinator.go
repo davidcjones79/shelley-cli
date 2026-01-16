@@ -857,7 +857,7 @@ func (c *Coordinator) setupWorker(workerID string) {
 	log.Printf("Waiting for %s SSH...", workerID)
 	for i := 0; i < 60; i++ {
 		time.Sleep(3 * time.Second)
-		checkCmd := sshToWorker(workerID, "echo", "ready")
+		checkCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'echo ready'", workerID))
 		if out, err := checkCmd.CombinedOutput(); err == nil && strings.Contains(string(out), "ready") {
 			break
 		}
@@ -882,7 +882,7 @@ func (c *Coordinator) setupWorker(workerID string) {
 	// Use install script (default) or download from coordinator if set to "scp" or "http"
 	if installScript != "scp" && installScript != "http" {
 		log.Printf("Running install script on %s...", workerID)
-		installCmd := sshToWorker(workerID, "bash", "-c", fmt.Sprintf("curl -fsSL %s | bash", installScript))
+		installCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'curl -fsSL %s | bash'", workerID, installScript))
 		if out, err := installCmd.CombinedOutput(); err != nil {
 			log.Printf("Failed to run install script on %s: %v\n%s", workerID, err, out)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
@@ -890,13 +890,13 @@ func (c *Coordinator) setupWorker(workerID string) {
 		}
 		log.Printf("Install script completed on %s", workerID)
 		// Write config for LLM gateway
-		sshToWorker(workerID, "mkdir", "-p", ".config/shelley").Run()
+		exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'mkdir -p .config/shelley'", workerID)).Run()
 		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
 		configCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'cat > .config/shelley/shelley.json << EOF\n%s\nEOF'", workerID, configJSON))
 		configCmd.Run()
 	} else {
 		// Create directories on worker
-		mkdirCmd := sshToWorker(workerID, "mkdir", "-p", ".local/bin", ".config/shelley")
+		mkdirCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'mkdir -p .local/bin .config/shelley'", workerID))
 		if out, err := mkdirCmd.CombinedOutput(); err != nil {
 			log.Printf("Failed to create directories on %s: %v\nOutput: %s", workerID, err, string(out))
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
@@ -908,15 +908,14 @@ func (c *Coordinator) setupWorker(workerID string) {
 		// exe.dev proxies HTTPS to the coordinator port
 		log.Printf("Downloading shelley binary to %s from coordinator...", workerID)
 		downloadURL := fmt.Sprintf("https://%s:%d/api/shelley-bin?token=%s", c.config.CoordHost, c.config.Port, c.config.APIToken)
-		// Use curl directly without bash -c to avoid quoting issues
-		downloadCmd := sshToWorker(workerID, "curl", "-fsSL", downloadURL, "-o", ".local/bin/shelley")
+		downloadCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'curl -fsSL \"%s\" -o .local/bin/shelley'", workerID, downloadURL))
 		if out, err := downloadCmd.CombinedOutput(); err != nil {
 			log.Printf("Failed to download shelley to %s: %v\n%s", workerID, err, out)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
 			return
 		}
 		// Make it executable
-		chmodCmd := sshToWorker(workerID, "chmod", "+x", ".local/bin/shelley")
+		chmodCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'chmod +x .local/bin/shelley'", workerID))
 		chmodCmd.Run()
 
 		// Write config using tee to avoid shell quoting issues with redirects
@@ -932,17 +931,17 @@ func (c *Coordinator) setupWorker(workerID string) {
 			gitUser = "git"
 		}
 		// Configure git credential helper to use token
-		gitSetupCmds := [][]string{
-			{"git", "config", "--global", "credential.helper", "store"},
-			{"git", "config", "--global", "user.email", "shelley-worker@exe.dev"},
-			{"git", "config", "--global", "user.name", fmt.Sprintf("Shelley Worker (%s)", workerID)},
+		gitSetupCmds := []string{
+			"git config --global credential.helper store",
+			"git config --global user.email shelley-worker@exe.dev",
+			fmt.Sprintf("git config --global user.name 'Shelley Worker (%s)'", workerID),
 		}
-		for _, args := range gitSetupCmds {
-			sshToWorker(workerID, args...).Run()
+		for _, cmd := range gitSetupCmds {
+			exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s '%s'", workerID, cmd)).Run()
 		}
-		// Store credentials for GitHub - escape the URL
+		// Store credentials for GitHub
 		credentials := fmt.Sprintf("https://%s:%s@github.com", gitUser, c.config.GitToken)
-		credCmd := sshToWorker(workerID, "bash", "-c", fmt.Sprintf("echo '%s' > .git-credentials && chmod 600 .git-credentials", credentials))
+		credCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'echo \"%s\" > .git-credentials && chmod 600 .git-credentials'", workerID, credentials))
 		credCmd.Run()
 	}
 
@@ -954,8 +953,7 @@ func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
 	log.Printf("Starting shelley serve on %s...", workerID)
 	
 	// Start shelley serve in the background on port 8000
-	// Pass as a single command string since we need shell operators (>, &)
-	serveCmd := sshToWorker(workerID, "nohup /usr/local/bin/shelley serve -port 8000 > /tmp/shelley-serve.log 2>&1 &")
+	serveCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'nohup /usr/local/bin/shelley serve -port 8000 > /tmp/shelley-serve.log 2>&1 &'", workerID))
 	serveCmd.Run()
 	
 	// Wait for shelley serve to be ready
@@ -1116,14 +1114,22 @@ while true; do
 done
 `, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken)
 
-	scriptCmd := sshToWorker(workerID, "bash", "-c", fmt.Sprintf("cat > /tmp/worker-loop.sh << 'SCRIPTEOF'\n%s\nSCRIPTEOF", pollScript))
-	scriptCmd.Run()
+	// Write the worker loop script using exec.Command directly to handle the heredoc properly
+	// The sshToWorker helper has issues with multi-line content
+	scriptCmd := exec.Command("ssh", "exe.dev",
+		fmt.Sprintf("ssh %s 'cat > /tmp/worker-loop.sh << '\"'\"'SCRIPTEOF'\"'\"'\n%s\nSCRIPTEOF'", workerID, pollScript))
+	if out, err := scriptCmd.CombinedOutput(); err != nil {
+		log.Printf("Failed to write worker loop script on %s: %v\nOutput: %s", workerID, err, string(out))
+	}
 
-	sshToWorker(workerID, "chmod", "+x", "/tmp/worker-loop.sh").Run()
+	// Make script executable
+	chmodCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'chmod +x /tmp/worker-loop.sh'", workerID))
+	chmodCmd.Run()
 
+	// Start the worker loop in background
 	go func() {
-		cmd := sshToWorker(workerID, "nohup /tmp/worker-loop.sh > /tmp/worker.log 2>&1 &")
-		cmd.Run()
+		startCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'nohup /tmp/worker-loop.sh > /tmp/worker.log 2>&1 &'", workerID))
+		startCmd.Run()
 	}()
 
 	c.db.Exec(`UPDATE workers SET status = 'idle', last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?`, workerID)
