@@ -521,8 +521,11 @@ shelley coord-cli [flags] <command>
 | Command | Description |
 |---------|-------------|
 | `add-task <prompt>` | Add a task to the queue |
+| `add-group <name> <prompts>` | Create a task group (prompts separated by `\|`) |
 | `tasks` | List all tasks |
 | `task <id>` | Show task details |
+| `groups` | List all task groups |
+| `group <id>` | Show group details and tasks |
 | `workers` | List all workers |
 | `scale <n>` | Scale to n workers |
 | `drain` | Drain all workers |
@@ -533,14 +536,25 @@ shelley coord-cli [flags] <command>
 | `stats` | Show coordinator statistics |
 | `clear-tasks` | Clear all tasks from queue |
 | `clear-workers` | Remove all workers |
+| `clear-failed` | Clear failed worker records from DB |
 | `clear-all` | Reset coordinator (stop, delete DB, restart) |
 | `api-help` | Show all API endpoints |
 
 ### Examples
 
 ```bash
-# Add a task
+# Add a single task
 shelley coord-cli add-task "Create a landing page for a coffee shop"
+
+# Create a task group with multiple prompts (separated by |)
+shelley coord-cli add-group "Landing Pages" \
+  "Create docker.html with dark theme" \| \
+  "Create k8s.html with dark theme" \| \
+  "Create terraform.html with dark theme"
+
+# List groups and check progress
+shelley coord-cli groups
+shelley coord-cli group ca0327cc
 
 # Show task details
 shelley coord-cli task abc12345
@@ -560,6 +574,9 @@ shelley coord-cli reset-task abc12345
 # Show stats
 shelley coord-cli stats
 
+# Clear failed worker records
+shelley coord-cli clear-failed
+
 # Show all API endpoints
 shelley coord-cli api-help
 
@@ -577,15 +594,31 @@ $ shelley coord-cli stats
 
 $ shelley coord-cli workers
 👷 Workers (3):
-   ✅ wk-abc123 (idle)
-   🔨 wk-def456 (busy)
-   ✅ wk-ghi789 (idle)
+   ✅ wk-abc-x123 (idle)
+   🔨 wk-abc-x456 (busy)
+   ✅ wk-abc-x789 (idle)
 
 $ shelley coord-cli tasks
 📋 Tasks (8):
    🔨 a1b2c3d4: Create a landing page for DOOM...
    📥 e5f6g7h8: Create a landing page for Sonic...
    ✅ i9j0k1l2: Create a landing page for Mario...
+
+$ shelley coord-cli groups
+📁 Groups (1):
+   🔨 ca0327cc: DevOps Pages (1/3 tasks)
+
+$ shelley coord-cli group ca0327cc48c02ef1
+✅ Group ca0327cc48c02ef1
+   Name:      DevOps Pages
+   Status:    completed
+   Progress:  3/3 completed
+   Created:   2026-01-16T19:43:53Z
+
+   Tasks:
+   ✅ dd0a01c0: Create docker.html with dark theme...
+   ✅ 0fc400b3: Create k8s.html with dark theme...
+   ✅ a2b3c4d5: Create terraform.html with dark theme...
 ```
 
 ---
