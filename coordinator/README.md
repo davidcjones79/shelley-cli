@@ -2,12 +2,32 @@
 
 A task queue and worker pool for distributed Shelley execution on exe.dev VMs.
 
+## Prerequisites
+
+### Tailscale Account (Required)
+
+The coordinator requires Tailscale for direct network connectivity and shared filesystem between coordinator and workers.
+
+1. **Create a Tailscale account** at https://tailscale.com (free tier works)
+2. **Generate an auth key**:
+   - Go to Settings > Keys in the Tailscale admin console
+   - Click "Generate auth key"
+   - Enable **Reusable** (for multiple workers) and **Ephemeral** (auto-cleanup)
+   - Copy the key (starts with `tskey-auth-`)
+3. **Install Tailscale on your coordinator VM**:
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up
+   ```
+
 ## Quick Start
 
 ### Dashboard Mode (Recommended)
 
 ```bash
-shelley dashboard
+shelley dashboard -auto-start \
+  -tailscale-authkey "tskey-auth-YOUR-KEY-HERE" \
+  -install-script scp
 ```
 
 Access at `https://your-vm.exe.xyz:8080/`
@@ -64,17 +84,33 @@ See `shelley coord-cli --help` for all commands.
 │  (browser UI)   │     │  (exe.dev VMs)  │
 └────────┬────────┘     └────────┬────────┘
          │                       │
-         │ exe.dev auth          │ API token
+         │ exe.dev auth          │ Tailscale + API token
          ▼                       ▼
 ┌─────────────────────────────────────────┐
 │           Coordinator Server            │
 │                                         │
 │  • Task queue (SQLite)                  │
 │  • Worker management                    │
+│  • Shared filesystem (~/shared)         │
 │  • Auto-scaling                         │
 │  • Git integration                      │
 └─────────────────────────────────────────┘
 ```
+
+### Shared Filesystem
+
+With Tailscale enabled, workers mount `~/shared` from the coordinator via SSHFS:
+
+```
+Coordinator ~/shared/          Worker ~/shared/ (SSHFS mount)
+├── source/      ────────────► ├── source/
+├── tasks/       ◄──────────── ├── tasks/
+└── results/     ◄──────────── └── results/
+```
+
+- Put input files in `~/shared/source/` on coordinator
+- Workers read from `~/shared/source/`, write to `~/shared/tasks/`
+- Results immediately visible on coordinator
 
 ## Features
 
@@ -162,6 +198,8 @@ Workers authenticate using the API token:
 | `-git-user` | | Git username for HTTPS auth |
 | `-shelley-db` | ~/.config/shelley/shelley.db | Main shelley DB for conversation sync |
 | `-auto-start` | false | Start coordinator automatically |
+| `-tailscale-authkey` | | Tailscale auth key for workers (required for shared filesystem) |
+| `-install-script` | https | Worker install method: `scp` (recommended with Tailscale), `https`, or URL |
 
 ### `shelley coord` Flags
 
@@ -178,6 +216,7 @@ Workers authenticate using the API token:
 | `-git-user` | | Git username |
 | `-shelley-db` | | Main shelley DB for conversation sync |
 | `-git-log` | true | Enable git logging of completed tasks |
+| `-tailscale-authkey` | | Tailscale auth key (required for shared filesystem) |
 
 ## API Endpoints
 

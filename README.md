@@ -20,7 +20,7 @@ This installs the CLI with Igor file transfer service. See [cli/README.md](cli/R
   - [Alacritty](https://alacritty.org/) (Windows/Mac)
   - Mac built-in Terminal - works, but not as well as the others. If mouse scrolling is enabled, selecting text is difficult without first disabling it via `/mouse`
 - **Igor** - Your faithful laboratory assistant for file transfers (`shelley igor`)
-- **Coordinator & Dashboard** - Distributed task queue with worker pool for parallelizing Shelley across multiple VMs (`shelley dashboard` or `shelley coord`) - see [coordinator/README.md](coordinator/README.md)
+- **Coordinator & Dashboard** - Distributed task queue with worker pool for parallelizing Shelley across multiple VMs. Includes shared filesystem via Tailscale (`shelley dashboard` or `shelley coord`) - see [coordinator/README.md](coordinator/README.md)
 - **Task Groups** - Batch multiple related tasks together with shared repo/branch settings
 - **Git Integration** - Workers can clone repos, make changes, commit, and push to feature branches
 - **`/pick` Command** - Quick workflow to analyze uploaded files

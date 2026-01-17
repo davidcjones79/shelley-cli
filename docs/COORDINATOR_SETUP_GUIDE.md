@@ -52,7 +52,33 @@ The Shelley coordinator system allows you to:
 
 You need an exe.dev account. Sign up at https://exe.dev if you don't have one.
 
-### 2. SSH Key Setup
+### 2. Tailscale Account (Required for Shared Filesystem)
+
+The coordinator uses Tailscale to provide direct network connectivity between the coordinator and workers. This enables:
+- **Shared filesystem** via SSHFS (workers mount `~/shared` from coordinator)
+- **Direct API access** (bypasses exe.dev HTTPS proxy)
+- **Faster binary downloads** to workers
+
+**Setup Tailscale:**
+
+1. Create a Tailscale account at https://tailscale.com (free tier works)
+2. Go to **Settings > Keys** in the Tailscale admin console
+3. Click **Generate auth key**
+4. Configure the key:
+   - Check **Reusable** (allows multiple workers to use the same key)
+   - Check **Ephemeral** (auto-removes nodes when they disconnect)
+   - Set expiration as needed (90 days is good)
+5. Copy the generated key (starts with `tskey-auth-`)
+
+**Install Tailscale on your coordinator VM:**
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+Follow the authentication link to connect your coordinator to your Tailnet.
+
+### 3. SSH Key Setup
 
 exe.dev VMs use SSH keys for authentication. When you create a VM via the exe.dev web dashboard, it automatically:
 1. Generates an SSH key pair (`~/.ssh/id_ed25519`) on the VM
@@ -91,20 +117,22 @@ ssh my-coordinator.exe.xyz
 
 You have two options:
 
-### Option A: Web Dashboard (Recommended)
+### Option A: Web Dashboard with Tailscale (Recommended)
 
-The dashboard provides a web UI for managing the coordinator, viewing tasks, and scaling workers.
+The dashboard provides a web UI for managing the coordinator, viewing tasks, and scaling workers. With Tailscale enabled, workers get a shared filesystem.
 
 ```bash
 cd ~/shelley-cli
 
-# Start the dashboard with auto-start coordinator
+# Start the dashboard with Tailscale for shared filesystem
 ./bin/shelley dashboard \
   -port 8080 \
   -db coordinator.db \
   -max-workers 10 \
   -prefix wk \
-  -auto-start
+  -auto-start \
+  -tailscale-authkey "tskey-auth-YOUR-KEY-HERE" \
+  -install-script scp
 ```
 
 **Flags explained:**
@@ -113,12 +141,35 @@ cd ~/shelley-cli
 - `-max-workers 10`: Maximum concurrent workers
 - `-prefix wk`: Worker VM name prefix (e.g., `wk-abc-x123456`)
 - `-auto-start`: Start coordinator automatically
+- `-tailscale-authkey`: Tailscale auth key for workers to join your Tailnet
+- `-install-script scp`: Use SCP method for binary install (required with Tailscale)
 
-**Note:** Workers automatically download the shelley binary from the coordinator via HTTP (the default `-install-script http` method).
+**What happens with Tailscale enabled:**
+1. Workers automatically join your Tailnet
+2. Workers mount `~/shared` from coordinator via SSHFS
+3. Workers download shelley binary via Tailscale (bypasses exe.dev auth)
+4. API calls use direct Tailscale connection
 
 Access the dashboard at: `https://my-coordinator.exe.xyz:8080/`
 
-### Option B: CLI Only
+### Option B: Web Dashboard without Tailscale
+
+If you don't need the shared filesystem:
+
+```bash
+cd ~/shelley-cli
+
+./bin/shelley dashboard \
+  -port 8080 \
+  -db coordinator.db \
+  -max-workers 10 \
+  -prefix wk \
+  -auto-start
+```
+
+**Note:** Without Tailscale, workers can't access the shared filesystem and use the HTTPS proxy for API calls.
+
+### Option C: CLI Only (No Dashboard)
 
 If you prefer command-line only:
 
@@ -130,7 +181,8 @@ cd ~/shelley-cli
   -db coordinator.db \
   -max-workers 10 \
   -prefix wk \
-  -host my-coordinator.exe.xyz
+  -host my-coordinator.exe.xyz \
+  -tailscale-authkey "tskey-auth-YOUR-KEY-HERE"
 ```
 
 The coordinator will print an API token on startup - save this for API access.
@@ -389,11 +441,96 @@ watch -n 5 "curl -s -H 'X-Coordinator-Token: $TOKEN' http://localhost:8081/api/s
 4. **Use meaningful task prompts** - Be specific about what you want created and where to save files
 5. **Create coordinator via web dashboard** - Ensures SSH keys are properly set up
 
-## File Transfer Between VMs
+## Shared Filesystem (Tailscale Required)
 
-### Recommended: HTTP Pull Pattern
+When Tailscale is enabled, workers mount the coordinator's `~/shared` directory via SSHFS. This provides true bidirectional file sharing:
 
-Workers automatically start an HTTP file server on port 8000, serving the worker's home directory. This makes it easy to transfer files from workers to any destination:
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Coordinator                                                 │
+│ └── ~/shared/                                               │
+│     ├── source/   ← Put input files here                    │
+│     ├── tasks/    ← Workers write results here              │
+│     └── results/  ← Aggregated output                       │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                   Tailscale (100.x.x.x)
+                            │
+         ┌──────────────────┼──────────────────┐
+         ▼                  ▼                  ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ Worker 1        │ │ Worker 2        │ │ Worker N        │
+│ ~/shared/ ←SSHFS│ │ ~/shared/ ←SSHFS│ │ ~/shared/ ←SSHFS│
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+### Using the Shared Filesystem
+
+**On the coordinator:**
+```bash
+# Create input data
+mkdir -p ~/shared/source
+echo '{"data": "example"}' > ~/shared/source/input.json
+
+# Check results after task completes
+cat ~/shared/tasks/result.txt
+```
+
+**In task prompts:**
+```
+Read ~/shared/source/input.json and write the processed result to ~/shared/tasks/output.json
+```
+
+### Bulk Transfers with coord-sync
+
+Workers also get a `coord-sync` helper for faster bulk transfers via rsync (2-3x faster than SSHFS for large files):
+
+```bash
+# On worker - pull large directory from coordinator
+coord-sync pull shared/source/large-repo ~/work/
+
+# On worker - push results back
+coord-sync push ~/results shared/tasks/
+```
+
+**Performance comparison (5MB, 50 files):**
+| Method | Time | Use Case |
+|--------|------|----------|
+| SSHFS (direct read) | 2.4s | Small files, real-time access |
+| coord-sync (rsync) | 0.96s | Large directories, bulk transfers |
+
+### How It Works
+
+1. Worker joins Tailnet via the provided auth key
+2. Worker generates SSH key and registers it with coordinator
+3. Worker mounts `exedev@<coordinator-tailscale-ip>:shared` to `~/shared`
+4. All file changes are immediately visible on both sides
+
+### Troubleshooting Shared Filesystem
+
+**Mount not working:**
+```bash
+# On worker, check if mounted
+mountpoint ~/shared
+
+# Check Tailscale status
+tailscale status
+
+# Check SSHFS
+ps aux | grep sshfs
+```
+
+**Permission denied:**
+- Worker's SSH key may not be registered
+- Check coordinator's `/exe.dev/etc/ssh/authorized_keys`
+
+## File Transfer Between VMs (Without Tailscale)
+
+If not using Tailscale, you can still transfer files:
+
+### HTTP Pull Pattern
+
+Workers automatically start an HTTP file server on port 8000, serving the worker's home directory:
 
 ```bash
 # From any VM, download files from a worker:

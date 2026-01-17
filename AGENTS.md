@@ -105,8 +105,18 @@ For more than 3-4 parallel tasks, or when you need:
 - Progress monitoring dashboard
 - Git integration (branches, commits)
 - Worker health monitoring
+- **Shared filesystem** between coordinator and workers
 
-Use the coordinator system instead: `shelley dashboard -auto-start`
+**Prerequisites:** The coordinator requires a Tailscale account for the shared filesystem feature. See [docs/COORDINATOR_SETUP_GUIDE.md](docs/COORDINATOR_SETUP_GUIDE.md) for setup instructions.
+
+Start the coordinator with Tailscale:
+```bash
+shelley dashboard -auto-start \
+  -tailscale-authkey "tskey-auth-YOUR-KEY" \
+  -install-script scp
+```
+
+Workers will automatically mount `~/shared` from the coordinator, enabling bidirectional file sharing.
 
 ---
 
