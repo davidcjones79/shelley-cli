@@ -564,3 +564,96 @@ The coordinator monitors worker heartbeats to detect and auto-replace unhealthy 
 | Dead          | > 300 sec     | Red, auto-replaced |
 
 Dead workers are automatically replaced, and their in-progress tasks are reset to "queued" for retry.
+
+## Git Worktrees for Multi-Worker Collaboration
+
+When Tailscale is enabled, the coordinator automatically uses **git worktrees** instead of having each worker clone the repository separately. This provides significant benefits for parallel development.
+
+### How It Works
+
+```
+~/shared/repos/
+├── owner-repo/                    # Main clone (shared by all tasks)
+│   ├── .git/                      # Shared git database
+│   └── (main branch files)
+├── owner-repo-task-abc123/        # Worktree for task abc123
+│   └── (task-abc123 branch files)
+├── owner-repo-task-def456/        # Worktree for task def456
+│   └── (task-def456 branch files)
+└── owner-repo-task-ghi789/        # Worktree for task ghi789
+    └── (task-ghi789 branch files)
+```
+
+1. **Coordinator clones once**: When the first task for a repo is created, the coordinator clones it to `~/shared/repos/<owner-repo>/`
+2. **Worktrees for each task**: Each task gets its own worktree (separate working directory, shared `.git`)
+3. **Workers use SSHFS**: Workers access their worktree via the shared filesystem mount
+4. **Branches are instantly visible**: All workers can see all branches via `git branch -a`
+
+### Benefits
+
+| Traditional (Clone per Worker) | With Git Worktrees |
+|--------------------------------|-------------------|
+| Each worker clones ~50MB+ | Clone once, worktrees are instant |
+| Workers isolated, can't see each other | Workers see all branches in real-time |
+| Merge conflicts discovered late | Can check for conflicts early |
+| Network fetch needed for merges | Merges are local/instant |
+
+### Example: Parallel Feature Development
+
+```bash
+# Create a task group for parallel development
+curl -X POST http://localhost:8081/api/group/create \
+  -H "X-Coordinator-Token: $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Auth System v2",
+    "repo_url": "https://github.com/myorg/myapp.git",
+    "base_branch": "main",
+    "prompts": [
+      "Add OAuth2 login support in auth/oauth.go",
+      "Add session management in auth/session.go", 
+      "Add rate limiting middleware in middleware/ratelimit.go",
+      "Update API docs for new auth endpoints"
+    ]
+  }'
+
+# Scale to 4 workers (one per task)
+curl -X POST "http://localhost:8081/api/scale?workers=4" \
+  -H "X-Coordinator-Token: $TOKEN"
+```
+
+Each worker operates in its own worktree:
+- Worker 1: `~/shared/repos/myorg-myapp-task-xxx/` (branch: task-xxx)
+- Worker 2: `~/shared/repos/myorg-myapp-task-yyy/` (branch: task-yyy)
+- Worker 3: `~/shared/repos/myorg-myapp-task-zzz/` (branch: task-zzz)
+- Worker 4: `~/shared/repos/myorg-myapp-task-www/` (branch: task-www)
+
+### Managing Shared Repos
+
+```bash
+# List all shared repositories
+curl -H "X-Coordinator-Token: $TOKEN" http://localhost:8081/api/repos
+
+# Clone/create a shared repository
+curl -X POST http://localhost:8081/api/repo/create \
+  -H "X-Coordinator-Token: $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://github.com/owner/repo.git", "base_branch": "main"}'
+
+# Fetch latest changes for a repo
+curl -X POST "http://localhost:8081/api/repo/fetch?id=owner-repo" \
+  -H "X-Coordinator-Token: $TOKEN"
+
+# List worktrees for a repo
+curl "http://localhost:8081/api/repo/worktrees?repo=owner-repo" \
+  -H "X-Coordinator-Token: $TOKEN"
+```
+
+### After Task Completion
+
+Once all tasks complete, you have several options:
+
+1. **Create PRs**: Each task branch can be turned into a pull request
+2. **Merge locally**: Merge branches on the coordinator before pushing
+3. **Use GitHub merge queue**: Let GitHub handle merge order and conflicts
+4. **Cherry-pick**: Select specific commits from task branches

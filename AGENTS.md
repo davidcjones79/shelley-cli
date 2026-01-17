@@ -103,7 +103,7 @@ cat /tmp/*-security.md > /tmp/full-security-report.md
 For more than 3-4 parallel tasks, or when you need:
 - Task queue with retry logic
 - Progress monitoring dashboard
-- Git integration (branches, commits)
+- Git integration (branches, commits, **git worktrees** for parallel work)
 - Worker health monitoring
 - **Shared filesystem** between coordinator and workers
 
@@ -112,11 +112,13 @@ For more than 3-4 parallel tasks, or when you need:
 Start the coordinator with Tailscale:
 ```bash
 shelley dashboard -auto-start \
-  -tailscale-authkey "tskey-auth-YOUR-KEY" \
-  -install-script scp
+  -tailscale-authkey "tskey-auth-YOUR-KEY"
 ```
 
-Workers will automatically mount `~/shared` from the coordinator, enabling bidirectional file sharing.
+Workers will automatically mount `~/shared` from the coordinator, enabling:
+- Bidirectional file sharing
+- **Git worktrees**: Multiple workers can work on the same repo in parallel, each with their own branch/worktree
+- Instant visibility of all branches across workers
 
 ---
 
