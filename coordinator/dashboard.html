@@ -217,15 +217,15 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            cursor: pointer;
         }
-        .list-item-prompt:hover {
+        .list-item-prompt.expanded {
             white-space: normal;
             background: #f5f5f5;
             padding: 4px 8px;
             border-radius: 4px;
             position: relative;
             z-index: 10;
+            max-width: none;
         }
         .list-item-actions {
             display: flex;
@@ -1545,7 +1545,7 @@
                         ${groupInfo}
                         ${branchInfo}
                         ${commitInfo}
-                        <span class="list-item-prompt" title="${escapeHtml(t.prompt || '')}">${escapeHtml(t.prompt || '')}</span>
+                        <span class="list-item-prompt" onclick="event.stopPropagation(); this.classList.toggle('expanded')" title="Click to expand">${escapeHtml(t.prompt || '')}</span>
                     </div>
                     <span class="badge badge-${t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'}">${t.status}</span>
                 </div>
