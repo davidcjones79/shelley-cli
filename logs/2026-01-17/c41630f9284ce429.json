@@ -1,0 +1,15 @@
+{
+  "id": "c41630f9284ce429",
+  "prompt": "Read ~/shared/source/test-task-input/data.json and calculate total price. Write result to ~/shared/tasks/report.md\n",
+  "status": "completed",
+  "priority": 0,
+  "worker_id": "wk-c12-x540b288a92b0",
+  "result": "",
+  "error": "",
+  "conversation_id": "cHDJ447",
+  "source": "autonomous",
+  "created_at": "2026-01-17T20:08:11Z",
+  "assigned_at": "2026-01-17T20:24:50Z",
+  "started_at": "2026-01-17T20:24:50Z",
+  "completed_at": "2026-01-17T20:25:06Z"
+}
