@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS task_groups (
     description TEXT,
     repo_url TEXT,           -- shared repo for all tasks in group
     base_branch TEXT,        -- shared base branch
+    skill_context TEXT,      -- system-level context/expertise for workers
     status TEXT NOT NULL DEFAULT 'pending',  -- pending, running, completed, failed
     tasks_total INTEGER DEFAULT 0,
     tasks_completed INTEGER DEFAULT 0,

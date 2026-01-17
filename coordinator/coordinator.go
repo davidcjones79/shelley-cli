@@ -67,6 +67,7 @@ type Task struct {
 	Source         string     `json:"source"`                    // manual, autonomous, api
 	GroupID        *string    `json:"group_id,omitempty"`
 	InputDir       *string    `json:"input_dir,omitempty"`       // path to staged input files
+	SkillContext   *string    `json:"skill_context,omitempty"`   // system-level context from group
 	CreatedAt      time.Time  `json:"created_at"`
 	AssignedAt     *time.Time `json:"assigned_at,omitempty"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
@@ -124,6 +125,7 @@ type TaskGroup struct {
 	Description    *string    `json:"description,omitempty"`
 	RepoURL        *string    `json:"repo_url,omitempty"`
 	BaseBranch     *string    `json:"base_branch,omitempty"`
+	SkillContext   *string    `json:"skill_context,omitempty"` // System-level context for workers
 	Status         string     `json:"status"`
 	TasksTotal     int        `json:"tasks_total"`
 	TasksCompleted int        `json:"tasks_completed"`
@@ -134,12 +136,13 @@ type TaskGroup struct {
 
 // GroupRequest contains parameters for creating a task group.
 type GroupRequest struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	RepoURL     string   `json:"repo_url"`
-	BaseBranch  string   `json:"base_branch"`
-	Prompts     []string `json:"prompts"` // Optional: create tasks immediately
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	RepoURL      string   `json:"repo_url"`
+	BaseBranch   string   `json:"base_branch"`
+	SkillContext string   `json:"skill_context"` // System-level context for workers
+	Prompts      []string `json:"prompts"`       // Optional: create tasks immediately
 }
 
 // CompleteRequest contains the result of a completed task.
@@ -192,6 +195,9 @@ func New(config Config) (*Coordinator, error) {
 	if _, err := db.Exec(string(schema)); err != nil {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
+
+	// Migration: add skill_context column to task_groups if not exists
+	db.Exec(`ALTER TABLE task_groups ADD COLUMN skill_context TEXT`)
 
 	logsDir := "logs"
 	os.MkdirAll(logsDir, 0755)
@@ -888,6 +894,15 @@ func (c *Coordinator) GetTask(id string) (*Task, error) {
 		t.CompletedAt = &completedAt.Time
 	}
 
+	// If task belongs to a group, fetch skill context from group
+	if t.GroupID != nil {
+		var skillContext sql.NullString
+		err := c.db.QueryRow(`SELECT skill_context FROM task_groups WHERE id = ?`, *t.GroupID).Scan(&skillContext)
+		if err == nil && skillContext.Valid {
+			t.SkillContext = &skillContext.String
+		}
+	}
+
 	return &t, nil
 }
 
@@ -1049,7 +1064,7 @@ func (c *Coordinator) CreateGroup(req GroupRequest) (*TaskGroup, error) {
 		req.BaseBranch = "main"
 	}
 
-	var repoURL, baseBranch, description interface{}
+	var repoURL, baseBranch, description, skillContext interface{}
 	if req.RepoURL != "" {
 		repoURL = req.RepoURL
 		baseBranch = req.BaseBranch
@@ -1057,9 +1072,12 @@ func (c *Coordinator) CreateGroup(req GroupRequest) (*TaskGroup, error) {
 	if req.Description != "" {
 		description = req.Description
 	}
+	if req.SkillContext != "" {
+		skillContext = req.SkillContext
+	}
 
-	_, err := c.db.Exec(`INSERT INTO task_groups (id, name, description, repo_url, base_branch) VALUES (?, ?, ?, ?, ?)`,
-		req.ID, req.Name, description, repoURL, baseBranch)
+	_, err := c.db.Exec(`INSERT INTO task_groups (id, name, description, repo_url, base_branch, skill_context) VALUES (?, ?, ?, ?, ?, ?)`,
+		req.ID, req.Name, description, repoURL, baseBranch, skillContext)
 	if err != nil {
 		return nil, fmt.Errorf("create group: %w", err)
 	}
@@ -1101,13 +1119,13 @@ func (c *Coordinator) CreateGroup(req GroupRequest) (*TaskGroup, error) {
 // GetGroup retrieves a task group by ID.
 func (c *Coordinator) GetGroup(id string) (*TaskGroup, error) {
 	var g TaskGroup
-	var description, repoURL, baseBranch sql.NullString
+	var description, repoURL, baseBranch, skillContext sql.NullString
 	var completedAt sql.NullTime
 
-	err := c.db.QueryRow(`SELECT id, name, description, repo_url, base_branch, status, 
+	err := c.db.QueryRow(`SELECT id, name, description, repo_url, base_branch, skill_context, status, 
 		tasks_total, tasks_completed, tasks_failed, created_at, completed_at 
 		FROM task_groups WHERE id = ?`, id).Scan(
-		&g.ID, &g.Name, &description, &repoURL, &baseBranch, &g.Status,
+		&g.ID, &g.Name, &description, &repoURL, &baseBranch, &skillContext, &g.Status,
 		&g.TasksTotal, &g.TasksCompleted, &g.TasksFailed, &g.CreatedAt, &completedAt)
 	if err != nil {
 		return nil, err
@@ -1121,6 +1139,9 @@ func (c *Coordinator) GetGroup(id string) (*TaskGroup, error) {
 	}
 	if baseBranch.Valid {
 		g.BaseBranch = &baseBranch.String
+	}
+	if skillContext.Valid {
+		g.SkillContext = &skillContext.String
 	}
 	if completedAt.Valid {
 		g.CompletedAt = &completedAt.Time
@@ -1677,6 +1698,7 @@ while true; do
         BRANCH_NAME=$(echo "$RESPONSE" | jq -r '.branch_name // empty')
         WORKTREE_PATH=$(echo "$RESPONSE" | jq -r '.worktree_path // empty')
         INPUT_DIR=$(echo "$RESPONSE" | jq -r '.input_dir // empty')
+        SKILL_CONTEXT=$(echo "$RESPONSE" | jq -r '.skill_context // empty')
         
         echo "=== Task $TASK_ID ==="
         echo "Prompt: $PROMPT"
@@ -1760,14 +1782,24 @@ while true; do
         # Uses the same DB as shelley serve, so conversation is viewable in real-time
         cd "$CWD"
         
-        # If input files were staged, prepend context to the prompt
-        FULL_PROMPT="$PROMPT"
+        # Build the full prompt with skill context and input files
+        FULL_PROMPT=""
+        
+        # Add skill context as system-level preamble if provided
+        if [ -n "$SKILL_CONTEXT" ]; then
+            FULL_PROMPT="[System Context]\n$SKILL_CONTEXT\n[End System Context]\n\n"
+        fi
+        
+        # Add input file context if staged
         if [ -n "$INPUT_DIR" ] && [ -d ~/shared/source/$TASK_ID ]; then
             INPUT_FILES=$(ls -la ~/shared/source/$TASK_ID 2>/dev/null | tail -n +2 || echo "")
             if [ -n "$INPUT_FILES" ]; then
-                FULL_PROMPT="[Context: Input files have been staged at ~/shared/source/$TASK_ID/. Contents: $INPUT_FILES]\n\n$PROMPT"
+                FULL_PROMPT="${FULL_PROMPT}[Context: Input files have been staged at ~/shared/source/$TASK_ID/. Contents: $INPUT_FILES]\n\n"
             fi
         fi
+        
+        # Add the actual task prompt
+        FULL_PROMPT="${FULL_PROMPT}$PROMPT"
         
         OUTPUT=$(shelley -db "$SHELLEY_DB" -config ~/.config/shelley/shelley.json \
             chat -yes -prompt "$FULL_PROMPT" 2>&1) || true

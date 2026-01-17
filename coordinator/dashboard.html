@@ -1138,13 +1138,8 @@
             if (!promptsText) return alert('At least one task prompt required');
 
             // Parse prompts (one per line)
-            let prompts = promptsText.split('\n').map(p => p.trim()).filter(p => p);
+            const prompts = promptsText.split('\n').map(p => p.trim()).filter(p => p);
             if (prompts.length === 0) return alert('At least one task prompt required');
-
-            // Prepend skill context to each prompt if provided
-            if (skillContext) {
-                prompts = prompts.map(p => `${skillContext}\n\nTask: ${p}`);
-            }
 
             // Convert repo URL if needed
             if (repoUrl) {
@@ -1157,6 +1152,7 @@
 
             const payload = { name, prompts };
             if (description) payload.description = description;
+            if (skillContext) payload.skill_context = skillContext;
             if (repoUrl) {
                 payload.repo_url = repoUrl;
                 payload.base_branch = baseBranch;
