@@ -59,6 +59,9 @@ func NewDashboard(cfg DashboardConfig) *Dashboard {
 	coordURL, _ := url.Parse(fmt.Sprintf("http://localhost:%d", cfg.CoordPort))
 	proxy := httputil.NewSingleHostReverseProxy(coordURL)
 	
+	// Enable streaming/WebSocket support
+	proxy.FlushInterval = -1 // Flush immediately for WebSocket
+	
 	// Custom error handler for when coordinator is down
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("Content-Type", "application/json")
