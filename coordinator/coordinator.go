@@ -47,6 +47,7 @@ type Config struct {
 	MinioDir      string // Path to MinIO installation (default: ~/shelley-minio)
 	MinioPort        int    // MinIO server port (default: 9000)
 	TailscaleAuthKey string // Tailscale auth key for workers to join the network
+	TailscaleIP      string // Coordinator's Tailscale IP (auto-detected if empty)
 }
 
 // Task represents a unit of work.
@@ -1331,9 +1332,17 @@ func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
 	// Determine whether Tailscale and MinIO bootstrap should be included
 	tailscaleBootstrap := ""
 	if c.config.TailscaleAuthKey != "" {
+		// Get coordinator's Tailscale IP
+		coordTailscaleIP := c.config.TailscaleIP
+		if coordTailscaleIP == "" {
+			coordTailscaleIP = getTailscaleIP()
+		}
+		
 		tailscaleBootstrap = fmt.Sprintf(`
 # === Tailscale Network Bootstrap ===
 echo "Setting up Tailscale network..."
+
+COORD_TAILSCALE_IP="%s"
 
 if ! command -v tailscale &>/dev/null; then
     echo "Installing Tailscale..."
@@ -1357,11 +1366,28 @@ fi
 TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "")
 if [ -n "$TAILSCALE_IP" ]; then
     echo "✓ Tailscale connected: $TAILSCALE_IP"
+    
+    # Set up SSH access to coordinator (for file sync)
+    echo "Setting up SSH to coordinator ($COORD_TAILSCALE_IP)..."
+    mkdir -p ~/.ssh
+    ssh-keyscan -H $COORD_TAILSCALE_IP >> ~/.ssh/known_hosts 2>/dev/null
+    
+    # Create local shared directory structure
+    mkdir -p ~/shared/input ~/shared/output
+    echo "Created ~/shared/input and ~/shared/output directories"
+    
+    # Export coordinator IP for use in tasks
+    echo "export COORD_TAILSCALE_IP=$COORD_TAILSCALE_IP" >> ~/.bashrc
+    export COORD_TAILSCALE_IP
+    
+    echo "✓ Tailscale setup complete"
+    echo "  - Coordinator reachable at: $COORD_TAILSCALE_IP"
+    echo "  - Sync files: rsync -av ~/shared/output/ exedev@$COORD_TAILSCALE_IP:~/shared/tasks/$WORKER_ID/"
 else
     echo "Warning: Tailscale connection failed"
 fi
 echo "=== Tailscale Bootstrap Complete ==="
-`, c.config.TailscaleAuthKey)
+`, coordTailscaleIP, c.config.TailscaleAuthKey)
 	}
 
 	minioBootstrap := ""
