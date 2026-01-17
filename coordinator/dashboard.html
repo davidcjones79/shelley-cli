@@ -1382,17 +1382,18 @@
             if (!coordRunning) return;
             
             // Determine WebSocket URL
-            // For localhost: connect directly to coordinator port
+            // For localhost or Tailscale (100.x.x.x): connect directly to coordinator port
             // For remote (HTTPS via exe.dev): use same host/port as page (goes through proxy)
             const isSecure = location.protocol === 'https:';
             const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            const isTailscale = location.hostname.startsWith('100.');
             
             let wsUrl;
-            if (isLocalhost) {
-                // Local development: connect directly to coordinator
+            if (isLocalhost || isTailscale) {
+                // Local or Tailscale: connect directly to coordinator
                 wsUrl = `ws://${location.hostname}:${coordPort}/api/ws`;
             } else {
-                // Remote access: use same origin (proxy will forward)
+                // Remote access via exe.dev: use same origin (proxy will forward)
                 const wsProtocol = isSecure ? 'wss:' : 'ws:';
                 wsUrl = `${wsProtocol}//${location.host}/api/ws`;
             }
