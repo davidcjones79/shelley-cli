@@ -40,7 +40,8 @@ type DashboardConfig struct {
 	// MinIO shared filesystem configuration
 	EnableMinio   bool   // Enable MinIO shared filesystem support
 	MinioDir      string // Path to MinIO installation
-	MinioPort     int    // MinIO server port
+	MinioPort        int    // MinIO server port
+	TailscaleAuthKey string // Tailscale auth key for workers
 }
 
 // Dashboard manages the coordinator subprocess and serves the web UI.
@@ -130,6 +131,9 @@ func (d *Dashboard) Start() error {
 		if d.config.MinioPort != 0 {
 			args = append(args, "-minio-port", fmt.Sprintf("%d", d.config.MinioPort))
 		}
+	}
+	if d.config.TailscaleAuthKey != "" {
+		args = append(args, "-tailscale-authkey", d.config.TailscaleAuthKey)
 	}
 
 	d.cmd = exec.Command(d.config.ShelleyBin, args...)

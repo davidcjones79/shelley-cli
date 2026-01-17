@@ -45,7 +45,8 @@ type Config struct {
 	// MinIO shared filesystem configuration
 	EnableMinio   bool   // Enable MinIO shared filesystem support
 	MinioDir      string // Path to MinIO installation (default: ~/shelley-minio)
-	MinioPort     int    // MinIO server port (default: 9000)
+	MinioPort        int    // MinIO server port (default: 9000)
+	TailscaleAuthKey string // Tailscale auth key for workers to join the network
 }
 
 // Task represents a unit of work.
@@ -155,6 +156,16 @@ type Coordinator struct {
 }
 
 // New creates a new Coordinator.
+// getTailscaleIP returns the Tailscale IPv4 address if available
+func getTailscaleIP() string {
+	cmd := exec.Command("tailscale", "ip", "-4")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
 func New(config Config) (*Coordinator, error) {
 	db, err := sql.Open("sqlite", config.DBPath)
 	if err != nil {
@@ -229,7 +240,15 @@ func New(config Config) (*Coordinator, error) {
 		if minioPort == 0 {
 			minioPort = 9000
 		}
-		minioManager = InitMinIO(minioDir, config.CoordHost, minioPort)
+		// Use Tailscale IP if auth key is provided, otherwise use public hostname
+		minioHost := config.CoordHost
+		if config.TailscaleAuthKey != "" {
+			if tsIP := getTailscaleIP(); tsIP != "" {
+				minioHost = tsIP
+				log.Printf("Using Tailscale IP for MinIO: %s", tsIP)
+			}
+		}
+		minioManager = InitMinIO(minioDir, minioHost, minioPort)
 	}
 
 	return &Coordinator{
@@ -1309,7 +1328,42 @@ func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
 	
 	// The worker agent script polls for tasks and runs shelley chat directly
 	// (No shelley serve needed - simplifies worker setup)
-	// Determine whether MinIO bootstrap should be included
+	// Determine whether Tailscale and MinIO bootstrap should be included
+	tailscaleBootstrap := ""
+	if c.config.TailscaleAuthKey != "" {
+		tailscaleBootstrap = fmt.Sprintf(`
+# === Tailscale Network Bootstrap ===
+echo "Setting up Tailscale network..."
+
+if ! command -v tailscale &>/dev/null; then
+    echo "Installing Tailscale..."
+    curl -fsSL https://tailscale.com/install.sh | sh
+fi
+
+# Ensure tailscaled is running
+if ! pgrep tailscaled &>/dev/null; then
+    echo "Starting tailscaled..."
+    sudo systemctl start tailscaled || sudo tailscaled &
+    sleep 2
+fi
+
+# Check if already connected
+if ! tailscale status &>/dev/null; then
+    echo "Joining Tailscale network..."
+    sudo tailscale up --authkey="%s" --hostname="$WORKER_ID"
+    sleep 3
+fi
+
+TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "")
+if [ -n "$TAILSCALE_IP" ]; then
+    echo "✓ Tailscale connected: $TAILSCALE_IP"
+else
+    echo "Warning: Tailscale connection failed"
+fi
+echo "=== Tailscale Bootstrap Complete ==="
+`, c.config.TailscaleAuthKey)
+	}
+
 	minioBootstrap := ""
 	if c.minio != nil {
 		minioBootstrap = `
@@ -1400,6 +1454,7 @@ WORKDIR="$HOME/workspaces"
 SHELLEY_VERSION=$(shelley version 2>/dev/null | jq -r '.commit // "unknown"' || echo "unknown")
 
 mkdir -p "$WORKDIR"
+%s
 %s
 # Start HTTP file server for artifact access (serves home directory on port 8000)
 # This allows the coordinator and other VMs to pull files via HTTPS
@@ -1553,7 +1608,7 @@ while true; do
         sleep 5
     fi
 done
-`, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken, minioBootstrap)
+`, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken, tailscaleBootstrap, minioBootstrap)
 
 	// Write the worker loop script using base64 encoding to avoid shell quoting issues
 	scriptB64 := base64.StdEncoding.EncodeToString([]byte(pollScript))

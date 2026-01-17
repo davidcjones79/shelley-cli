@@ -2,6 +2,7 @@
 package coordinator
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // MinIOConfig holds MinIO server configuration
@@ -64,17 +66,22 @@ func (m *MinIOManager) CreateWorkerCredentials(workerID string) (*MinIOCredentia
 
 	password := generateMinIOPassword()
 
-	// Remove existing user if present
-	exec.Command(m.config.MCPath, "admin", "user", "remove", "local", workerID).Run()
+	// Use context with timeout for mc commands
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Remove existing user if present (--insecure for self-signed certs)
+	removeCmd := exec.CommandContext(ctx, m.config.MCPath, "--insecure", "admin", "user", "remove", "local", workerID)
+	removeCmd.Run() // Ignore error - user may not exist
 
 	// Create new user
-	cmd := exec.Command(m.config.MCPath, "admin", "user", "add", "local", workerID, password)
+	cmd := exec.CommandContext(ctx, m.config.MCPath, "--insecure", "admin", "user", "add", "local", workerID, password)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("failed to create user: %s - %w", string(output), err)
 	}
 
 	// Attach policy
-	cmd = exec.Command(m.config.MCPath, "admin", "policy", "attach", "local", m.config.WorkerPolicy, "--user", workerID)
+	cmd = exec.CommandContext(ctx, m.config.MCPath, "--insecure", "admin", "policy", "attach", "local", m.config.WorkerPolicy, "--user", workerID)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("failed to attach policy: %s - %w", string(output), err)
 	}
@@ -92,7 +99,7 @@ func (m *MinIOManager) DeleteWorkerCredentials(workerID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	cmd := exec.Command(m.config.MCPath, "admin", "user", "remove", "local", workerID)
+	cmd := exec.Command(m.config.MCPath, "--insecure", "admin", "user", "remove", "local", workerID)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to remove user: %s - %w", string(output), err)
 	}

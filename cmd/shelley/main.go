@@ -817,6 +817,7 @@ func runCoord(global GlobalConfig, args []string) {
 	enableMinio := fs.Bool("enable-minio", false, "Enable MinIO shared filesystem between coordinator and workers")
 	minioDir := fs.String("minio-dir", "", "Path to MinIO installation (default: ~/shelley-minio)")
 	minioPort := fs.Int("minio-port", 9000, "MinIO server port")
+	tailscaleAuthKey := fs.String("tailscale-authkey", "", "Tailscale auth key for workers to join the network (enables direct MinIO access)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley coord [flags]\n\n")
@@ -861,10 +862,11 @@ func runCoord(global GlobalConfig, args []string) {
 		GitToken:      *gitToken,
 		GitUser:       *gitUser,
 		ShelleyDB:     *shelleyDB,
-		InstallScript: *installScript,
-		EnableMinio:   *enableMinio,
-		MinioDir:      *minioDir,
-		MinioPort:     *minioPort,
+		InstallScript:    *installScript,
+		EnableMinio:      *enableMinio,
+		MinioDir:         *minioDir,
+		MinioPort:        *minioPort,
+		TailscaleAuthKey: *tailscaleAuthKey,
 	}
 
 	coord, err := coordinator.New(config)
@@ -945,6 +947,7 @@ func runDashboard(global GlobalConfig, args []string) {
 	enableMinioDash := fs.Bool("enable-minio", false, "Enable MinIO shared filesystem between coordinator and workers")
 	minioDirDash := fs.String("minio-dir", "", "Path to MinIO installation (default: ~/shelley-minio)")
 	minioPortDash := fs.Int("minio-port", 9000, "MinIO server port")
+	tailscaleAuthKeyDash := fs.String("tailscale-authkey", "", "Tailscale auth key for workers to join the network")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley dashboard [flags]\n\n")
@@ -987,12 +990,13 @@ func runDashboard(global GlobalConfig, args []string) {
 		CoordHost:     *coordHost,
 		APIToken:      *apiToken,
 		GitToken:      *gitTokenDash,
-		GitUser:       *gitUserDash,
-		ShelleyDB:     *shelleyDBDash,
-		InstallScript: *installScriptDash,
-		EnableMinio:   *enableMinioDash,
-		MinioDir:      *minioDirDash,
-		MinioPort:     *minioPortDash,
+		GitUser:          *gitUserDash,
+		ShelleyDB:        *shelleyDBDash,
+		InstallScript:    *installScriptDash,
+		EnableMinio:      *enableMinioDash,
+		MinioDir:         *minioDirDash,
+		MinioPort:        *minioPortDash,
+		TailscaleAuthKey: *tailscaleAuthKeyDash,
 	}
 
 	dash := coordinator.NewDashboard(config)
