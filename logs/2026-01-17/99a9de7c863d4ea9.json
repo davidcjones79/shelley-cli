@@ -1,0 +1,15 @@
+{
+  "id": "99a9de7c863d4ea9",
+  "prompt": "Read ~/shared/source/test-task-input/data.json, calculate total price of all items, and write result to ~/shared/tasks/result.txt\n",
+  "status": "completed",
+  "priority": 0,
+  "worker_id": "wk-c12-x540b288a92b0",
+  "result": "",
+  "error": "",
+  "conversation_id": "cCFX7QH",
+  "source": "autonomous",
+  "created_at": "2026-01-17T20:22:20Z",
+  "assigned_at": "2026-01-17T20:25:19Z",
+  "started_at": "2026-01-17T20:25:20Z",
+  "completed_at": "2026-01-17T20:25:27Z"
+}
