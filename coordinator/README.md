@@ -405,3 +405,88 @@ The coordinator automatically:
 2. Resets any in-progress task to "queued" for retry
 3. Deletes the dead worker VM
 4. Spawns a replacement worker
+
+## Git Worktrees (Shared Repository)
+
+When Tailscale is enabled, the coordinator uses **git worktrees** instead of having each worker clone the repo separately. This provides:
+
+- **Shared git objects**: Workers share the same `.git` directory, making operations fast
+- **Parallel branches**: Each task gets its own worktree (working directory) with its own branch
+- **Real-time visibility**: All workers can see all branches immediately
+- **Fast merges**: Merging branches is local (no network fetch needed)
+
+### How It Works
+
+```
+~/shared/repos/
+├── owner-repo/                    # Main clone (shared by all tasks)
+│   ├── .git/                      # Shared git database
+│   └── (main branch files)
+├── owner-repo-task-abc123/        # Worktree for task abc123
+│   └── (task-abc123 branch files)
+├── owner-repo-task-def456/        # Worktree for task def456
+│   └── (task-def456 branch files)
+└── owner-repo-task-ghi789/        # Worktree for task ghi789
+    └── (task-ghi789 branch files)
+```
+
+Workers operate in their assigned worktree via SSHFS. Changes are immediately visible to other workers who can:
+- See the branch in `git branch -a`
+- Cherry-pick or merge changes
+- Coordinate on related files
+
+### API Endpoints
+
+```bash
+# List shared repositories
+curl -H "X-Coordinator-Token: $TOKEN" http://localhost:8081/api/repos
+
+# Clone a repository (creates shared repo)
+curl -X POST http://localhost:8081/api/repo/create \
+  -H "X-Coordinator-Token: $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://github.com/owner/repo.git", "base_branch": "main"}'
+
+# Fetch latest changes
+curl -X POST "http://localhost:8081/api/repo/fetch?id=owner-repo" \
+  -H "X-Coordinator-Token: $TOKEN"
+
+# List worktrees for a repo
+curl "http://localhost:8081/api/repo/worktrees?repo=owner-repo" \
+  -H "X-Coordinator-Token: $TOKEN"
+```
+
+### Example: Parallel Feature Development
+
+```bash
+# Create a task group with related features
+curl -X POST http://localhost:8081/api/group/create \
+  -H "X-Coordinator-Token: $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Auth System v2",
+    "repo_url": "https://github.com/myorg/myapp.git",
+    "base_branch": "main",
+    "prompts": [
+      "Add OAuth2 login support in auth/oauth.go",
+      "Add session management in auth/session.go", 
+      "Add rate limiting middleware in middleware/ratelimit.go",
+      "Update API docs for new auth endpoints"
+    ]
+  }'
+
+# Scale to 4 workers (one per task)
+curl -X POST "http://localhost:8081/api/scale?workers=4" \
+  -H "X-Coordinator-Token: $TOKEN"
+```
+
+Each worker gets a worktree and works in parallel:
+- Worker 1: `~/shared/repos/myorg-myapp-task-xxx/` (branch: task-xxx)
+- Worker 2: `~/shared/repos/myorg-myapp-task-yyy/` (branch: task-yyy)
+- Worker 3: `~/shared/repos/myorg-myapp-task-zzz/` (branch: task-zzz)
+- Worker 4: `~/shared/repos/myorg-myapp-task-www/` (branch: task-www)
+
+After completion, you can:
+1. Review each branch's changes
+2. Create PRs for each branch
+3. Merge branches sequentially or use GitHub's merge queue

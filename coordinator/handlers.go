@@ -898,3 +898,133 @@ func (c *Coordinator) HandleRegisterSSHKey(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 }
+
+// HandleListRepos returns all shared repositories.
+func (c *Coordinator) HandleListRepos(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	repos, err := c.ListSharedRepos()
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error(), "DB_ERROR")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(repos)
+}
+
+// HandleGetRepo returns a specific shared repository.
+func (c *Coordinator) HandleGetRepo(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	repoID := r.URL.Query().Get("id")
+	if repoID == "" {
+		writeAPIError(w, http.StatusBadRequest, "id parameter is required", "MISSING_PARAM")
+		return
+	}
+
+	repo, err := c.GetSharedRepo(repoID)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, "Repository not found", "REPO_NOT_FOUND")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(repo)
+}
+
+// HandleCreateRepo clones a repository to the shared filesystem.
+func (c *Coordinator) HandleCreateRepo(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST method required", "METHOD_NOT_ALLOWED")
+		return
+	}
+
+	var req struct {
+		URL        string `json:"url"`
+		BaseBranch string `json:"base_branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "Invalid JSON body", "INVALID_JSON")
+		return
+	}
+	if req.URL == "" {
+		writeAPIError(w, http.StatusBadRequest, "url field is required", "MISSING_FIELD")
+		return
+	}
+
+	repo, err := c.GetOrCreateSharedRepo(req.URL, req.BaseBranch)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error(), "CLONE_FAILED")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(repo)
+}
+
+// HandleListWorktrees returns all worktrees for a repository.
+func (c *Coordinator) HandleListWorktrees(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	repoID := r.URL.Query().Get("repo")
+	if repoID == "" {
+		writeAPIError(w, http.StatusBadRequest, "repo parameter is required", "MISSING_PARAM")
+		return
+	}
+
+	repo, err := c.GetSharedRepo(repoID)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, "Repository not found", "REPO_NOT_FOUND")
+		return
+	}
+
+	worktrees, err := c.ListWorktrees(repo)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error(), "GIT_ERROR")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(worktrees)
+}
+
+// HandleFetchRepo fetches the latest changes for a repository.
+func (c *Coordinator) HandleFetchRepo(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST method required", "METHOD_NOT_ALLOWED")
+		return
+	}
+
+	repoID := r.URL.Query().Get("id")
+	if repoID == "" {
+		writeAPIError(w, http.StatusBadRequest, "id parameter is required", "MISSING_PARAM")
+		return
+	}
+
+	repo, err := c.GetSharedRepo(repoID)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, "Repository not found", "REPO_NOT_FOUND")
+		return
+	}
+
+	if err := c.fetchRepo(repo); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error(), "FETCH_FAILED")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(repo)
+}

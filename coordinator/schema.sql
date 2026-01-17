@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     repo_url TEXT,           -- e.g. github.com/user/repo
     base_branch TEXT,        -- branch to base work on (default: main)
     branch_name TEXT,        -- branch created by worker: task-{id}
+    worktree_path TEXT,      -- path to git worktree (for shared repos)
     commit_sha TEXT,         -- final commit SHA
     pr_url TEXT,             -- PR URL if created
     pr_number INTEGER,       -- PR number if created
@@ -97,3 +98,16 @@ CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id);
 CREATE INDEX IF NOT EXISTS idx_task_groups_status ON task_groups(status);
 CREATE INDEX IF NOT EXISTS idx_task_artifacts_task ON task_artifacts(task_id);
+
+-- Shared repositories (cloned once, used by all workers via worktrees)
+CREATE TABLE IF NOT EXISTS shared_repos (
+    id TEXT PRIMARY KEY,              -- repo identifier (e.g., "owner-repo")
+    url TEXT NOT NULL,                -- git clone URL
+    path TEXT NOT NULL,               -- local path: ~/shared/repos/<id>/
+    default_branch TEXT DEFAULT 'main',
+    last_fetched DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index for repo lookups
+CREATE INDEX IF NOT EXISTS idx_shared_repos_url ON shared_repos(url);

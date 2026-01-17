@@ -913,6 +913,13 @@ func runCoord(global GlobalConfig, args []string) {
 
 	mux.HandleFunc("/api/register-ssh-key", coord.HandleRegisterSSHKey)
 
+	// Shared repository management
+	mux.HandleFunc("/api/repos", coord.HandleListRepos)
+	mux.HandleFunc("/api/repo", coord.HandleGetRepo)
+	mux.HandleFunc("/api/repo/create", coord.HandleCreateRepo)
+	mux.HandleFunc("/api/repo/fetch", coord.HandleFetchRepo)
+	mux.HandleFunc("/api/repo/worktrees", coord.HandleListWorktrees)
+
 	addr := fmt.Sprintf(":%d", *port)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)

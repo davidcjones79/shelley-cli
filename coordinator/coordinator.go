@@ -59,6 +59,7 @@ type Task struct {
 	RepoURL        *string    `json:"repo_url,omitempty"`
 	BaseBranch     *string    `json:"base_branch,omitempty"`
 	BranchName     *string    `json:"branch_name,omitempty"`
+	WorktreePath   *string    `json:"worktree_path,omitempty"`   // path to git worktree (shared fs)
 	CommitSHA      *string    `json:"commit_sha,omitempty"`
 	PRURL          *string    `json:"pr_url,omitempty"`
 	PRNumber       *int       `json:"pr_number,omitempty"`
@@ -105,13 +106,15 @@ type InputFile struct {
 }
 
 type TaskRequest struct {
-	ID         string      `json:"id"`
-	Prompt     string      `json:"prompt"`
-	Priority   int         `json:"priority"`
-	RepoURL    string      `json:"repo_url"`
-	BaseBranch string      `json:"base_branch"`
-	GroupID    string      `json:"group_id"`    // Optional: assign to existing group
-	InputFiles []InputFile `json:"input_files"` // Optional: files to stage in ~/shared/source/<task-id>/
+	ID            string      `json:"id"`
+	Prompt        string      `json:"prompt"`
+	Priority      int         `json:"priority"`
+	RepoURL       string      `json:"repo_url"`
+	BaseBranch    string      `json:"base_branch"`
+	GroupID       string      `json:"group_id"`       // Optional: assign to existing group
+	InputFiles    []InputFile `json:"input_files"`    // Optional: files to stage in ~/shared/source/<task-id>/
+	UseWorktree   bool        `json:"use_worktree"`   // Use shared repo with git worktree (default: true if Tailscale enabled)
+	WorktreePath  string      `json:"worktree_path"`  // Set by coordinator: path to worktree
 }
 
 // TaskGroup represents a batch of related tasks.
@@ -678,11 +681,29 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 
 	branchName := fmt.Sprintf("task-%s", req.ID)
 
-	var repoURL, baseBranch, branch interface{}
+	var repoURL, baseBranch, branch, worktreePath interface{}
 	if req.RepoURL != "" {
 		repoURL = req.RepoURL
 		baseBranch = req.BaseBranch
 		branch = branchName
+		
+		// Use git worktree if Tailscale is enabled (shared filesystem available)
+		// or if explicitly requested
+		useWorktree := req.UseWorktree || c.config.TailscaleAuthKey != ""
+		if useWorktree {
+			repo, err := c.GetOrCreateSharedRepo(req.RepoURL, req.BaseBranch)
+			if err != nil {
+				log.Printf("Warning: failed to create shared repo, falling back to clone: %v", err)
+			} else {
+				wt, err := c.CreateWorktree(repo, req.ID, req.BaseBranch)
+				if err != nil {
+					log.Printf("Warning: failed to create worktree, falling back to clone: %v", err)
+				} else {
+					worktreePath = wt.Path
+					log.Printf("Task %s will use worktree at %s", req.ID, wt.Path)
+				}
+			}
+		}
 	}
 
 	// Stage input files if provided
@@ -695,8 +716,8 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 		inputDir = stagePath
 	}
 
-	_, err := c.db.Exec(`INSERT INTO tasks (id, prompt, priority, repo_url, base_branch, branch_name, group_id, input_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		req.ID, req.Prompt, req.Priority, repoURL, baseBranch, branch, groupID, inputDir)
+	_, err := c.db.Exec(`INSERT INTO tasks (id, prompt, priority, repo_url, base_branch, branch_name, worktree_path, group_id, input_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		req.ID, req.Prompt, req.Priority, repoURL, baseBranch, branch, worktreePath, groupID, inputDir)
 	if err != nil {
 		return nil, fmt.Errorf("enqueue task: %w", err)
 	}
@@ -707,11 +728,12 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 	}
 
 	c.LogEvent("task.queued", req.ID, "", map[string]interface{}{
-		"priority":  req.Priority,
-		"repo_url":  req.RepoURL,
-		"branch":    branchName,
-		"group_id":  req.GroupID,
-		"input_dir": inputDir,
+		"priority":      req.Priority,
+		"repo_url":      req.RepoURL,
+		"branch":        branchName,
+		"worktree_path": worktreePath,
+		"group_id":      req.GroupID,
+		"input_dir":     inputDir,
 	})
 
 	// Auto-scale: spawn a worker if there are queued tasks and no available workers
@@ -783,17 +805,17 @@ func copyFile(src, dst string) error {
 func (c *Coordinator) GetTask(id string) (*Task, error) {
 	var t Task
 	var workerID, result, errorMsg sql.NullString
-	var repoURL, baseBranch, branchName, commitSHA, prURL, groupID sql.NullString
+	var repoURL, baseBranch, branchName, worktreePath, commitSHA, prURL, groupID sql.NullString
 	var conversationID, source, inputDir sql.NullString
 	var prNumber sql.NullInt64
 	var assignedAt, startedAt, completedAt sql.NullTime
 
 	err := c.db.QueryRow(`SELECT id, prompt, status, priority, worker_id, result, error, 
-		repo_url, base_branch, branch_name, commit_sha, pr_url, pr_number,
+		repo_url, base_branch, branch_name, worktree_path, commit_sha, pr_url, pr_number,
 		conversation_id, COALESCE(source, 'autonomous') as source, group_id, input_dir,
 		created_at, assigned_at, started_at, completed_at FROM tasks WHERE id = ?`, id).Scan(
 		&t.ID, &t.Prompt, &t.Status, &t.Priority, &workerID, &result, &errorMsg,
-		&repoURL, &baseBranch, &branchName, &commitSHA, &prURL, &prNumber,
+		&repoURL, &baseBranch, &branchName, &worktreePath, &commitSHA, &prURL, &prNumber,
 		&conversationID, &source, &groupID, &inputDir,
 		&t.CreatedAt, &assignedAt, &startedAt, &completedAt)
 	if err != nil {
@@ -825,6 +847,9 @@ func (c *Coordinator) GetTask(id string) (*Task, error) {
 	}
 	if branchName.Valid {
 		t.BranchName = &branchName.String
+	}
+	if worktreePath.Valid {
+		t.WorktreePath = &worktreePath.String
 	}
 	if commitSHA.Valid {
 		t.CommitSHA = &commitSHA.String
@@ -1630,6 +1655,7 @@ while true; do
         REPO_URL=$(echo "$RESPONSE" | jq -r '.repo_url // empty')
         BASE_BRANCH=$(echo "$RESPONSE" | jq -r '.base_branch // "main"')
         BRANCH_NAME=$(echo "$RESPONSE" | jq -r '.branch_name // empty')
+        WORKTREE_PATH=$(echo "$RESPONSE" | jq -r '.worktree_path // empty')
         INPUT_DIR=$(echo "$RESPONSE" | jq -r '.input_dir // empty')
         
         echo "=== Task $TASK_ID ==="
@@ -1642,10 +1668,31 @@ while true; do
         COMMIT_SHA=""
         ERROR=""
         CWD="$HOME"
+        USE_WORKTREE=false
         
-        # If repo URL provided, clone and setup git
-        if [ -n "$REPO_URL" ]; then
+        # Check if we have a worktree path (shared repo via SSHFS)
+        if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+            echo "Using shared git worktree at: $WORKTREE_PATH"
+            TASK_DIR="$WORKTREE_PATH"
+            CWD="$WORKTREE_PATH"
+            USE_WORKTREE=true
+            
+            # Verify the worktree is valid
+            cd "$WORKTREE_PATH"
+            if ! git status &>/dev/null; then
+                echo "Warning: Worktree appears invalid, will clone instead"
+                USE_WORKTREE=false
+            else
+                git config user.email "shelley-worker@exe.dev"
+                git config user.name "Shelley Worker ($WORKER_ID)"
+                echo "Branch: $(git branch --show-current)"
+            fi
+        fi
+        
+        # If no worktree or worktree invalid, fall back to cloning
+        if [ "$USE_WORKTREE" = false ] && [ -n "$REPO_URL" ]; then
             echo "Cloning $REPO_URL..."
+            TASK_DIR="$WORKDIR/$TASK_ID"
             rm -rf "$TASK_DIR"
             
             if ! git clone --depth=50 --branch="$BASE_BRANCH" "$REPO_URL" "$TASK_DIR" 2>&1; then
@@ -1667,7 +1714,8 @@ while true; do
             
             git config user.email "shelley-worker@exe.dev"
             git config user.name "Shelley Worker ($WORKER_ID)"
-        else
+        elif [ "$USE_WORKTREE" = false ]; then
+            # No repo URL, just create a workspace directory
             TASK_DIR="$WORKDIR/$TASK_ID"
             mkdir -p "$TASK_DIR"
             CWD="$TASK_DIR"
@@ -2120,4 +2168,268 @@ func (c *Coordinator) ListWorkers(showFailed bool) ([]Worker, error) {
 	}
 
 	return workers, nil
+}
+
+// SharedRepo represents a git repository cloned to the shared filesystem.
+type SharedRepo struct {
+	ID            string     `json:"id"`
+	URL           string     `json:"url"`
+	Path          string     `json:"path"`
+	DefaultBranch string     `json:"default_branch"`
+	LastFetched   *time.Time `json:"last_fetched,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+// Worktree represents a git worktree for a task.
+type Worktree struct {
+	TaskID     string `json:"task_id"`
+	BranchName string `json:"branch_name"`
+	Path       string `json:"path"`
+}
+
+// repoIDFromURL extracts a repo identifier from a git URL.
+// e.g., "https://github.com/owner/repo.git" -> "owner-repo"
+func repoIDFromURL(url string) string {
+	// Remove protocol and .git suffix
+	url = strings.TrimPrefix(url, "https://")
+	url = strings.TrimPrefix(url, "http://")
+	url = strings.TrimPrefix(url, "git@")
+	url = strings.TrimSuffix(url, ".git")
+	
+	// Handle github.com/owner/repo or github.com:owner/repo
+	url = strings.Replace(url, ":", "/", 1)
+	
+	parts := strings.Split(url, "/")
+	if len(parts) >= 2 {
+		// Take last two parts (owner/repo)
+		return parts[len(parts)-2] + "-" + parts[len(parts)-1]
+	}
+	return strings.ReplaceAll(url, "/", "-")
+}
+
+// GetOrCreateSharedRepo ensures a repo is cloned to the shared filesystem.
+// Returns the SharedRepo with path to the local clone.
+func (c *Coordinator) GetOrCreateSharedRepo(repoURL, baseBranch string) (*SharedRepo, error) {
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+	
+	repoID := repoIDFromURL(repoURL)
+	
+	// Check if repo already exists
+	var repo SharedRepo
+	err := c.db.QueryRow(`SELECT id, url, path, default_branch, last_fetched, created_at 
+		FROM shared_repos WHERE id = ?`, repoID).Scan(
+		&repo.ID, &repo.URL, &repo.Path, &repo.DefaultBranch, &repo.LastFetched, &repo.CreatedAt)
+	
+	if err == nil {
+		// Repo exists, fetch latest
+		log.Printf("Shared repo %s exists at %s, fetching updates...", repoID, repo.Path)
+		if err := c.fetchRepo(&repo); err != nil {
+			log.Printf("Warning: failed to fetch repo %s: %v", repoID, err)
+		}
+		return &repo, nil
+	}
+	
+	// Clone new repo
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = "/home/exedev"
+	}
+	repoPath := filepath.Join(home, "shared", "repos", repoID)
+	
+	log.Printf("Cloning shared repo %s to %s...", repoURL, repoPath)
+	
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(repoPath), 0755); err != nil {
+		return nil, fmt.Errorf("create repos dir: %w", err)
+	}
+	
+	// Clone with credentials if available
+	cloneURL := repoURL
+	if c.config.GitToken != "" {
+		// Inject token into HTTPS URL
+		cloneURL = strings.Replace(repoURL, "https://", fmt.Sprintf("https://%s@", c.config.GitToken), 1)
+	}
+	
+	cmd := exec.Command("git", "clone", "--branch", baseBranch, cloneURL, repoPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("clone repo: %s - %w", string(out), err)
+	}
+	
+	// Configure git in the repo
+	exec.Command("git", "-C", repoPath, "config", "user.email", "shelley-coordinator@exe.dev").Run()
+	exec.Command("git", "-C", repoPath, "config", "user.name", "Shelley Coordinator").Run()
+	
+	// Store credentials for push
+	if c.config.GitToken != "" {
+		gitUser := c.config.GitUser
+		if gitUser == "" {
+			gitUser = "git"
+		}
+		credentialURL := fmt.Sprintf("https://%s:%s@github.com", gitUser, c.config.GitToken)
+		exec.Command("git", "-C", repoPath, "config", "credential.helper", "store").Run()
+		credFile := filepath.Join(repoPath, ".git-credentials")
+		os.WriteFile(credFile, []byte(credentialURL+"\n"), 0600)
+	}
+	
+	repo = SharedRepo{
+		ID:            repoID,
+		URL:           repoURL,
+		Path:          repoPath,
+		DefaultBranch: baseBranch,
+		CreatedAt:     time.Now(),
+	}
+	
+	_, err = c.db.Exec(`INSERT INTO shared_repos (id, url, path, default_branch, last_fetched) 
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		repo.ID, repo.URL, repo.Path, repo.DefaultBranch)
+	if err != nil {
+		return nil, fmt.Errorf("save repo: %w", err)
+	}
+	
+	log.Printf("Shared repo %s cloned successfully", repoID)
+	return &repo, nil
+}
+
+// fetchRepo fetches the latest changes from origin.
+func (c *Coordinator) fetchRepo(repo *SharedRepo) error {
+	cmd := exec.Command("git", "-C", repo.Path, "fetch", "--all", "--prune")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("fetch: %s - %w", string(out), err)
+	}
+	
+	c.db.Exec(`UPDATE shared_repos SET last_fetched = CURRENT_TIMESTAMP WHERE id = ?`, repo.ID)
+	now := time.Now()
+	repo.LastFetched = &now
+	return nil
+}
+
+// CreateWorktree creates a git worktree for a task.
+// The worktree is created at ~/shared/repos/<repo-id>-task-<task-id>/
+func (c *Coordinator) CreateWorktree(repo *SharedRepo, taskID, baseBranch string) (*Worktree, error) {
+	if baseBranch == "" {
+		baseBranch = repo.DefaultBranch
+	}
+	
+	branchName := fmt.Sprintf("task-%s", taskID)
+	worktreePath := repo.Path + "-" + branchName
+	
+	// Check if worktree already exists
+	if _, err := os.Stat(worktreePath); err == nil {
+		log.Printf("Worktree %s already exists", worktreePath)
+		return &Worktree{
+			TaskID:     taskID,
+			BranchName: branchName,
+			Path:       worktreePath,
+		}, nil
+	}
+	
+	// Make sure we have the latest base branch
+	exec.Command("git", "-C", repo.Path, "fetch", "origin", baseBranch).Run()
+	
+	// Create worktree with new branch based on origin/baseBranch
+	cmd := exec.Command("git", "-C", repo.Path, "worktree", "add", 
+		"-b", branchName, worktreePath, "origin/"+baseBranch)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("create worktree: %s - %w", string(out), err)
+	}
+	
+	log.Printf("Created worktree for task %s at %s (branch: %s from %s)", 
+		taskID, worktreePath, branchName, baseBranch)
+	
+	return &Worktree{
+		TaskID:     taskID,
+		BranchName: branchName,
+		Path:       worktreePath,
+	}, nil
+}
+
+// RemoveWorktree removes a git worktree.
+func (c *Coordinator) RemoveWorktree(repo *SharedRepo, taskID string) error {
+	branchName := fmt.Sprintf("task-%s", taskID)
+	worktreePath := repo.Path + "-" + branchName
+	
+	// Remove worktree
+	cmd := exec.Command("git", "-C", repo.Path, "worktree", "remove", "--force", worktreePath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("Warning: failed to remove worktree %s: %s", worktreePath, string(out))
+	}
+	
+	// Optionally delete the branch if it was merged
+	// exec.Command("git", "-C", repo.Path, "branch", "-d", branchName).Run()
+	
+	return nil
+}
+
+// ListWorktrees returns all worktrees for a repo.
+func (c *Coordinator) ListWorktrees(repo *SharedRepo) ([]Worktree, error) {
+	cmd := exec.Command("git", "-C", repo.Path, "worktree", "list", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	
+	var worktrees []Worktree
+	var currentPath, currentBranch string
+	
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "worktree ") {
+			currentPath = strings.TrimPrefix(line, "worktree ")
+		} else if strings.HasPrefix(line, "branch ") {
+			currentBranch = strings.TrimPrefix(line, "branch refs/heads/")
+		} else if line == "" && currentPath != "" {
+			// Extract task ID from branch name if it's a task branch
+			if strings.HasPrefix(currentBranch, "task-") {
+				taskID := strings.TrimPrefix(currentBranch, "task-")
+				worktrees = append(worktrees, Worktree{
+					TaskID:     taskID,
+					BranchName: currentBranch,
+					Path:       currentPath,
+				})
+			}
+			currentPath = ""
+			currentBranch = ""
+		}
+	}
+	
+	return worktrees, nil
+}
+
+// GetSharedRepo retrieves a shared repo by ID.
+func (c *Coordinator) GetSharedRepo(repoID string) (*SharedRepo, error) {
+	var repo SharedRepo
+	var lastFetched sql.NullTime
+	err := c.db.QueryRow(`SELECT id, url, path, default_branch, last_fetched, created_at 
+		FROM shared_repos WHERE id = ?`, repoID).Scan(
+		&repo.ID, &repo.URL, &repo.Path, &repo.DefaultBranch, &lastFetched, &repo.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if lastFetched.Valid {
+		repo.LastFetched = &lastFetched.Time
+	}
+	return &repo, nil
+}
+
+// ListSharedRepos returns all shared repos.
+func (c *Coordinator) ListSharedRepos() ([]SharedRepo, error) {
+	rows, err := c.db.Query(`SELECT id, url, path, default_branch, last_fetched, created_at 
+		FROM shared_repos ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var repos []SharedRepo
+	for rows.Next() {
+		var repo SharedRepo
+		var lastFetched sql.NullTime
+		rows.Scan(&repo.ID, &repo.URL, &repo.Path, &repo.DefaultBranch, &lastFetched, &repo.CreatedAt)
+		if lastFetched.Valid {
+			repo.LastFetched = &lastFetched.Time
+		}
+		repos = append(repos, repo)
+	}
+	return repos, nil
 }
