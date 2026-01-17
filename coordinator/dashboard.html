@@ -395,6 +395,7 @@
             <a href="#" class="nav-link" onclick="scrollToSection('groups')">Groups</a>
             <a href="#" class="nav-link" onclick="scrollToSection('tasks')">Tasks</a>
             <a href="#" class="nav-link" onclick="scrollToSection('workers')">Workers</a>
+            <a href="#" class="nav-link" onclick="scrollToSection('repos')">Repos</a>
             <a href="#" class="nav-link" onclick="showHelp()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Help</a>
         </div>
         <div class="header-right">
@@ -499,6 +500,10 @@
         <div class="section" id="tasks-section">
             <div class="section-header">
                 <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Tasks <span id="task-count" style="font-weight:normal;color:#737373;"></span></span>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="showStuckTasks()" class="btn" title="View tasks that may be stuck"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Stuck</button>
+                    <button onclick="clearCompletedTasks()" class="btn btn-danger" title="Clear completed and failed tasks"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear Done</button>
+                </div>
             </div>
             <div class="search-filter" style="margin-bottom: 12px;">
                 <input type="text" id="task-search" class="search-input" placeholder="Search tasks..." oninput="filterTasks()">
@@ -512,6 +517,17 @@
             </div>
             <div class="list" id="tasks">
                 <div class="list-empty">No tasks</div>
+            </div>
+        </div>
+
+        <!-- Shared Repositories -->
+        <div class="section" id="repos-section">
+            <div class="section-header">
+                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg> Shared Repositories</span>
+                <button onclick="showAddRepo()" class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Repo</button>
+            </div>
+            <div class="list" id="repos">
+                <div class="list-empty">No shared repositories</div>
             </div>
         </div>
 
@@ -569,6 +585,56 @@
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             <div id="taskDetails"></div>
+        </div>
+    </div>
+
+    <!-- Stuck Tasks Modal -->
+    <div class="modal" id="stuckTasksModal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <span class="modal-title">Stuck Tasks</span>
+                <button class="modal-close" onclick="closeStuckTasks()">&times;</button>
+            </div>
+            <p style="color:#737373;margin-bottom:16px;">Tasks that appear stuck (assigned to missing workers or running too long)</p>
+            <div id="stuckTasksList"></div>
+            <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
+                <button onclick="closeStuckTasks()" class="btn">Close</button>
+                <button onclick="resetAllStuckTasks()" class="btn btn-primary">Reset All to Queued</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Repo Modal -->
+    <div class="modal" id="addRepoModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">Add Shared Repository</span>
+                <button class="modal-close" onclick="closeAddRepo()">&times;</button>
+            </div>
+            <p style="color:#737373;margin-bottom:16px;">Clone a repository to share across workers via git worktrees</p>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Repository URL</label>
+                <input id="add-repo-url" class="input" style="width: 100%;" placeholder="https://github.com/user/repo.git or github.com/user/repo">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Base Branch</label>
+                <input id="add-repo-branch" class="input" style="width: 150px;" placeholder="main" value="main">
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button onclick="closeAddRepo()" class="btn">Cancel</button>
+                <button onclick="addRepo()" class="btn btn-primary">Clone Repository</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Artifacts Modal -->
+    <div class="modal" id="artifactsModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <span class="modal-title">Task Artifacts</span>
+                <button class="modal-close" onclick="closeArtifacts()">&times;</button>
+            </div>
+            <div id="artifactsList"></div>
         </div>
     </div>
 
@@ -767,6 +833,10 @@
                 const tasks = await api('/api/tasks?limit=100');
                 allTasks = tasks || [];
                 filterTasks();
+
+                // Load shared repos
+                const repos = await api('/api/repos');
+                renderRepos(repos || []);
             } catch (e) {
                 // Coordinator might have stopped
             }
@@ -884,6 +954,16 @@
                     viewLinks += `<a href="/conversation/${task.conversation_id}" target="_blank" class="btn btn-info" style="font-size:12px;margin-left:8px;" title="View synced conversation">View Chat</a>`;
                 }
                 
+                // Action buttons based on status
+                let actionButtons = '';
+                if (task.status === 'failed' || task.status === 'running' || task.status === 'assigned') {
+                    actionButtons += `<button onclick="resetTask('${task.id}'); closeModal();" class="btn" style="font-size:12px;">Reset to Queued</button>`;
+                }
+                if (task.status === 'completed' || task.status === 'failed') {
+                    actionButtons += `<button onclick="retryTask('${task.id}'); closeModal();" class="btn btn-primary" style="font-size:12px;margin-left:8px;">Retry Task</button>`;
+                }
+                actionButtons += `<button onclick="showArtifacts('${task.id}')" class="btn" style="font-size:12px;margin-left:8px;">View Artifacts</button>`;
+                
                 document.getElementById('taskDetails').innerHTML = `
                     <p style="margin-bottom:12px"><strong>ID:</strong> <code>${task.id}</code></p>
                     <p style="margin-bottom:12px"><strong>Status:</strong> <span class="badge badge-${task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : 'info'}">${task.status}</span></p>
@@ -892,6 +972,7 @@
                     ${task.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
                     ${task.worker_id ? `<p style="margin-bottom:12px"><strong>Worker:</strong> ${task.worker_id}</p>` : ''}
                     ${gitSection}
+                    <div style="margin-bottom:16px;">${actionButtons}</div>
                     <p style="margin-bottom:8px"><strong>Prompt:</strong></p>
                     <div class="result-box">${escapeHtml(task.prompt || '')}</div>
                     ${task.result ? `<p style="margin:16px 0 8px"><strong>Result:</strong></p><div class="result-box" style="max-height:400px;">${escapeHtml(task.result)}</div>` : ''}
@@ -1028,7 +1109,249 @@
             if (el) el.scrollIntoView({ behavior: 'smooth' });
         }
 
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); } });
+        // Stuck Tasks
+        async function showStuckTasks() {
+            if (!coordRunning) return alert('Start coordinator first');
+            try {
+                const stuck = await api('/api/stuck-tasks');
+                const el = document.getElementById('stuckTasksList');
+                if (!stuck || stuck.length === 0) {
+                    el.innerHTML = '<div style="text-align:center;padding:20px;color:#22c55e;">✓ No stuck tasks found</div>';
+                } else {
+                    el.innerHTML = `<div class="list">${stuck.map(t => `
+                        <div class="list-item">
+                            <div class="list-item-info">
+                                <span class="status-dot stopped"></span>
+                                <span class="list-item-name">${t.id.slice(0,8)}</span>
+                                <span class="badge badge-danger" style="margin-left:8px;">${escapeHtml(t.reason)}</span>
+                                <span class="list-item-meta" style="margin-left:8px;">${escapeHtml(t.prompt?.substring(0,50) || '')}...</span>
+                            </div>
+                            <button onclick="resetTask('${t.id}')" class="btn" style="font-size:12px;">Reset</button>
+                        </div>
+                    `).join('')}</div>`;
+                }
+                document.getElementById('stuckTasksModal').classList.add('active');
+            } catch (e) {
+                alert('Failed to load stuck tasks: ' + e.message);
+            }
+        }
+
+        function closeStuckTasks() {
+            document.getElementById('stuckTasksModal').classList.remove('active');
+        }
+
+        async function resetTask(id) {
+            if (!coordRunning) return;
+            try {
+                await api('/api/reset-task?id=' + id, { method: 'POST' });
+                addLog(`Task ${id.slice(0,8)} reset to queued`);
+                // Refresh stuck tasks modal if open
+                if (document.getElementById('stuckTasksModal').classList.contains('active')) {
+                    showStuckTasks();
+                }
+                refresh();
+            } catch (e) {
+                alert('Failed to reset task: ' + e.message);
+            }
+        }
+
+        async function retryTask(id) {
+            if (!coordRunning) return;
+            try {
+                // Get original task to copy prompt
+                const task = await api('/api/task?id=' + id);
+                // Enqueue a new task with same prompt and repo
+                const payload = { prompt: task.prompt };
+                if (task.repo_url) {
+                    payload.repo_url = task.repo_url;
+                    payload.base_branch = task.base_branch || 'main';
+                }
+                if (task.group_id) {
+                    payload.group_id = task.group_id;
+                }
+                const newTask = await api('/api/enqueue', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                addLog(`Retried task ${id.slice(0,8)} as ${newTask.id.slice(0,8)}`);
+                refresh();
+            } catch (e) {
+                alert('Failed to retry task: ' + e.message);
+            }
+        }
+
+        async function resetAllStuckTasks() {
+            if (!coordRunning) return;
+            if (!confirm('Reset all stuck tasks to queued?')) return;
+            try {
+                await api('/api/reset-stuck-tasks', { method: 'POST' });
+                addLog('All stuck tasks reset to queued');
+                closeStuckTasks();
+                refresh();
+            } catch (e) {
+                alert('Failed to reset tasks: ' + e.message);
+            }
+        }
+
+        // Clear completed tasks
+        async function clearCompletedTasks() {
+            if (!coordRunning) return alert('Start coordinator first');
+            if (!confirm('Clear all completed and failed tasks?')) return;
+            try {
+                await api('/api/clear-tasks', { method: 'POST' });
+                addLog('Cleared completed/failed tasks');
+                allTasks = [];
+                filterTasks();
+                refresh();
+            } catch (e) {
+                alert('Failed to clear tasks: ' + e.message);
+            }
+        }
+
+        // Shared Repositories
+        async function loadRepos() {
+            if (!coordRunning) return;
+            try {
+                const repos = await api('/api/repos');
+                renderRepos(repos || []);
+            } catch (e) {
+                console.error('Failed to load repos:', e);
+            }
+        }
+
+        function renderRepos(repos) {
+            const el = document.getElementById('repos');
+            if (!repos || repos.length === 0) {
+                el.innerHTML = '<div class="list-empty">No shared repositories</div>';
+                return;
+            }
+            el.innerHTML = repos.map(r => {
+                const repoShort = r.url.replace(/.*github\.com[\/:]/, '').replace(/\.git$/, '');
+                return `
+                <div class="list-item">
+                    <div class="list-item-info">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#737373;"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                        <a href="https://github.com/${repoShort}" target="_blank" class="list-item-name" style="color:#0369a1;text-decoration:none;">${repoShort}</a>
+                        <span class="badge badge-neutral" style="margin-left:8px;">${r.base_branch || 'main'}</span>
+                        <span class="list-item-meta" style="margin-left:8px;">Cloned ${new Date(r.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button onclick="fetchRepo('${r.id}')" class="btn" style="font-size:12px;" title="Fetch latest changes">Fetch</button>
+                        <button onclick="showWorktrees('${r.id}')" class="btn" style="font-size:12px;" title="View active worktrees">Worktrees</button>
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        function showAddRepo() {
+            if (!coordRunning) return alert('Start coordinator first');
+            document.getElementById('addRepoModal').classList.add('active');
+        }
+
+        function closeAddRepo() {
+            document.getElementById('addRepoModal').classList.remove('active');
+            document.getElementById('add-repo-url').value = '';
+            document.getElementById('add-repo-branch').value = 'main';
+        }
+
+        async function addRepo() {
+            let url = document.getElementById('add-repo-url').value.trim();
+            const branch = document.getElementById('add-repo-branch').value.trim() || 'main';
+            if (!url) return alert('Repository URL required');
+            
+            // Convert short form to full URL
+            if (url.match(/^[\w-]+\/[\w-]+$/)) {
+                url = `https://github.com/${url}.git`;
+            } else if (url.match(/^github\.com\/[\w-]+\/[\w-]+/)) {
+                url = `https://${url}.git`;
+            }
+            
+            try {
+                addLog(`Cloning ${url}...`);
+                const repo = await api('/api/repo/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, base_branch: branch })
+                });
+                addLog(`Repository cloned: ${repo.id}`);
+                closeAddRepo();
+                loadRepos();
+            } catch (e) {
+                alert('Failed to clone repository: ' + e.message);
+            }
+        }
+
+        async function fetchRepo(id) {
+            if (!coordRunning) return;
+            try {
+                addLog(`Fetching repo ${id}...`);
+                await api('/api/repo/fetch?id=' + id, { method: 'POST' });
+                addLog(`Repository fetched`);
+            } catch (e) {
+                alert('Failed to fetch: ' + e.message);
+            }
+        }
+
+        async function showWorktrees(repoId) {
+            if (!coordRunning) return;
+            try {
+                const worktrees = await api('/api/repo/worktrees?repo=' + repoId);
+                const content = worktrees?.length ? worktrees.map(w => `
+                    <div class="list-item">
+                        <div class="list-item-info">
+                            <span class="list-item-name">${w.branch}</span>
+                            <span class="list-item-meta">${w.path}</span>
+                        </div>
+                    </div>
+                `).join('') : '<div class="list-empty">No active worktrees</div>';
+                document.getElementById('taskDetails').innerHTML = `
+                    <p style="margin-bottom:16px;"><strong>Active Worktrees</strong></p>
+                    <div class="list">${content}</div>
+                `;
+                document.getElementById('taskModal').classList.add('active');
+            } catch (e) {
+                alert('Failed to load worktrees: ' + e.message);
+            }
+        }
+
+        // Task Artifacts
+        async function showArtifacts(taskId) {
+            if (!coordRunning) return;
+            try {
+                const artifacts = await api('/api/artifacts?task=' + taskId);
+                const el = document.getElementById('artifactsList');
+                if (!artifacts || artifacts.length === 0) {
+                    el.innerHTML = '<div class="list-empty">No artifacts for this task</div>';
+                } else {
+                    el.innerHTML = `<div class="list">${artifacts.map(a => `
+                        <div class="list-item">
+                            <div class="list-item-info">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                                <span class="list-item-name">${escapeHtml(a.filename)}</span>
+                                ${a.size_bytes ? `<span class="list-item-meta">${formatBytes(a.size_bytes)}</span>` : ''}
+                            </div>
+                            ${a.url ? `<a href="${a.url}" target="_blank" class="btn" style="font-size:12px;">Download</a>` : ''}
+                        </div>
+                    `).join('')}</div>`;
+                }
+                document.getElementById('artifactsModal').classList.add('active');
+            } catch (e) {
+                alert('Failed to load artifacts: ' + e.message);
+            }
+        }
+
+        function closeArtifacts() {
+            document.getElementById('artifactsModal').classList.remove('active');
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); closeStuckTasks(); closeAddRepo(); closeArtifacts(); } });
 
         // WebSocket connection for real-time updates
         function connectWebSocket() {
