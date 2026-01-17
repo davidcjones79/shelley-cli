@@ -1256,7 +1256,26 @@ func (c *Coordinator) setupWorker(workerID string) {
 	}
 
 	// Use HTTPS download (default), SCP, or custom install script URL
-	if installScript != "scp" && installScript != "https" {
+	if installScript == "scp" {
+		// SCP method: copy shelley binary directly from coordinator to worker via exe.dev
+		log.Printf("Copying shelley binary to %s via SCP...", workerID)
+		// Create directories on worker
+		exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'mkdir -p .local/bin .config/shelley'", workerID)).Run()
+		// Use exe.dev's internal routing: coordinator -> exe.dev -> worker
+		// First copy to exe.dev, then to worker
+		scpCmd := exec.Command("bash", "-c", fmt.Sprintf(
+			"cat %s | ssh exe.dev 'ssh %s cat > ~/.local/bin/shelley && chmod +x ~/.local/bin/shelley'",
+			c.config.ShelleyBin, workerID))
+		if out, err := scpCmd.CombinedOutput(); err != nil {
+			log.Printf("Failed to SCP shelley to %s: %v\n%s", workerID, err, out)
+			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
+			return
+		}
+		log.Printf("SCP completed to %s", workerID)
+		// Write config
+		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
+		exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'cat > .config/shelley/shelley.json << EOF\n%s\nEOF'", workerID, configJSON)).Run()
+	} else if installScript != "https" {
 		log.Printf("Running install script on %s...", workerID)
 		installCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'curl -fsSL %s | bash'", workerID, installScript))
 		if out, err := installCmd.CombinedOutput(); err != nil {
@@ -1280,18 +1299,19 @@ func (c *Coordinator) setupWorker(workerID string) {
 		}
 
 		// Download shelley binary from coordinator host
-		// The coordinator serves the binary on its HTTP port at /api/shelley-bin
-		// exe.dev proxies HTTPS to the coordinator port
+		// Always use HTTPS through exe.dev proxy for initial download
+		// (Worker hasn't joined Tailscale yet at this point)
 		log.Printf("Downloading shelley binary to %s from coordinator...", workerID)
 		downloadURL := fmt.Sprintf("https://%s:%d/api/shelley-bin?token=%s", c.config.CoordHost, c.config.Port, c.config.APIToken)
-		downloadCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'curl -fsSL \"%s\" -o .local/bin/shelley'", workerID, downloadURL))
+		downloadCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'curl -fsSL \"%s\" -o ~/.local/bin/shelley'", workerID, downloadURL))
 		if out, err := downloadCmd.CombinedOutput(); err != nil {
 			log.Printf("Failed to download shelley to %s: %v\n%s", workerID, err, out)
 			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
 			return
 		}
+		log.Printf("Downloaded shelley binary to %s", workerID)
 		// Make it executable
-		chmodCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'chmod +x .local/bin/shelley'", workerID))
+		chmodCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'chmod +x ~/.local/bin/shelley'", workerID))
 		chmodCmd.Run()
 
 		// Write config using tee to avoid shell quoting issues with redirects
@@ -1491,10 +1511,24 @@ SYNCEOF
     chmod +x ~/bin/coord-sync
     echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
     
+    # Override COORD to use Tailscale IP (bypasses exe.dev HTTPS proxy)
+    export COORD="http://$COORD_TAILSCALE_IP:${COORD_PORT:-8081}"
+    
+    # Download shelley binary via HTTP now that Tailscale is connected
+    echo "Downloading shelley binary via Tailscale..."
+    curl -fsSL "$COORD/api/shelley-bin?token=$API_TOKEN" -o ~/.local/bin/shelley && chmod +x ~/.local/bin/shelley
+    if [ -x ~/.local/bin/shelley ]; then
+        echo "✓ Shelley binary downloaded successfully"
+        ~/.local/bin/shelley version 2>/dev/null | head -1 || true
+    else
+        echo "Warning: Failed to download shelley binary"
+    fi
+    
     echo "✓ Tailscale setup complete"
     echo "  - Coordinator reachable at: $COORD_TAILSCALE_IP"
     echo "  - Shared filesystem: ~/shared (SSHFS mounted)"
     echo "  - Bulk transfer: coord-sync pull/push (rsync, 2-3x faster)"
+    echo "  - API endpoint: $COORD"
 else
     echo "Warning: Tailscale connection failed"
 fi
