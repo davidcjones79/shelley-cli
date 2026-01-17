@@ -42,10 +42,7 @@ type Config struct {
 	InstallScript string // URL to install script (if set, uses this instead of scp binary)
 	TaskTimeout   time.Duration // Max time for a task before it's considered stuck (default: 15 min)
 	MaxRetries    int           // Max retries for failed tasks (default: 2)
-	// MinIO shared filesystem configuration
-	EnableMinio   bool   // Enable MinIO shared filesystem support
-	MinioDir      string // Path to MinIO installation (default: ~/shelley-minio)
-	MinioPort        int    // MinIO server port (default: 9000)
+	// Tailscale configuration for private network between coordinator and workers
 	TailscaleAuthKey string // Tailscale auth key for workers to join the network
 	TailscaleIP      string // Coordinator's Tailscale IP (auto-detected if empty)
 }
@@ -68,6 +65,7 @@ type Task struct {
 	ConversationID *string    `json:"conversation_id,omitempty"` // shelley conversation for viewing
 	Source         string     `json:"source"`                    // manual, autonomous, api
 	GroupID        *string    `json:"group_id,omitempty"`
+	InputDir       *string    `json:"input_dir,omitempty"`       // path to staged input files
 	CreatedAt      time.Time  `json:"created_at"`
 	AssignedAt     *time.Time `json:"assigned_at,omitempty"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
@@ -99,13 +97,21 @@ type Worker struct {
 }
 
 // TaskRequest contains parameters for creating a task.
+// InputFile specifies a file to stage for a task.
+type InputFile struct {
+	Path    string `json:"path"`    // Path relative to ~/shared/source/<task-id>/
+	Content string `json:"content"` // File content (base64 encoded if binary)
+	Source  string `json:"source"`  // Alternative: source path on coordinator (relative to ~/shared/source/)
+}
+
 type TaskRequest struct {
-	ID         string `json:"id"`
-	Prompt     string `json:"prompt"`
-	Priority   int    `json:"priority"`
-	RepoURL    string `json:"repo_url"`
-	BaseBranch string `json:"base_branch"`
-	GroupID    string `json:"group_id"` // Optional: assign to existing group
+	ID         string      `json:"id"`
+	Prompt     string      `json:"prompt"`
+	Priority   int         `json:"priority"`
+	RepoURL    string      `json:"repo_url"`
+	BaseBranch string      `json:"base_branch"`
+	GroupID    string      `json:"group_id"`    // Optional: assign to existing group
+	InputFiles []InputFile `json:"input_files"` // Optional: files to stage in ~/shared/source/<task-id>/
 }
 
 // TaskGroup represents a batch of related tasks.
@@ -153,7 +159,6 @@ type Coordinator struct {
 	logsDir  string
 	shutdown chan struct{}
 	draining bool // When true, workers should shut down after completing current task
-	minio    *MinIOManager // MinIO credential manager (nil if not enabled)
 }
 
 // New creates a new Coordinator.
@@ -230,34 +235,11 @@ func New(config Config) (*Coordinator, error) {
 		log.Printf("API token saved to %s", tokenFile)
 	}
 
-	// Initialize MinIO if enabled
-	var minioManager *MinIOManager
-	if config.EnableMinio {
-		minioDir := config.MinioDir
-		if minioDir == "" {
-			minioDir = filepath.Join(os.Getenv("HOME"), "shelley-minio")
-		}
-		minioPort := config.MinioPort
-		if minioPort == 0 {
-			minioPort = 9000
-		}
-		// Use Tailscale IP if auth key is provided, otherwise use public hostname
-		minioHost := config.CoordHost
-		if config.TailscaleAuthKey != "" {
-			if tsIP := getTailscaleIP(); tsIP != "" {
-				minioHost = tsIP
-				log.Printf("Using Tailscale IP for MinIO: %s", tsIP)
-			}
-		}
-		minioManager = InitMinIO(minioDir, minioHost, minioPort)
-	}
-
 	return &Coordinator{
 		db:       db,
 		config:   config,
 		logsDir:  logsDir,
 		shutdown: make(chan struct{}),
-		minio:    minioManager,
 	}, nil
 }
 
@@ -703,8 +685,18 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 		branch = branchName
 	}
 
-	_, err := c.db.Exec(`INSERT INTO tasks (id, prompt, priority, repo_url, base_branch, branch_name, group_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		req.ID, req.Prompt, req.Priority, repoURL, baseBranch, branch, groupID)
+	// Stage input files if provided
+	var inputDir interface{}
+	if len(req.InputFiles) > 0 {
+		stagePath, err := c.stageInputFiles(req.ID, req.InputFiles)
+		if err != nil {
+			return nil, fmt.Errorf("stage input files: %w", err)
+		}
+		inputDir = stagePath
+	}
+
+	_, err := c.db.Exec(`INSERT INTO tasks (id, prompt, priority, repo_url, base_branch, branch_name, group_id, input_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		req.ID, req.Prompt, req.Priority, repoURL, baseBranch, branch, groupID, inputDir)
 	if err != nil {
 		return nil, fmt.Errorf("enqueue task: %w", err)
 	}
@@ -715,10 +707,11 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 	}
 
 	c.LogEvent("task.queued", req.ID, "", map[string]interface{}{
-		"priority": req.Priority,
-		"repo_url": req.RepoURL,
-		"branch":   branchName,
-		"group_id": req.GroupID,
+		"priority":  req.Priority,
+		"repo_url":  req.RepoURL,
+		"branch":    branchName,
+		"group_id":  req.GroupID,
+		"input_dir": inputDir,
 	})
 
 	// Auto-scale: spawn a worker if there are queued tasks and no available workers
@@ -727,22 +720,81 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 	return c.GetTask(req.ID)
 }
 
+// stageInputFiles creates the input directory and stages files for a task.
+// Files are staged to ~/shared/source/<task-id>/
+func (c *Coordinator) stageInputFiles(taskID string, files []InputFile) (string, error) {
+	// Create the task input directory
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = "/home/exedev"
+	}
+	inputDir := filepath.Join(home, "shared", "source", taskID)
+	if err := os.MkdirAll(inputDir, 0755); err != nil {
+		return "", fmt.Errorf("create input dir: %w", err)
+	}
+
+	for _, f := range files {
+		if f.Path == "" {
+			continue
+		}
+
+		destPath := filepath.Join(inputDir, f.Path)
+
+		// Ensure parent directory exists
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return "", fmt.Errorf("create parent dir for %s: %w", f.Path, err)
+		}
+
+		if f.Content != "" {
+			// Write content directly
+			// Try to decode as base64, fall back to raw string
+			var content []byte
+			if decoded, err := base64.StdEncoding.DecodeString(f.Content); err == nil {
+				content = decoded
+			} else {
+				content = []byte(f.Content)
+			}
+			if err := os.WriteFile(destPath, content, 0644); err != nil {
+				return "", fmt.Errorf("write file %s: %w", f.Path, err)
+			}
+		} else if f.Source != "" {
+			// Copy from source path
+			sourcePath := filepath.Join(home, "shared", "source", f.Source)
+			if err := copyFile(sourcePath, destPath); err != nil {
+				return "", fmt.Errorf("copy file %s: %w", f.Source, err)
+			}
+		}
+	}
+
+	log.Printf("Staged %d input files for task %s at %s", len(files), taskID, inputDir)
+	return inputDir, nil
+}
+
+// copyFile copies a file from src to dst.
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0644)
+}
+
 // GetTask retrieves a task by ID.
 func (c *Coordinator) GetTask(id string) (*Task, error) {
 	var t Task
 	var workerID, result, errorMsg sql.NullString
 	var repoURL, baseBranch, branchName, commitSHA, prURL, groupID sql.NullString
-	var conversationID, source sql.NullString
+	var conversationID, source, inputDir sql.NullString
 	var prNumber sql.NullInt64
 	var assignedAt, startedAt, completedAt sql.NullTime
 
 	err := c.db.QueryRow(`SELECT id, prompt, status, priority, worker_id, result, error, 
 		repo_url, base_branch, branch_name, commit_sha, pr_url, pr_number,
-		conversation_id, COALESCE(source, 'autonomous') as source, group_id,
+		conversation_id, COALESCE(source, 'autonomous') as source, group_id, input_dir,
 		created_at, assigned_at, started_at, completed_at FROM tasks WHERE id = ?`, id).Scan(
 		&t.ID, &t.Prompt, &t.Status, &t.Priority, &workerID, &result, &errorMsg,
 		&repoURL, &baseBranch, &branchName, &commitSHA, &prURL, &prNumber,
-		&conversationID, &source, &groupID,
+		&conversationID, &source, &groupID, &inputDir,
 		&t.CreatedAt, &assignedAt, &startedAt, &completedAt)
 	if err != nil {
 		return nil, err
@@ -786,6 +838,9 @@ func (c *Coordinator) GetTask(id string) (*Task, error) {
 	}
 	if groupID.Valid {
 		t.GroupID = &groupID.String
+	}
+	if inputDir.Valid {
+		t.InputDir = &inputDir.String
 	}
 	if assignedAt.Valid {
 		t.AssignedAt = &assignedAt.Time
@@ -1255,27 +1310,14 @@ func (c *Coordinator) setupWorker(workerID string) {
 		installScript = "https" // Default: workers download binary from coordinator via HTTPS
 	}
 
-	// Use HTTPS download (default), SCP, or custom install script URL
+	// Use HTTPS download (default) or custom install script URL
+	// Note: SCP method was removed as it doesn't work through exe.dev SSH (binary data gets corrupted)
 	if installScript == "scp" {
-		// SCP method: copy shelley binary directly from coordinator to worker via exe.dev
-		log.Printf("Copying shelley binary to %s via SCP...", workerID)
-		// Create directories on worker
-		exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'mkdir -p .local/bin .config/shelley'", workerID)).Run()
-		// Use exe.dev's internal routing: coordinator -> exe.dev -> worker
-		// First copy to exe.dev, then to worker
-		scpCmd := exec.Command("bash", "-c", fmt.Sprintf(
-			"cat %s | ssh exe.dev 'ssh %s cat > ~/.local/bin/shelley && chmod +x ~/.local/bin/shelley'",
-			c.config.ShelleyBin, workerID))
-		if out, err := scpCmd.CombinedOutput(); err != nil {
-			log.Printf("Failed to SCP shelley to %s: %v\n%s", workerID, err, out)
-			c.db.Exec(`UPDATE workers SET status = 'failed' WHERE id = ?`, workerID)
-			return
-		}
-		log.Printf("SCP completed to %s", workerID)
-		// Write config
-		configJSON := `{"llm_gateway": "http://169.254.169.254/gateway/llm", "default_model": "claude-sonnet-4.5"}`
-		exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'cat > .config/shelley/shelley.json << EOF\n%s\nEOF'", workerID, configJSON)).Run()
-	} else if installScript != "https" {
+		log.Printf("WARNING: SCP install method is deprecated and non-functional, falling back to HTTPS")
+		installScript = "https"
+	}
+
+	if installScript != "https" && installScript != "" {
 		log.Printf("Running install script on %s...", workerID)
 		installCmd := exec.Command("ssh", "exe.dev", fmt.Sprintf("ssh %s 'curl -fsSL %s | bash'", workerID, installScript))
 		if out, err := installCmd.CombinedOutput(); err != nil {
@@ -1414,7 +1456,7 @@ if [ -n "$TAILSCALE_IP" ]; then
         sudo apt-get update -qq && sudo apt-get install -y -qq sshfs rsync
     fi
     
-    # Mount coordinator's shared directory via SSHFS
+    # Mount coordinator's shared directory via SSHFS with retry logic
     echo "Mounting coordinator's ~/shared via SSHFS..."
     mkdir -p ~/shared
     
@@ -1424,32 +1466,49 @@ if [ -n "$TAILSCALE_IP" ]; then
         sleep 1
     fi
     
-    # Small delay to ensure key is registered
-    sleep 1
+    # Wait for SSH key registration to propagate
+    sleep 2
     
-    # Mount with reconnect support
-    sshfs exedev@$COORD_TAILSCALE_IP:shared ~/shared \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -o reconnect \
-        -o ServerAliveInterval=15 \
-        -o ServerAliveCountMax=3 \
-        -o allow_other 2>/dev/null || \
-    sshfs exedev@$COORD_TAILSCALE_IP:shared ~/shared \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -o reconnect \
-        -o ServerAliveInterval=15 \
-        -o ServerAliveCountMax=3
+    # Mount with retry logic (3 attempts with exponential backoff)
+    SSHFS_MOUNTED=false
+    for attempt in 1 2 3; do
+        echo "SSHFS mount attempt $attempt/3..."
+        if sshfs exedev@$COORD_TAILSCALE_IP:shared ~/shared \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o reconnect \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            -o allow_other 2>/dev/null || \
+           sshfs exedev@$COORD_TAILSCALE_IP:shared ~/shared \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o reconnect \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 2>&1; then
+            # Verify mount actually succeeded
+            sleep 1
+            if mountpoint -q ~/shared 2>/dev/null; then
+                SSHFS_MOUNTED=true
+                break
+            fi
+        fi
+        echo "Mount attempt $attempt failed, retrying in $((attempt * 2)) seconds..."
+        sleep $((attempt * 2))
+    done
     
-    # Verify mount succeeded
-    if mountpoint -q ~/shared 2>/dev/null; then
+    # Report result and create directories
+    if [ "$SSHFS_MOUNTED" = true ]; then
         echo "✓ SSHFS mount successful: ~/shared -> coordinator:~/shared"
         # Ensure subdirectories exist (create on coordinator if needed)
         mkdir -p ~/shared/source ~/shared/tasks ~/shared/results 2>/dev/null || true
+        export SSHFS_AVAILABLE=true
     else
-        echo "Warning: SSHFS mount failed, falling back to local directories"
+        echo "WARNING: SSHFS mount failed after 3 attempts"
+        echo "  Worker will continue with DEGRADED functionality (no shared filesystem)"
+        echo "  Tasks that require ~/shared will fail"
         mkdir -p ~/shared/source ~/shared/tasks ~/shared/results
+        export SSHFS_AVAILABLE=false
     fi
     
     # Export coordinator IP for use in tasks
@@ -1536,81 +1595,6 @@ echo "=== Tailscale Bootstrap Complete ==="
 `, coordTailscaleIP, c.config.TailscaleAuthKey)
 	}
 
-	minioBootstrap := ""
-	if c.minio != nil {
-		minioBootstrap = `
-# === MinIO Shared Filesystem Bootstrap ===
-echo "Setting up MinIO shared filesystem..."
-
-# Fetch MinIO credentials from coordinator
-MINIO_CREDS=$(curl -sf -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/minio-creds?worker_id=$WORKER_ID" || echo "")
-
-if [ -n "$MINIO_CREDS" ] && [ "$MINIO_CREDS" != "{}" ]; then
-    MINIO_ENDPOINT=$(echo "$MINIO_CREDS" | jq -r '.endpoint // empty')
-    MINIO_ACCESS_KEY=$(echo "$MINIO_CREDS" | jq -r '.access_key // empty')
-    MINIO_SECRET_KEY=$(echo "$MINIO_CREDS" | jq -r '.secret_key // empty')
-    MINIO_BUCKET=$(echo "$MINIO_CREDS" | jq -r '.bucket // "shared"')
-    
-    if [ -n "$MINIO_ENDPOINT" ] && [ -n "$MINIO_ACCESS_KEY" ]; then
-        echo "MinIO endpoint: $MINIO_ENDPOINT"
-        echo "MinIO bucket: $MINIO_BUCKET"
-        
-        # Install rclone if needed
-        if ! command -v rclone &>/dev/null; then
-            echo "Installing rclone..."
-            curl -sSL https://rclone.org/install.sh | sudo bash
-        fi
-        
-        # Configure rclone
-        mkdir -p ~/.config/rclone
-        chmod 700 ~/.config/rclone
-        cat > ~/.config/rclone/rclone.conf << RCLONE_EOF
-[minio]
-type = s3
-provider = Minio
-access_key_id = ${MINIO_ACCESS_KEY}
-secret_access_key = ${MINIO_SECRET_KEY}
-endpoint = ${MINIO_ENDPOINT}
-RCLONE_EOF
-        chmod 600 ~/.config/rclone/rclone.conf
-        
-        # Create and mount shared directory
-        SHARED_DIR="$HOME/shared"
-        mkdir -p "$SHARED_DIR"
-        
-        # Unmount if already mounted
-        if mountpoint -q "$SHARED_DIR" 2>/dev/null; then
-            fusermount -u "$SHARED_DIR" 2>/dev/null || true
-            sleep 1
-        fi
-        
-        # Mount with rclone (daemon mode)
-        echo "Mounting MinIO bucket at $SHARED_DIR..."
-        if rclone mount minio:$MINIO_BUCKET "$SHARED_DIR" \
-            --vfs-cache-mode writes \
-            --vfs-write-back 1s \
-            --daemon 2>/dev/null; then
-            sleep 2
-            if mountpoint -q "$SHARED_DIR"; then
-                echo "✓ Shared filesystem mounted at $SHARED_DIR"
-                echo "  $SHARED_DIR/source/   - Input data (read-only)"
-                echo "  $SHARED_DIR/tasks/    - Workspace (read/write)"
-            else
-                echo "Warning: Mount may have failed, continuing anyway"
-            fi
-        else
-            echo "Warning: rclone mount failed, continuing without shared filesystem"
-        fi
-    else
-        echo "Warning: Invalid MinIO credentials received"
-    fi
-else
-    echo "MinIO not available, continuing without shared filesystem"
-fi
-echo "=== MinIO Bootstrap Complete ==="
-`
-	}
-
 	pollScript := fmt.Sprintf(`#!/bin/bash
 set -e
 export PATH="$HOME/.local/bin:$PATH"
@@ -1626,7 +1610,6 @@ WORKDIR="$HOME/workspaces"
 SHELLEY_VERSION=$(shelley version 2>/dev/null | jq -r '.commit // "unknown"' || echo "unknown")
 
 mkdir -p "$WORKDIR"
-%s
 %s
 # Start HTTP file server for artifact access (serves home directory on port 8000)
 # This allows the coordinator and other VMs to pull files via HTTPS
@@ -1647,9 +1630,13 @@ while true; do
         REPO_URL=$(echo "$RESPONSE" | jq -r '.repo_url // empty')
         BASE_BRANCH=$(echo "$RESPONSE" | jq -r '.base_branch // "main"')
         BRANCH_NAME=$(echo "$RESPONSE" | jq -r '.branch_name // empty')
+        INPUT_DIR=$(echo "$RESPONSE" | jq -r '.input_dir // empty')
         
         echo "=== Task $TASK_ID ==="
         echo "Prompt: $PROMPT"
+        if [ -n "$INPUT_DIR" ]; then
+            echo "Input files staged at: ~/shared/source/$TASK_ID/"
+        fi
         
         TASK_DIR="$WORKDIR/$TASK_ID"
         COMMIT_SHA=""
@@ -1704,8 +1691,18 @@ while true; do
         # Run shelley chat with full autonomy (-yes auto-approves all tool calls)
         # Uses the same DB as shelley serve, so conversation is viewable in real-time
         cd "$CWD"
+        
+        # If input files were staged, prepend context to the prompt
+        FULL_PROMPT="$PROMPT"
+        if [ -n "$INPUT_DIR" ] && [ -d ~/shared/source/$TASK_ID ]; then
+            INPUT_FILES=$(ls -la ~/shared/source/$TASK_ID 2>/dev/null | tail -n +2 || echo "")
+            if [ -n "$INPUT_FILES" ]; then
+                FULL_PROMPT="[Context: Input files have been staged at ~/shared/source/$TASK_ID/. Contents: $INPUT_FILES]\n\n$PROMPT"
+            fi
+        fi
+        
         OUTPUT=$(shelley -db "$SHELLEY_DB" -config ~/.config/shelley/shelley.json \
-            chat -yes -prompt "$PROMPT" 2>&1) || true
+            chat -yes -prompt "$FULL_PROMPT" 2>&1) || true
         
         # Stop background heartbeat
         kill $HEARTBEAT_PID 2>/dev/null || true
@@ -1780,7 +1777,7 @@ while true; do
         sleep 5
     fi
 done
-`, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken, tailscaleBootstrap, minioBootstrap)
+`, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken, tailscaleBootstrap)
 
 	// Write the worker loop script using base64 encoding to avoid shell quoting issues
 	scriptB64 := base64.StdEncoding.EncodeToString([]byte(pollScript))
@@ -1873,9 +1870,19 @@ func (c *Coordinator) calculateWorkerHealth(w *Worker) {
 	}
 }
 
-// DeleteWorker removes a worker VM.
+// DeleteWorker removes a worker VM and cleans up its SSH key.
 func (c *Coordinator) DeleteWorker(workerID string) error {
 	log.Printf("Deleting worker: %s", workerID)
+
+	// Get the worker's SSH public key before deleting from DB
+	var sshPubkey sql.NullString
+	c.db.QueryRow(`SELECT ssh_pubkey FROM workers WHERE id = ?`, workerID).Scan(&sshPubkey)
+
+	// Clean up the SSH key from authorized_keys
+	if sshPubkey.Valid && sshPubkey.String != "" {
+		c.removeSSHKey(sshPubkey.String, workerID)
+	}
+
 	// Use timeout to prevent SSH from hanging
 	out, err := runSSHWithTimeout(30*time.Second, "exe.dev", "rm", workerID)
 	if err != nil {
@@ -1888,6 +1895,41 @@ func (c *Coordinator) DeleteWorker(workerID string) error {
 	c.db.Exec(`DELETE FROM workers WHERE id = ?`, workerID)
 	c.LogEvent("worker.deleted", "", workerID, nil)
 	return nil
+}
+
+// removeSSHKey removes a worker's SSH public key from authorized_keys.
+func (c *Coordinator) removeSSHKey(pubkey, workerID string) {
+	// Find the authorized_keys file
+	authKeysPath := "/exe.dev/etc/ssh/authorized_keys"
+	if _, err := os.Stat(authKeysPath); os.IsNotExist(err) {
+		authKeysPath = filepath.Join(os.Getenv("HOME"), ".ssh", "authorized_keys")
+	}
+
+	// Read the current file
+	data, err := os.ReadFile(authKeysPath)
+	if err != nil {
+		log.Printf("Warning: failed to read authorized_keys for cleanup: %v", err)
+		return
+	}
+
+	// Filter out the key
+	lines := strings.Split(string(data), "\n")
+	var newLines []string
+	for _, line := range lines {
+		// Keep lines that don't contain the key
+		if !strings.Contains(line, pubkey) {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Write back
+	newData := strings.Join(newLines, "\n")
+	if err := os.WriteFile(authKeysPath, []byte(newData), 0600); err != nil {
+		log.Printf("Warning: failed to update authorized_keys: %v", err)
+		return
+	}
+
+	log.Printf("Removed SSH key for worker %s", workerID)
 }
 
 // ScaleWorkers ensures the desired number of workers are running.

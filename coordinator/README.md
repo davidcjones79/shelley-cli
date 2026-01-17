@@ -26,8 +26,7 @@ The coordinator requires Tailscale for direct network connectivity and shared fi
 
 ```bash
 shelley dashboard -auto-start \
-  -tailscale-authkey "tskey-auth-YOUR-KEY-HERE" \
-  -install-script scp
+  -tailscale-authkey "tskey-auth-YOUR-KEY-HERE"
 ```
 
 Access at `https://your-vm.exe.xyz:8080/`
@@ -104,6 +103,7 @@ With Tailscale enabled, workers mount `~/shared` from the coordinator via SSHFS:
 ```
 Coordinator ~/shared/          Worker ~/shared/ (SSHFS mount)
 ├── source/      ────────────► ├── source/
+│   └── <task-id>/              │   └── <task-id>/  (staged input files)
 ├── tasks/       ◄──────────── ├── tasks/
 └── results/     ◄──────────── └── results/
 ```
@@ -111,6 +111,31 @@ Coordinator ~/shared/          Worker ~/shared/ (SSHFS mount)
 - Put input files in `~/shared/source/` on coordinator
 - Workers read from `~/shared/source/`, write to `~/shared/tasks/`
 - Results immediately visible on coordinator
+
+#### Task-Aware File Staging
+
+Input files can be staged automatically when creating a task:
+
+```bash
+# Stage files when enqueueing a task
+curl -X POST http://localhost:8081/api/enqueue \
+  -H "X-Coordinator-Token: $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Process the input data file and generate a report",
+    "input_files": [
+      {"path": "data.json", "content": "{\"test\": \"data\"}"},
+      {"path": "config.yaml", "source": "common/config.yaml"}
+    ]
+  }'
+```
+
+Input file options:
+- `path`: Destination path relative to `~/shared/source/<task-id>/`
+- `content`: File content (string or base64 encoded for binary)
+- `source`: Copy from existing file in `~/shared/source/` (alternative to content)
+
+The worker's prompt is automatically augmented with the input directory location.
 
 ## Features
 

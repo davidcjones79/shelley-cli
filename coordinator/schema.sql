@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS workers (
     status TEXT NOT NULL DEFAULT 'starting',  -- starting, idle, busy, draining, offline, deleted
     current_task_id TEXT,
     shelley_version TEXT,  -- commit hash of shelley-cli on worker
+    ssh_pubkey TEXT,       -- worker's SSH public key (for cleanup on delete)
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     ready_at DATETIME,     -- when worker first reported version (fully provisioned)
     last_heartbeat DATETIME,
@@ -46,6 +47,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     source TEXT DEFAULT 'autonomous',  -- 'manual', 'autonomous', 'api'
     -- Retry tracking
     retry_count INTEGER DEFAULT 0,
+    -- Input staging
+    input_dir TEXT,          -- path to staged input files: ~/shared/source/<task-id>/
     -- Timestamps
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     assigned_at DATETIME,

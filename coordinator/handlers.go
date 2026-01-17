@@ -829,30 +829,6 @@ func (c *Coordinator) HandleListArtifacts(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(artifacts)
 }
 
-// HandleMinIOCredentials provides MinIO credentials to workers for shared filesystem access.
-// Workers call this endpoint during bootstrap to mount the shared filesystem.
-func (c *Coordinator) HandleMinIOCredentials(w http.ResponseWriter, r *http.Request) {
-	if !c.CheckAuth(w, r) {
-		return
-	}
-
-	if c.minio == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, 
-			"MinIO not configured", 
-			"MINIO_NOT_CONFIGURED",
-			"Start coordinator with --enable-minio flag",
-			"Ensure MinIO is running and ~/shelley-minio/.minio-credentials exists")
-		return
-	}
-
-	c.minio.HandleMinIOCredentials(w, r)
-}
-
-// MinIOEnabled returns whether MinIO is configured and available.
-func (c *Coordinator) MinIOEnabled() bool {
-	return c.minio != nil
-}
-
 // HandleRegisterSSHKey allows workers to register their SSH public key for SSHFS access.
 func (c *Coordinator) HandleRegisterSSHKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -880,6 +856,9 @@ func (c *Coordinator) HandleRegisterSSHKey(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Store the public key in the database for cleanup on worker deletion
+	c.db.Exec(`UPDATE workers SET ssh_pubkey = ? WHERE id = ?`, req.PubKey, req.WorkerID)
+
 	// Add to exe.dev authorized_keys (primary location for exe.dev VMs)
 	authKeysPath := "/exe.dev/etc/ssh/authorized_keys"
 	if _, err := os.Stat(authKeysPath); os.IsNotExist(err) {
@@ -896,7 +875,7 @@ func (c *Coordinator) HandleRegisterSSHKey(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Append the new key
+	// Append the new key with a comment for identification
 	f, err := os.OpenFile(authKeysPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		log.Printf("Failed to open authorized_keys: %v", err)
