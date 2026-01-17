@@ -42,6 +42,10 @@ type Config struct {
 	InstallScript string // URL to install script (if set, uses this instead of scp binary)
 	TaskTimeout   time.Duration // Max time for a task before it's considered stuck (default: 15 min)
 	MaxRetries    int           // Max retries for failed tasks (default: 2)
+	// MinIO shared filesystem configuration
+	EnableMinio   bool   // Enable MinIO shared filesystem support
+	MinioDir      string // Path to MinIO installation (default: ~/shelley-minio)
+	MinioPort     int    // MinIO server port (default: 9000)
 }
 
 // Task represents a unit of work.
@@ -147,6 +151,7 @@ type Coordinator struct {
 	logsDir  string
 	shutdown chan struct{}
 	draining bool // When true, workers should shut down after completing current task
+	minio    *MinIOManager // MinIO credential manager (nil if not enabled)
 }
 
 // New creates a new Coordinator.
@@ -213,11 +218,26 @@ func New(config Config) (*Coordinator, error) {
 		log.Printf("API token saved to %s", tokenFile)
 	}
 
+	// Initialize MinIO if enabled
+	var minioManager *MinIOManager
+	if config.EnableMinio {
+		minioDir := config.MinioDir
+		if minioDir == "" {
+			minioDir = filepath.Join(os.Getenv("HOME"), "shelley-minio")
+		}
+		minioPort := config.MinioPort
+		if minioPort == 0 {
+			minioPort = 9000
+		}
+		minioManager = InitMinIO(minioDir, config.CoordHost, minioPort)
+	}
+
 	return &Coordinator{
 		db:       db,
 		config:   config,
 		logsDir:  logsDir,
 		shutdown: make(chan struct{}),
+		minio:    minioManager,
 	}, nil
 }
 
@@ -1289,6 +1309,82 @@ func (c *Coordinator) startWorkerLoop(workerID, workerHost string) {
 	
 	// The worker agent script polls for tasks and runs shelley chat directly
 	// (No shelley serve needed - simplifies worker setup)
+	// Determine whether MinIO bootstrap should be included
+	minioBootstrap := ""
+	if c.minio != nil {
+		minioBootstrap = `
+# === MinIO Shared Filesystem Bootstrap ===
+echo "Setting up MinIO shared filesystem..."
+
+# Fetch MinIO credentials from coordinator
+MINIO_CREDS=$(curl -sf -H "X-Coordinator-Token: $API_TOKEN" "$COORD/api/minio-creds?worker_id=$WORKER_ID" || echo "")
+
+if [ -n "$MINIO_CREDS" ] && [ "$MINIO_CREDS" != "{}" ]; then
+    MINIO_ENDPOINT=$(echo "$MINIO_CREDS" | jq -r '.endpoint // empty')
+    MINIO_ACCESS_KEY=$(echo "$MINIO_CREDS" | jq -r '.access_key // empty')
+    MINIO_SECRET_KEY=$(echo "$MINIO_CREDS" | jq -r '.secret_key // empty')
+    MINIO_BUCKET=$(echo "$MINIO_CREDS" | jq -r '.bucket // "shared"')
+    
+    if [ -n "$MINIO_ENDPOINT" ] && [ -n "$MINIO_ACCESS_KEY" ]; then
+        echo "MinIO endpoint: $MINIO_ENDPOINT"
+        echo "MinIO bucket: $MINIO_BUCKET"
+        
+        # Install rclone if needed
+        if ! command -v rclone &>/dev/null; then
+            echo "Installing rclone..."
+            curl -sSL https://rclone.org/install.sh | sudo bash
+        fi
+        
+        # Configure rclone
+        mkdir -p ~/.config/rclone
+        chmod 700 ~/.config/rclone
+        cat > ~/.config/rclone/rclone.conf << RCLONE_EOF
+[minio]
+type = s3
+provider = Minio
+access_key_id = ${MINIO_ACCESS_KEY}
+secret_access_key = ${MINIO_SECRET_KEY}
+endpoint = ${MINIO_ENDPOINT}
+RCLONE_EOF
+        chmod 600 ~/.config/rclone/rclone.conf
+        
+        # Create and mount shared directory
+        SHARED_DIR="$HOME/shared"
+        mkdir -p "$SHARED_DIR"
+        
+        # Unmount if already mounted
+        if mountpoint -q "$SHARED_DIR" 2>/dev/null; then
+            fusermount -u "$SHARED_DIR" 2>/dev/null || true
+            sleep 1
+        fi
+        
+        # Mount with rclone (daemon mode)
+        echo "Mounting MinIO bucket at $SHARED_DIR..."
+        if rclone mount minio:$MINIO_BUCKET "$SHARED_DIR" \
+            --vfs-cache-mode writes \
+            --vfs-write-back 1s \
+            --daemon 2>/dev/null; then
+            sleep 2
+            if mountpoint -q "$SHARED_DIR"; then
+                echo "✓ Shared filesystem mounted at $SHARED_DIR"
+                echo "  $SHARED_DIR/source/   - Input data (read-only)"
+                echo "  $SHARED_DIR/tasks/    - Workspace (read/write)"
+            else
+                echo "Warning: Mount may have failed, continuing anyway"
+            fi
+        else
+            echo "Warning: rclone mount failed, continuing without shared filesystem"
+        fi
+    else
+        echo "Warning: Invalid MinIO credentials received"
+    fi
+else
+    echo "MinIO not available, continuing without shared filesystem"
+fi
+echo "=== MinIO Bootstrap Complete ==="
+`
+	}
+
 	pollScript := fmt.Sprintf(`#!/bin/bash
 set -e
 export PATH="$HOME/.local/bin:$PATH"
@@ -1304,7 +1400,7 @@ WORKDIR="$HOME/workspaces"
 SHELLEY_VERSION=$(shelley version 2>/dev/null | jq -r '.commit // "unknown"' || echo "unknown")
 
 mkdir -p "$WORKDIR"
-
+%s
 # Start HTTP file server for artifact access (serves home directory on port 8000)
 # This allows the coordinator and other VMs to pull files via HTTPS
 echo "Starting HTTP file server on port 8000..."
@@ -1457,7 +1553,7 @@ while true; do
         sleep 5
     fi
 done
-`, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken)
+`, c.config.CoordHost, c.config.Port, workerID, c.config.APIToken, minioBootstrap)
 
 	// Write the worker loop script using base64 encoding to avoid shell quoting issues
 	scriptB64 := base64.StdEncoding.EncodeToString([]byte(pollScript))

@@ -813,6 +813,10 @@ func runCoord(global GlobalConfig, args []string) {
 	gitUser := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
 	shelleyDB := fs.String("shelley-db", "", "Path to main shelley DB for syncing conversations (enables viewing worker chats in main UI)")
 	installScript := fs.String("install-script", "", "Worker install method: 'https' (default), 'scp', or URL to custom script")
+	// MinIO shared filesystem flags
+	enableMinio := fs.Bool("enable-minio", false, "Enable MinIO shared filesystem between coordinator and workers")
+	minioDir := fs.String("minio-dir", "", "Path to MinIO installation (default: ~/shelley-minio)")
+	minioPort := fs.Int("minio-port", 9000, "MinIO server port")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley coord [flags]\n\n")
@@ -858,6 +862,9 @@ func runCoord(global GlobalConfig, args []string) {
 		GitUser:       *gitUser,
 		ShelleyDB:     *shelleyDB,
 		InstallScript: *installScript,
+		EnableMinio:   *enableMinio,
+		MinioDir:      *minioDir,
+		MinioPort:     *minioPort,
 	}
 
 	coord, err := coordinator.New(config)
@@ -908,6 +915,7 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/shelley-bin", coord.HandleShelleyBinary)
 	mux.HandleFunc("/api/artifacts", coord.HandleListArtifacts)
 	mux.HandleFunc("/api/artifact/upload", coord.HandleUploadArtifact)
+	mux.HandleFunc("/api/minio-creds", coord.HandleMinIOCredentials)
 
 	addr := fmt.Sprintf(":%d", *port)
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -933,6 +941,10 @@ func runDashboard(global GlobalConfig, args []string) {
 	gitUserDash := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
 	shelleyDBDash := fs.String("shelley-db", "/home/exedev/.config/shelley/shelley.db", "Path to main shelley DB for syncing conversations")
 	installScriptDash := fs.String("install-script", "", "Worker install method: 'https' (default), 'scp', or URL to custom script")
+	// MinIO shared filesystem flags
+	enableMinioDash := fs.Bool("enable-minio", false, "Enable MinIO shared filesystem between coordinator and workers")
+	minioDirDash := fs.String("minio-dir", "", "Path to MinIO installation (default: ~/shelley-minio)")
+	minioPortDash := fs.Int("minio-port", 9000, "MinIO server port")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley dashboard [flags]\n\n")
@@ -978,6 +990,9 @@ func runDashboard(global GlobalConfig, args []string) {
 		GitUser:       *gitUserDash,
 		ShelleyDB:     *shelleyDBDash,
 		InstallScript: *installScriptDash,
+		EnableMinio:   *enableMinioDash,
+		MinioDir:      *minioDirDash,
+		MinioPort:     *minioPortDash,
 	}
 
 	dash := coordinator.NewDashboard(config)

@@ -37,6 +37,10 @@ type DashboardConfig struct {
 	GitUser       string
 	ShelleyDB     string // Path to main shelley DB for syncing conversations
 	InstallScript string // URL to install script for workers
+	// MinIO shared filesystem configuration
+	EnableMinio   bool   // Enable MinIO shared filesystem support
+	MinioDir      string // Path to MinIO installation
+	MinioPort     int    // MinIO server port
 }
 
 // Dashboard manages the coordinator subprocess and serves the web UI.
@@ -117,6 +121,15 @@ func (d *Dashboard) Start() error {
 	}
 	if d.config.InstallScript != "" {
 		args = append(args, "-install-script", d.config.InstallScript)
+	}
+	if d.config.EnableMinio {
+		args = append(args, "-enable-minio")
+		if d.config.MinioDir != "" {
+			args = append(args, "-minio-dir", d.config.MinioDir)
+		}
+		if d.config.MinioPort != 0 {
+			args = append(args, "-minio-port", fmt.Sprintf("%d", d.config.MinioPort))
+		}
 	}
 
 	d.cmd = exec.Command(d.config.ShelleyBin, args...)

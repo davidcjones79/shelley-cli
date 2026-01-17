@@ -825,3 +825,27 @@ func (c *Coordinator) HandleListArtifacts(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(artifacts)
 }
+
+// HandleMinIOCredentials provides MinIO credentials to workers for shared filesystem access.
+// Workers call this endpoint during bootstrap to mount the shared filesystem.
+func (c *Coordinator) HandleMinIOCredentials(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	if c.minio == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, 
+			"MinIO not configured", 
+			"MINIO_NOT_CONFIGURED",
+			"Start coordinator with --enable-minio flag",
+			"Ensure MinIO is running and ~/shelley-minio/.minio-credentials exists")
+		return
+	}
+
+	c.minio.HandleMinIOCredentials(w, r)
+}
+
+// MinIOEnabled returns whether MinIO is configured and available.
+func (c *Coordinator) MinIOEnabled() bool {
+	return c.minio != nil
+}
