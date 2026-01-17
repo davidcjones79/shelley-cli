@@ -1388,10 +1388,10 @@ if [ -n "$TAILSCALE_IP" ]; then
     # Add coordinator to known_hosts
     ssh-keyscan -H $COORD_TAILSCALE_IP >> ~/.ssh/known_hosts 2>/dev/null
     
-    # Install sshfs if not present
-    if ! command -v sshfs &>/dev/null; then
-        echo "Installing sshfs..."
-        sudo apt-get update -qq && sudo apt-get install -y -qq sshfs
+    # Install sshfs and rsync if not present
+    if ! command -v sshfs &>/dev/null || ! command -v rsync &>/dev/null; then
+        echo "Installing sshfs and rsync..."
+        sudo apt-get update -qq && sudo apt-get install -y -qq sshfs rsync
     fi
     
     # Mount coordinator's shared directory via SSHFS
@@ -1436,9 +1436,65 @@ if [ -n "$TAILSCALE_IP" ]; then
     echo "export COORD_TAILSCALE_IP=$COORD_TAILSCALE_IP" >> ~/.bashrc
     export COORD_TAILSCALE_IP
     
+    # Create rsync helper for bulk transfers (faster than SSHFS for large files)
+    mkdir -p ~/bin
+    cat > ~/bin/coord-sync << 'SYNCEOF'
+#!/bin/bash
+# coord-sync - Fast bulk file sync with coordinator via rsync over Tailscale
+# Usage: coord-sync pull <remote_path> [local_path]
+#        coord-sync push <local_path> [remote_path]
+#
+# For large files/directories, rsync is 2-3x faster than SSHFS
+
+set -e
+ACTION="$1"
+PATH1="$2"
+PATH2="$3"
+
+if [ -z "$COORD_TAILSCALE_IP" ]; then
+    COORD_TAILSCALE_IP=$(grep COORD_TAILSCALE_IP ~/.bashrc | cut -d= -f2)
+fi
+
+if [ -z "$ACTION" ] || [ -z "$PATH1" ]; then
+    echo "Usage: coord-sync <pull|push> <path> [dest_path]"
+    echo ""
+    echo "Examples:"
+    echo "  coord-sync pull shared/source/repo ~/work/    # Pull from coordinator"
+    echo "  coord-sync push ~/results shared/tasks/       # Push to coordinator"
+    echo ""
+    echo "Note: For small files, use ~/shared directly (SSHFS mounted)"
+    echo "      For large transfers (>1MB), coord-sync is 2-3x faster"
+    exit 1
+fi
+
+case "$ACTION" in
+    pull)
+        REMOTE="$PATH1"
+        LOCAL="${PATH2:-.}"
+        echo "Pulling $REMOTE from coordinator..."
+        rsync -az --progress exedev@$COORD_TAILSCALE_IP:"$REMOTE" "$LOCAL"
+        echo "Done."
+        ;;
+    push)
+        LOCAL="$PATH1"
+        REMOTE="${PATH2:-shared/tasks/}"
+        echo "Pushing $LOCAL to coordinator:$REMOTE..."
+        rsync -az --progress "$LOCAL" exedev@$COORD_TAILSCALE_IP:"$REMOTE"
+        echo "Done."
+        ;;
+    *)
+        echo "Unknown action: $ACTION (use pull or push)"
+        exit 1
+        ;;
+esac
+SYNCEOF
+    chmod +x ~/bin/coord-sync
+    echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+    
     echo "✓ Tailscale setup complete"
     echo "  - Coordinator reachable at: $COORD_TAILSCALE_IP"
     echo "  - Shared filesystem: ~/shared (SSHFS mounted)"
+    echo "  - Bulk transfer: coord-sync pull/push (rsync, 2-3x faster)"
 else
     echo "Warning: Tailscale connection failed"
 fi
