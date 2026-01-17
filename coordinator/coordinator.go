@@ -2460,3 +2460,34 @@ func (c *Coordinator) ListSharedRepos() ([]SharedRepo, error) {
 	}
 	return repos, nil
 }
+
+// DeleteSharedRepo removes a shared repository and all its worktrees.
+func (c *Coordinator) DeleteSharedRepo(repoID string) error {
+	// Get the repo to find its path
+	repo, err := c.GetSharedRepo(repoID)
+	if err != nil {
+		return fmt.Errorf("repo not found: %w", err)
+	}
+
+	// Remove worktrees first
+	worktrees, _ := c.ListWorktrees(repo)
+	for _, wt := range worktrees {
+		os.RemoveAll(wt.Path)
+	}
+
+	// Remove the repo directory
+	if repo.Path != "" {
+		if err := os.RemoveAll(repo.Path); err != nil {
+			log.Printf("Warning: failed to remove repo directory %s: %v", repo.Path, err)
+		}
+	}
+
+	// Delete from database
+	_, err = c.db.Exec(`DELETE FROM shared_repos WHERE id = ?`, repoID)
+	if err != nil {
+		return fmt.Errorf("delete from db: %w", err)
+	}
+
+	log.Printf("Deleted shared repo: %s", repoID)
+	return nil
+}

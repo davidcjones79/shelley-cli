@@ -1246,6 +1246,7 @@
                     <div style="display:flex;gap:8px;">
                         <button onclick="fetchRepo('${r.id}')" class="btn" style="font-size:12px;" title="Fetch latest changes">Fetch</button>
                         <button onclick="showWorktrees('${r.id}')" class="btn" style="font-size:12px;" title="View active worktrees">Worktrees</button>
+                        <button onclick="deleteRepo('${r.id}', '${repoShort}')" class="btn btn-danger" style="font-size:12px;" title="Remove repository"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                     </div>
                 </div>
             `}).join('');
@@ -1297,6 +1298,18 @@
                 addLog(`Repository fetched`);
             } catch (e) {
                 alert('Failed to fetch: ' + e.message);
+            }
+        }
+
+        async function deleteRepo(id, name) {
+            if (!coordRunning) return;
+            if (!confirm(`Remove repository "${name}"? This will delete the local clone and all worktrees.`)) return;
+            try {
+                await api('/api/repo/delete?id=' + id, { method: 'POST' });
+                addLog(`Repository ${name} removed`);
+                loadRepos();
+            } catch (e) {
+                alert('Failed to remove repository: ' + e.message);
             }
         }
 

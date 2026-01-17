@@ -1028,3 +1028,28 @@ func (c *Coordinator) HandleFetchRepo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(repo)
 }
+
+// HandleDeleteRepo removes a shared repository.
+func (c *Coordinator) HandleDeleteRepo(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST or DELETE method required", "METHOD_NOT_ALLOWED")
+		return
+	}
+
+	repoID := r.URL.Query().Get("id")
+	if repoID == "" {
+		writeAPIError(w, http.StatusBadRequest, "id parameter is required", "MISSING_PARAM")
+		return
+	}
+
+	if err := c.DeleteSharedRepo(repoID); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error(), "DELETE_FAILED")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": repoID})
+}
