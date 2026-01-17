@@ -370,14 +370,16 @@ Example:
 	case "/coord":
 		if len(parts) < 2 {
 			m.showSystemMessage(`Coordinator commands:
-  /coord start     - Start coordinator dashboard
-  /coord stop      - Stop coordinator
-  /coord status    - Show coordinator stats
-  /coord workers   - List workers
-  /coord tasks     - List tasks
-  /coord scale N   - Scale to N workers
-  /coord drain     - Gracefully shutdown workers
-  /coord add <prompt> - Add a task`)
+  /coord start      - Start coordinator dashboard
+  /coord stop       - Stop coordinator
+  /coord status     - Show coordinator stats
+  /coord workers    - List workers
+  /coord tasks      - List tasks
+  /coord scale N    - Scale to N workers
+  /coord drain      - Gracefully shutdown workers
+  /coord add <prompt>           - Add a single task
+  /coord group <repo> <prompts> - Create task group on repo
+  /coord repos      - List shared repositories`)
 			return nil
 		}
 
@@ -407,6 +409,19 @@ Example:
 			}
 			prompt := strings.Join(parts[2:], " ")
 			m.showSystemMessage(m.coordAddTask(prompt))
+		case "group":
+			if len(parts) < 4 {
+				m.showError(`Usage: /coord group <repo-url> <prompts>
+
+Example:
+  /coord group https://github.com/org/repo "Add OAuth" | "Add sessions" | "Add rate limiting"`)
+				return nil
+			}
+			repoURL := parts[2]
+			promptsStr := strings.Join(parts[3:], " ")
+			m.showSystemMessage(m.coordCreateGroup(repoURL, promptsStr))
+		case "repos":
+			m.showSystemMessage(m.coordListRepos())
 		default:
 			m.showError(fmt.Sprintf("Unknown coord command: %s", parts[1]))
 		}
@@ -510,7 +525,14 @@ func (m *Model) buildHelpText() string {
 
 	sb.WriteString("\nOrchestration:\n")
 	sb.WriteString("  /orchestrate <plan>  - Parse plan and execute via coordinator\n")
-	sb.WriteString("  /coord <cmd>         - Coordinator management (start/stop/status/scale)\n")
+	sb.WriteString("  /coord start         - Start coordinator\n")
+	sb.WriteString("  /coord status        - Show coordinator status\n")
+	sb.WriteString("  /coord scale N       - Scale to N workers\n")
+	sb.WriteString("  /coord add <prompt>  - Add a task\n")
+	sb.WriteString("  /coord group <repo> <prompts> - Create task group on repo\n")
+	sb.WriteString("  /coord tasks         - List tasks\n")
+	sb.WriteString("  /coord workers       - List workers\n")
+	sb.WriteString("  /coord drain         - Drain all workers\n")
 
 	sb.WriteString("\n  /help          - Show this help")
 	sb.WriteString("\n  /keys          - Show keyboard shortcuts")

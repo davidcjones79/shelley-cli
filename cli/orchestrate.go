@@ -324,6 +324,7 @@ func (m *Model) coordTasks() string {
 func getCoordinatorToken() string {
 	// Try reading from common locations
 	locations := []string{
+		"/tmp/coordinator-token",
 		"/tmp/shelley-coordinator.token",
 		os.ExpandEnv("$HOME/.config/shelley/coordinator.token"),
 	}
@@ -439,4 +440,115 @@ func parsePlanIntoTasks(plan string) []string {
 	}
 
 	return tasks
+}
+
+// coordCreateGroup creates a task group with a repo URL
+func (m *Model) coordCreateGroup(repoURL, promptsStr string) string {
+	if !isCoordinatorRunning() {
+		// Try to start it
+		startResult := m.startCoordinator()
+		if !isCoordinatorRunning() {
+			return startResult + "\n\nCoordinator failed to start."
+		}
+	}
+
+	// Parse prompts (pipe-separated or line-separated)
+	prompts := parsePlanIntoTasks(promptsStr)
+	if len(prompts) == 0 {
+		return "Could not parse prompts. Use pipe-separated format:\n  \"task 1\" | \"task 2\" | \"task 3\""
+	}
+
+	token := getCoordinatorToken()
+	
+	groupData := map[string]interface{}{
+		"name":        fmt.Sprintf("Group %d", time.Now().Unix()%10000),
+		"repo_url":    repoURL,
+		"base_branch": "main",
+		"prompts":     prompts,
+	}
+	jsonData, _ := json.Marshal(groupData)
+
+	req, _ := http.NewRequest("POST", "http://localhost:8081/api/group/create", bytes.NewReader(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("X-Coordinator-Token", token)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("Error creating group: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Sprintf("Error creating group: %s", string(body))
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	hostname := getHostname()
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("✅ Created task group with %d tasks\n\n", len(prompts)))
+	sb.WriteString(fmt.Sprintf("Repository: %s\n", repoURL))
+	sb.WriteString("Tasks:\n")
+	for i, p := range prompts {
+		sb.WriteString(fmt.Sprintf("  %d. %s\n", i+1, truncateString(p, 50)))
+	}
+	sb.WriteString(fmt.Sprintf("\n📊 Use /coord scale %d to start workers\n", min(len(prompts), 5)))
+	sb.WriteString(fmt.Sprintf("🌐 Dashboard: https://%s.exe.xyz:8080/", hostname))
+
+	return sb.String()
+}
+
+// coordListRepos lists shared repositories
+func (m *Model) coordListRepos() string {
+	if !isCoordinatorRunning() {
+		return "Coordinator is not running. Use /coord start first."
+	}
+
+	token := getCoordinatorToken()
+	req, _ := http.NewRequest("GET", "http://localhost:8081/api/repos", nil)
+	if token != "" {
+		req.Header.Set("X-Coordinator-Token", token)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("Error getting repos: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var repos []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+		return fmt.Sprintf("Error parsing repos: %v", err)
+	}
+
+	if len(repos) == 0 {
+		return "No shared repositories. Create a task group with a repo URL to add one."
+	}
+
+	var sb strings.Builder
+	sb.WriteString("📦 Shared Repositories:\n\n")
+
+	for _, r := range repos {
+		id := r["id"]
+		url := r["url"]
+		path := r["path"]
+		sb.WriteString(fmt.Sprintf("• %v\n", id))
+		sb.WriteString(fmt.Sprintf("  URL: %v\n", url))
+		sb.WriteString(fmt.Sprintf("  Path: %v\n\n", path))
+	}
+
+	return sb.String()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
