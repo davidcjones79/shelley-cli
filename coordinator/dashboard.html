@@ -441,6 +441,7 @@
         <div class="section" id="groups-section">
             <div class="section-header">
                 <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Task Groups</span>
+                <button onclick="showTemplates()" class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Templates</button>
                 <button onclick="showCreateGroup()" class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New Group</button>
             </div>
             <div class="list" id="groups">
@@ -544,6 +545,18 @@
             <div class="log-viewer" id="log">
                 <div class="list-empty" style="color: #737373;">Waiting for events...</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Templates Modal -->
+    <div class="modal" id="templatesModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <span class="modal-title">Task Templates</span>
+                <button class="modal-close" onclick="closeTemplates()">&times;</button>
+            </div>
+            <p style="color:#737373;margin-bottom:16px;">Select a template to create a group of parallel tasks</p>
+            <div id="templatesList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;"></div>
         </div>
     </div>
 
@@ -707,6 +720,118 @@
 
     <script>
         let token = localStorage.getItem('coordToken') || '';
+
+        // Task Templates
+        const taskTemplates = [
+            {
+                id: 'documentation',
+                name: 'Documentation Suite',
+                icon: '📚',
+                description: 'Create comprehensive documentation for the project',
+                prompts: [
+                    'Write a comprehensive README.md with project overview, installation instructions, usage examples, and API documentation',
+                    'Create a CONTRIBUTING.md with guidelines for contributors, code style, PR process, and development setup',
+                    'Add detailed code comments and docstrings to all public functions and classes',
+                    'Create an ARCHITECTURE.md explaining the project structure, key components, and design decisions'
+                ]
+            },
+            {
+                id: 'testing',
+                name: 'Test Coverage',
+                icon: '🧪',
+                description: 'Add unit tests across the codebase',
+                prompts: [
+                    'Write unit tests for all handler/controller functions with edge cases and error scenarios',
+                    'Write unit tests for all database/repository functions including error handling',
+                    'Write unit tests for all utility/helper functions',
+                    'Write integration tests for the main API endpoints'
+                ]
+            },
+            {
+                id: 'api-endpoints',
+                name: 'Standard API Endpoints',
+                icon: '🔌',
+                description: 'Add common operational endpoints',
+                prompts: [
+                    'Add a GET /health endpoint that returns JSON with status, uptime, and version',
+                    'Add a GET /metrics endpoint with Prometheus-compatible metrics (requests, latency, errors)',
+                    'Add a GET /version endpoint returning build info, git commit, and build time',
+                    'Add a GET /ready endpoint for Kubernetes readiness checks that verifies database connectivity'
+                ]
+            },
+            {
+                id: 'security-review',
+                name: 'Security Review',
+                icon: '🔒',
+                description: 'Review code for security issues',
+                prompts: [
+                    'Review all SQL queries for injection vulnerabilities and fix any issues found',
+                    'Review all user input handling for XSS, CSRF, and other injection attacks',
+                    'Review authentication and authorization code for vulnerabilities',
+                    'Review all API endpoints for proper input validation and rate limiting'
+                ]
+            },
+            {
+                id: 'error-handling',
+                name: 'Error Handling',
+                icon: '⚠️',
+                description: 'Improve error handling across the codebase',
+                prompts: [
+                    'Add proper error handling to all database operations with meaningful error messages',
+                    'Add proper error handling to all HTTP handlers with appropriate status codes',
+                    'Add proper error handling to all external API calls with retries where appropriate',
+                    'Add structured logging for all errors with context information'
+                ]
+            },
+            {
+                id: 'input-validation',
+                name: 'Input Validation',
+                icon: '✅',
+                description: 'Add input validation to all endpoints',
+                prompts: [
+                    'Add input validation to all POST/PUT endpoints with detailed error messages',
+                    'Add request size limits and timeout handling to all endpoints',
+                    'Add validation for all query parameters and path variables',
+                    'Add content-type validation and proper handling of malformed requests'
+                ]
+            },
+            {
+                id: 'logging',
+                name: 'Structured Logging',
+                icon: '📝',
+                description: 'Add comprehensive logging',
+                prompts: [
+                    'Add structured request/response logging to all HTTP handlers',
+                    'Add debug logging to all business logic functions with relevant context',
+                    'Add performance logging with timing for database queries and external calls',
+                    'Add audit logging for all authentication and authorization events'
+                ]
+            },
+            {
+                id: 'code-quality',
+                name: 'Code Quality',
+                icon: '✨',
+                description: 'Improve code quality and consistency',
+                prompts: [
+                    'Fix all linting errors and warnings, ensure consistent code style',
+                    'Refactor any functions longer than 50 lines into smaller, focused functions',
+                    'Add missing type hints/annotations to all function signatures',
+                    'Remove dead code, unused imports, and commented-out code'
+                ]
+            },
+            {
+                id: 'performance',
+                name: 'Performance Review',
+                icon: '⚡',
+                description: 'Review and optimize performance',
+                prompts: [
+                    'Review all database queries and add indexes where needed, optimize N+1 queries',
+                    'Add caching for frequently accessed, rarely changing data',
+                    'Review memory usage and fix any memory leaks or excessive allocations',
+                    'Add connection pooling and optimize resource management'
+                ]
+            }
+        ];
         let logs = [];
         let coordRunning = false;
         let allTasks = [];  // Store all tasks for filtering
@@ -1005,6 +1130,41 @@
         }
 
         // Group functions
+        // Template functions
+        function showTemplates() {
+            if (!coordRunning) return alert('Start coordinator first');
+            const el = document.getElementById('templatesList');
+            el.innerHTML = taskTemplates.map(t => `
+                <div onclick="selectTemplate('${t.id}')" style="border:1px solid #e5e5e5;border-radius:12px;padding:16px;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.borderColor='#a3a3a3';this.style.background='#fafafa'" onmouseout="this.style.borderColor='#e5e5e5';this.style.background='white'">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                        <span style="font-size:24px;">${t.icon}</span>
+                        <span style="font-weight:600;font-size:15px;">${t.name}</span>
+                    </div>
+                    <p style="color:#525252;font-size:13px;margin-bottom:8px;">${t.description}</p>
+                    <p style="color:#737373;font-size:12px;">${t.prompts.length} parallel tasks</p>
+                </div>
+            `).join('');
+            document.getElementById('templatesModal').classList.add('active');
+        }
+
+        function closeTemplates() {
+            document.getElementById('templatesModal').classList.remove('active');
+        }
+
+        function selectTemplate(templateId) {
+            const template = taskTemplates.find(t => t.id === templateId);
+            if (!template) return;
+            
+            closeTemplates();
+            
+            // Pre-fill the create group form
+            document.getElementById('group-name').value = template.name;
+            document.getElementById('group-description').value = template.description;
+            document.getElementById('group-prompts').value = template.prompts.join('\n');
+            
+            showCreateGroup();
+        }
+
         function showCreateGroup() {
             if (!coordRunning) return alert('Start coordinator first');
             document.getElementById('createGroupModal').classList.add('active');
@@ -1371,7 +1531,7 @@
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); closeStuckTasks(); closeAddRepo(); closeArtifacts(); } });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); closeStuckTasks(); closeAddRepo(); closeArtifacts(); closeTemplates(); } });
 
         // WebSocket connection for real-time updates
         // coordPort is injected by the dashboard server
