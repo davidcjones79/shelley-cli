@@ -506,7 +506,7 @@
                 </div>
             </div>
             <div class="search-filter" style="margin-bottom: 12px;">
-                <input type="text" id="task-search" class="search-input" placeholder="Search tasks..." oninput="filterTasks()">
+                <input type="text" id="task-search" class="search-input" placeholder="Search tasks..." oninput="currentPage=1; filterTasks()">
                 <div style="display:flex;gap:4px;">
                     <button class="filter-btn active" data-status="all" onclick="setTaskFilter('all')">All</button>
                     <button class="filter-btn" data-status="queued" onclick="setTaskFilter('queued')">Queued</button>
@@ -517,6 +517,11 @@
             </div>
             <div class="list" id="tasks">
                 <div class="list-empty">No tasks</div>
+            </div>
+            <div id="tasks-pagination" style="display:none;margin-top:12px;align-items:center;justify-content:center;gap:8px;">
+                <button onclick="prevPage()" class="btn" id="prev-page-btn" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Prev</button>
+                <span id="page-info" style="font-size:13px;color:#737373;">Page 1 of 1</span>
+                <button onclick="nextPage()" class="btn" id="next-page-btn" disabled>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
             </div>
         </div>
 
@@ -706,6 +711,8 @@
         let coordRunning = false;
         let allTasks = [];  // Store all tasks for filtering
         let taskFilter = 'all';
+        let currentPage = 1;
+        const tasksPerPage = 5;
         let ws = null;
         let wsReconnectTimer = null;
 
@@ -1438,6 +1445,7 @@
         // Task filtering
         function setTaskFilter(status) {
             taskFilter = status;
+            currentPage = 1; // Reset to first page when filter changes
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.status === status);
             });
@@ -1461,10 +1469,45 @@
                 );
             }
             
-            // Update count
-            document.getElementById('task-count').textContent = `(${filtered.length}/${allTasks.length})`;
+            // Calculate pagination
+            const totalPages = Math.max(1, Math.ceil(filtered.length / tasksPerPage));
+            if (currentPage > totalPages) currentPage = totalPages;
             
-            renderTasks(filtered);
+            const startIdx = (currentPage - 1) * tasksPerPage;
+            const endIdx = startIdx + tasksPerPage;
+            const paginatedTasks = filtered.slice(startIdx, endIdx);
+            
+            // Update count with pagination info
+            document.getElementById('task-count').textContent = `(${filtered.length} total)`;
+            
+            // Update pagination controls
+            const paginationEl = document.getElementById('tasks-pagination');
+            const prevBtn = document.getElementById('prev-page-btn');
+            const nextBtn = document.getElementById('next-page-btn');
+            const pageInfo = document.getElementById('page-info');
+            
+            if (filtered.length > tasksPerPage) {
+                paginationEl.style.display = 'flex';
+                prevBtn.disabled = currentPage <= 1;
+                nextBtn.disabled = currentPage >= totalPages;
+                pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+            } else {
+                paginationEl.style.display = 'none';
+            }
+            
+            renderTasks(paginatedTasks);
+        }
+        
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                filterTasks();
+            }
+        }
+        
+        function nextPage() {
+            currentPage++;
+            filterTasks();
         }
         
         function renderTasks(tasks) {
