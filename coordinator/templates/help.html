@@ -185,6 +185,7 @@
             <a href="#api-workers" class="sidebar-link">Workers API</a>
             <a href="#api-groups" class="sidebar-link">Groups API</a>
             <a href="#api-repos" class="sidebar-link">Repos API</a>
+            <a href="#api-internal" class="sidebar-link">Internal APIs</a>
         </div>
         <div class="sidebar-section">
             <div class="sidebar-title">CLI Commands</div>
@@ -225,6 +226,14 @@
         <h2 id="tasks">Tasks</h2>
         <p>Tasks are units of work sent to workers. Each task contains a prompt describing what you want done.</p>
         
+        <h3>Search & Filter</h3>
+        <p>The dashboard provides tools to find tasks quickly:</p>
+        <ul>
+            <li><strong>Search box</strong> — Filter tasks by prompt text or task ID</li>
+            <li><strong>Status filters</strong> — Click All, Queued, Running, Completed, or Failed to filter by status</li>
+            <li><strong>Task count</strong> — Shows filtered/total (e.g., "3/9") so you know how many match</li>
+        </ul>
+        
         <h3>Task Statuses</h3>
         <table class="help-table">
             <tr><th>Status</th><th>Description</th></tr>
@@ -235,6 +244,12 @@
         </table>
         
         <h3>Task Actions</h3>
+        <p>From the task list header:</p>
+        <ul>
+            <li><strong>Stuck</strong> — View tasks assigned to missing workers or running too long</li>
+            <li><strong>Clear Done</strong> — Remove all completed and failed tasks from the list</li>
+        </ul>
+        <p>From the task details modal (click a task):</p>
         <ul>
             <li><strong>Reset to Queued</strong> — Move a stuck or failed task back to the queue</li>
             <li><strong>Retry Task</strong> — Create a new task with the same prompt</li>
@@ -359,7 +374,7 @@
         </table>
         
         <h2 id="cli">CLI Reference</h2>
-        <p>The coordinator can also be controlled via CLI commands:</p>
+        <p>The coordinator can also be controlled via CLI commands in the Shelley chat:</p>
         <table class="help-table">
             <tr><th>Command</th><th>Description</th></tr>
             <tr><td><code>/coord start</code></td><td>Start coordinator</td></tr>
@@ -370,7 +385,27 @@
             <tr><td><code>/coord scale N</code></td><td>Scale to N workers</td></tr>
             <tr><td><code>/coord drain</code></td><td>Drain all workers</td></tr>
             <tr><td><code>/coord add "prompt"</code></td><td>Add a task</td></tr>
+            <tr><td><code>/coord group &lt;repo&gt; "p1" | "p2"</code></td><td>Create task group with multiple prompts</td></tr>
             <tr><td><code>/coord repos</code></td><td>List shared repos</td></tr>
+        </table>
+        
+        <h2 id="api-internal">Internal APIs</h2>
+        <p>These endpoints are used by workers and the dashboard internally:</p>
+        <table class="help-table">
+            <tr><th>Endpoint</th><th>Description</th></tr>
+            <tr><td><code>/api/stats</code></td><td>Get coordinator statistics</td></tr>
+            <tr><td><code>/api/ws</code></td><td>WebSocket for real-time updates</td></tr>
+            <tr><td><code>/api/next-task</code></td><td>Worker requests next task</td></tr>
+            <tr><td><code>/api/task-start</code></td><td>Worker marks task as started</td></tr>
+            <tr><td><code>/api/complete</code></td><td>Worker reports task completion</td></tr>
+            <tr><td><code>/api/heartbeat</code></td><td>Worker sends heartbeat</td></tr>
+            <tr><td><code>/api/worker-shutdown</code></td><td>Worker self-shutdown notification</td></tr>
+            <tr><td><code>/api/sync-conversation</code></td><td>Sync conversation from worker to coordinator</td></tr>
+            <tr><td><code>/api/artifacts</code></td><td>List artifacts for a task</td></tr>
+            <tr><td><code>/api/artifact/upload</code></td><td>Upload artifact from worker</td></tr>
+            <tr><td><code>/api/reset-stuck-tasks</code></td><td>Reset all stuck tasks to queued</td></tr>
+            <tr><td><code>/api/cleanup-workers</code></td><td>Clean up stale/dead workers</td></tr>
+            <tr><td><code>/api/shelley-bin</code></td><td>Download shelley binary (for worker install)</td></tr>
         </table>
         
         <div class="tip-box warning">
