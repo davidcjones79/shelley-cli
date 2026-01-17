@@ -449,34 +449,6 @@
             </div>
         </div>
 
-        <!-- New Task (full width) -->
-        <div class="section">
-            <div class="section-header">
-                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New Task</span>
-            </div>
-            <div class="list">
-                <div style="padding: 20px;">
-                    <div style="display: grid; grid-template-columns: 1fr 150px; gap: 16px; margin-bottom: 12px;">
-                        <div>
-                            <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Repository (optional)</label>
-                            <input id="repo-url" class="input" style="width: 100%;" placeholder="e.g. github.com/user/repo or git@github.com:user/repo.git">
-                        </div>
-                        <div>
-                            <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Base Branch</label>
-                            <input id="base-branch" class="input" style="width: 100%;" placeholder="main" value="main">
-                        </div>
-                    </div>
-                    <div style="margin-bottom: 12px;">
-                        <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Task Prompt</label>
-                        <textarea id="prompt" class="input" style="min-height: 100px;" placeholder="Describe the task you want a worker to perform. Be specific about files, functions, or features to modify..."></textarea>
-                    </div>
-                    <div>
-                        <button onclick="enqueueTask()" class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Task</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Workers -->
         <div class="section" id="workers-section">
             <div class="section-header">
@@ -976,42 +948,6 @@
 
         function escapeHtml(s) {
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        }
-
-        async function enqueueTask() {
-            const prompt = document.getElementById('prompt').value;
-            const repoUrl = document.getElementById('repo-url').value.trim();
-            const baseBranch = document.getElementById('base-branch').value.trim() || 'main';
-            
-            if (!prompt) return alert('Prompt required');
-            if (!coordRunning) return alert('Start coordinator first');
-            
-            const payload = { prompt };
-            if (repoUrl) {
-                // Convert github.com/user/repo to git URL if needed
-                let gitUrl = repoUrl;
-                if (repoUrl.match(/^[\w-]+\/[\w-]+$/)) {
-                    gitUrl = `https://github.com/${repoUrl}.git`;
-                } else if (repoUrl.match(/^github\.com\/[\w-]+\/[\w-]+/)) {
-                    gitUrl = `https://${repoUrl}.git`;
-                }
-                payload.repo_url = gitUrl;
-                payload.base_branch = baseBranch;
-            }
-            
-            try {
-                const task = await api('/api/enqueue', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                document.getElementById('prompt').value = '';
-                const repoInfo = repoUrl ? ` (${repoUrl})` : '';
-                addLog(`Task ${task.id.slice(0,8)} enqueued${repoInfo}`);
-                refresh();
-            } catch (e) {
-                alert('Failed: ' + e.message);
-            }
         }
 
         async function scaleWorkers() {
