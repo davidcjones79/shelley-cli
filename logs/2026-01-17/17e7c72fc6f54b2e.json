@@ -1,0 +1,15 @@
+{
+  "id": "17e7c72fc6f54b2e",
+  "prompt": "Read the JSON file at ~/shared/source/test-task-input/data.json, calculate the total price of all items, and write a summary report to ~/shared/tasks/test-task-output/report.md with:\n1. List of all items with prices\n2. Total price\n3. Average price\n4. Most expensive item\n\nDo not clone any repo. Just use the shared filesystem.\n",
+  "status": "completed",
+  "priority": 0,
+  "worker_id": "wk-c12-x540b288a92b0",
+  "result": "",
+  "error": "",
+  "conversation_id": "cZRK5EW",
+  "source": "autonomous",
+  "created_at": "2026-01-17T19:50:50Z",
+  "assigned_at": "2026-01-17T20:23:14Z",
+  "started_at": "2026-01-17T20:23:14Z",
+  "completed_at": "2026-01-17T20:23:30Z"
+}
