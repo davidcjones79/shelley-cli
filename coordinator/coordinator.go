@@ -1370,11 +1370,67 @@ if [ -n "$TAILSCALE_IP" ]; then
     # Set up SSH access to coordinator (for file sync)
     echo "Setting up SSH to coordinator ($COORD_TAILSCALE_IP)..."
     mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
+    
+    # Generate SSH key if not present
+    if [ ! -f ~/.ssh/id_ed25519 ]; then
+        echo "Generating SSH key for SSHFS access..."
+        ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q
+    fi
+    
+    # Register our public key with the coordinator
+    echo "Registering SSH key with coordinator..."
+    SSH_PUBKEY=$(cat ~/.ssh/id_ed25519.pub)
+    curl -sf -X POST "http://$COORD_TAILSCALE_IP:${COORD_PORT:-8081}/api/register-ssh-key" \
+        -H "Content-Type: application/json" \
+        -d "{\"worker_id\": \"$WORKER_ID\", \"pub_key\": \"$SSH_PUBKEY\"}" || echo "Warning: Failed to register SSH key"
+    
+    # Add coordinator to known_hosts
     ssh-keyscan -H $COORD_TAILSCALE_IP >> ~/.ssh/known_hosts 2>/dev/null
     
-    # Create local shared directory structure
-    mkdir -p ~/shared/input ~/shared/output
-    echo "Created ~/shared/input and ~/shared/output directories"
+    # Install sshfs if not present
+    if ! command -v sshfs &>/dev/null; then
+        echo "Installing sshfs..."
+        sudo apt-get update -qq && sudo apt-get install -y -qq sshfs
+    fi
+    
+    # Mount coordinator's shared directory via SSHFS
+    echo "Mounting coordinator's ~/shared via SSHFS..."
+    mkdir -p ~/shared
+    
+    # Unmount if already mounted
+    if mountpoint -q ~/shared 2>/dev/null; then
+        fusermount -u ~/shared 2>/dev/null || true
+        sleep 1
+    fi
+    
+    # Small delay to ensure key is registered
+    sleep 1
+    
+    # Mount with reconnect support
+    sshfs exedev@$COORD_TAILSCALE_IP:shared ~/shared \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o reconnect \
+        -o ServerAliveInterval=15 \
+        -o ServerAliveCountMax=3 \
+        -o allow_other 2>/dev/null || \
+    sshfs exedev@$COORD_TAILSCALE_IP:shared ~/shared \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o reconnect \
+        -o ServerAliveInterval=15 \
+        -o ServerAliveCountMax=3
+    
+    # Verify mount succeeded
+    if mountpoint -q ~/shared 2>/dev/null; then
+        echo "✓ SSHFS mount successful: ~/shared -> coordinator:~/shared"
+        # Ensure subdirectories exist (create on coordinator if needed)
+        mkdir -p ~/shared/source ~/shared/tasks ~/shared/results 2>/dev/null || true
+    else
+        echo "Warning: SSHFS mount failed, falling back to local directories"
+        mkdir -p ~/shared/source ~/shared/tasks ~/shared/results
+    fi
     
     # Export coordinator IP for use in tasks
     echo "export COORD_TAILSCALE_IP=$COORD_TAILSCALE_IP" >> ~/.bashrc
@@ -1382,7 +1438,7 @@ if [ -n "$TAILSCALE_IP" ]; then
     
     echo "✓ Tailscale setup complete"
     echo "  - Coordinator reachable at: $COORD_TAILSCALE_IP"
-    echo "  - Sync files: rsync -av ~/shared/output/ exedev@$COORD_TAILSCALE_IP:~/shared/tasks/$WORKER_ID/"
+    echo "  - Shared filesystem: ~/shared (SSHFS mounted)"
 else
     echo "Warning: Tailscale connection failed"
 fi

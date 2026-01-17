@@ -918,6 +918,7 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/artifacts", coord.HandleListArtifacts)
 	mux.HandleFunc("/api/artifact/upload", coord.HandleUploadArtifact)
 	mux.HandleFunc("/api/minio-creds", coord.HandleMinIOCredentials)
+	mux.HandleFunc("/api/register-ssh-key", coord.HandleRegisterSSHKey)
 
 	addr := fmt.Sprintf(":%d", *port)
 	if err := http.ListenAndServe(addr, mux); err != nil {

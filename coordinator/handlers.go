@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // SQLite driver for sync
@@ -848,4 +851,71 @@ func (c *Coordinator) HandleMinIOCredentials(w http.ResponseWriter, r *http.Requ
 // MinIOEnabled returns whether MinIO is configured and available.
 func (c *Coordinator) MinIOEnabled() bool {
 	return c.minio != nil
+}
+
+// HandleRegisterSSHKey allows workers to register their SSH public key for SSHFS access.
+func (c *Coordinator) HandleRegisterSSHKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST method required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		WorkerID string `json:"worker_id"`
+		PubKey   string `json:"pub_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if req.WorkerID == "" || req.PubKey == "" {
+		http.Error(w, "worker_id and pub_key required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate the public key format (basic check)
+	if !strings.HasPrefix(req.PubKey, "ssh-") {
+		http.Error(w, "Invalid SSH public key format", http.StatusBadRequest)
+		return
+	}
+
+	// Add to exe.dev authorized_keys (primary location for exe.dev VMs)
+	authKeysPath := "/exe.dev/etc/ssh/authorized_keys"
+	if _, err := os.Stat(authKeysPath); os.IsNotExist(err) {
+		// Fall back to standard location
+		authKeysPath = filepath.Join(os.Getenv("HOME"), ".ssh", "authorized_keys")
+	}
+
+	// Read existing keys to avoid duplicates
+	existingKeys, _ := os.ReadFile(authKeysPath)
+	if strings.Contains(string(existingKeys), req.PubKey) {
+		// Key already registered
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "already_registered"})
+		return
+	}
+
+	// Append the new key
+	f, err := os.OpenFile(authKeysPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		log.Printf("Failed to open authorized_keys: %v", err)
+		http.Error(w, "Failed to register key", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	// Ensure newline before adding key
+	if len(existingKeys) > 0 && !strings.HasSuffix(string(existingKeys), "\n") {
+		f.WriteString("\n")
+	}
+	if _, err := f.WriteString(req.PubKey + "\n"); err != nil {
+		log.Printf("Failed to write SSH key: %v", err)
+		http.Error(w, "Failed to register key", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Registered SSH key for worker %s", req.WorkerID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 }
