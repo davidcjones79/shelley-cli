@@ -162,6 +162,10 @@ type Coordinator struct {
 	logsDir  string
 	shutdown chan struct{}
 	draining bool // When true, workers should shut down after completing current task
+
+	// WebSocket clients for real-time updates
+	wsClients   map[chan []byte]struct{}
+	wsClientsMu sync.RWMutex
 }
 
 // New creates a new Coordinator.
@@ -239,10 +243,11 @@ func New(config Config) (*Coordinator, error) {
 	}
 
 	return &Coordinator{
-		db:       db,
-		config:   config,
-		logsDir:  logsDir,
-		shutdown: make(chan struct{}),
+		db:        db,
+		config:    config,
+		logsDir:   logsDir,
+		shutdown:  make(chan struct{}),
+		wsClients: make(map[chan []byte]struct{}),
 	}, nil
 }
 
@@ -739,7 +744,13 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 	// Auto-scale: spawn a worker if there are queued tasks and no available workers
 	go c.maybeSpawnWorker()
 
-	return c.GetTask(req.ID)
+	task, err := c.GetTask(req.ID)
+	if err == nil {
+		// Broadcast update to WebSocket clients
+		c.BroadcastUpdate("task_created", task)
+		c.BroadcastUpdate("stats", c.GetStats())
+	}
+	return task, err
 }
 
 // stageInputFiles creates the input directory and stages files for a task.
@@ -990,6 +1001,15 @@ func (c *Coordinator) CompleteTask(req CompleteRequest) error {
 	if !c.draining {
 		go c.maybeSpawnWorker()
 	}
+
+	// Broadcast updates to WebSocket clients
+	if task, err := c.GetTask(req.TaskID); err == nil {
+		c.BroadcastUpdate("task_updated", task)
+	}
+	if workers, err := c.ListWorkers(false); err == nil {
+		c.BroadcastUpdate("workers", workers)
+	}
+	c.BroadcastUpdate("stats", c.GetStats())
 
 	return nil
 }
@@ -1992,6 +2012,13 @@ func (c *Coordinator) ScaleWorkers(desired int) error {
 		}
 		activeCount++
 	}
+
+	// Broadcast worker update
+	if workers, err := c.ListWorkers(false); err == nil {
+		c.BroadcastUpdate("workers", workers)
+	}
+	c.BroadcastUpdate("stats", c.GetStats())
+
 	return nil
 }
 
