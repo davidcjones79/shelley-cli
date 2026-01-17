@@ -1374,11 +1374,16 @@
         document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); closeStuckTasks(); closeAddRepo(); closeArtifacts(); } });
 
         // WebSocket connection for real-time updates
+        // coordPort is injected by the dashboard server
+        const coordPort = window.COORD_PORT || 8081;
+        
         function connectWebSocket() {
             if (ws && ws.readyState === WebSocket.OPEN) return;
             if (!coordRunning) return;
             
-            const wsUrl = `ws://${location.host}/api/ws`;
+            // Connect directly to coordinator port (bypasses proxy which doesn't handle WebSocket well)
+            const wsHost = location.hostname + ':' + coordPort;
+            const wsUrl = `ws://${wsHost}/api/ws`;
             updateWsStatus('connecting');
             
             ws = new WebSocket(wsUrl);

@@ -11,7 +11,6 @@ import (
 	"html/template"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -282,6 +281,12 @@ func (d *Dashboard) HandleDashboardIndex(w http.ResponseWriter, r *http.Request)
 		[]byte(`let token = localStorage.getItem('coordToken') || '`+d.apiToken+`';`),
 		1)
 
+	// Inject coordinator port for direct WebSocket connection
+	data = bytes.Replace(data,
+		[]byte(`const coordPort = window.COORD_PORT || 8081;`),
+		[]byte(fmt.Sprintf(`const coordPort = %d;`, d.config.CoordPort)),
+		1)
+
 	w.Header().Set("Content-Type", "text/html")
 	w.Write(data)
 }
@@ -525,76 +530,7 @@ func (d *Dashboard) HandleAPIProxy(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
-	// Handle WebSocket upgrade requests specially
-	if isWebSocketRequest(r) {
-		d.proxyWebSocket(w, r)
-		return
-	}
-	
 	d.proxy.ServeHTTP(w, r)
-}
-
-// isWebSocketRequest checks if the request is a WebSocket upgrade request.
-func isWebSocketRequest(r *http.Request) bool {
-	return strings.ToLower(r.Header.Get("Upgrade")) == "websocket"
-}
-
-// proxyWebSocket proxies a WebSocket connection to the coordinator.
-func (d *Dashboard) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
-	// Connect to the backend coordinator
-	backendURL := fmt.Sprintf("ws://localhost:%d%s", d.config.CoordPort, r.URL.Path)
-	if r.URL.RawQuery != "" {
-		backendURL += "?" + r.URL.RawQuery
-	}
-	
-	// Copy headers for the backend request
-	header := http.Header{}
-	for k, v := range r.Header {
-		if k != "Upgrade" && k != "Connection" && k != "Sec-Websocket-Key" && 
-		   k != "Sec-Websocket-Version" && k != "Sec-Websocket-Extensions" {
-			header[k] = v
-		}
-	}
-	
-	// Use hijacker to get the underlying connection
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "WebSocket not supported", http.StatusInternalServerError)
-		return
-	}
-	
-	// Hijack the connection
-	clientConn, clientBuf, err := hijacker.Hijack()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer clientConn.Close()
-	
-	// Connect to the backend
-	backendAddr := fmt.Sprintf("localhost:%d", d.config.CoordPort)
-	backendConn, err := net.Dial("tcp", backendAddr)
-	if err != nil {
-		clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
-		return
-	}
-	defer backendConn.Close()
-	
-	// Forward the original request to the backend
-	r.Write(backendConn)
-	
-	// Copy data bidirectionally
-	done := make(chan struct{})
-	go func() {
-		io.Copy(backendConn, clientBuf)
-		done <- struct{}{}
-	}()
-	go func() {
-		io.Copy(clientConn, backendConn)
-		done <- struct{}{}
-	}()
-	<-done
 }
 
 // SetupRoutes configures HTTP routes for the dashboard.
