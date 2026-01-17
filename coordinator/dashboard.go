@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -332,6 +333,39 @@ func (d *Dashboard) HandleDashboardStatus(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// HandleHelp serves the help documentation page.
+func (d *Dashboard) HandleHelp(w http.ResponseWriter, r *http.Request) {
+	// Require exe.dev authentication (or allow local access)
+	userID := r.Header.Get("X-Exedev-Userid")
+	if userID == "" {
+		host := r.Host
+		if !strings.HasPrefix(host, "localhost") && !strings.HasPrefix(host, "127.0.0.1") {
+			http.Redirect(w, r, "/__exe.dev/login?redirect=/help", http.StatusFound)
+			return
+		}
+	}
+
+	data := PageData{
+		Title:    "Help",
+		Page:     "help",
+		APIToken: d.apiToken,
+	}
+
+	tmpl, err := template.ParseFS(templatesFS,
+		"templates/base.html",
+		"templates/help.html",
+	)
+	if err != nil {
+		http.Error(w, "Template parse error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
+		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
 // HandleConversation serves a synced conversation from the main Shelley DB.
 func (d *Dashboard) HandleConversation(w http.ResponseWriter, r *http.Request) {
 	// Extract conversation ID from path: /conversation/{id}
@@ -496,6 +530,7 @@ func (d *Dashboard) HandleAPIProxy(w http.ResponseWriter, r *http.Request) {
 // SetupRoutes configures HTTP routes for the dashboard.
 func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", d.HandleDashboardIndex)
+	mux.HandleFunc("/help", d.HandleHelp)
 	mux.HandleFunc("/conversation/", d.HandleConversation)
 	mux.HandleFunc("/dashboard/start", d.HandleDashboardStart)
 	mux.HandleFunc("/dashboard/stop", d.HandleDashboardStop)

@@ -1,0 +1,411 @@
+{{define "extra_styles"}}
+/* Help page layout */
+.help-layout {
+    display: flex;
+    min-height: calc(100vh - 65px);
+}
+.help-sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    padding: 24px;
+    border-right: 1px solid #e5e5e5;
+    position: sticky;
+    top: 65px;
+    height: calc(100vh - 65px);
+    overflow-y: auto;
+}
+.help-content {
+    flex: 1;
+    padding: 32px 48px;
+    max-width: 800px;
+}
+.sidebar-section {
+    margin-bottom: 24px;
+}
+.sidebar-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #737373;
+    margin-bottom: 8px;
+}
+.sidebar-link {
+    display: block;
+    padding: 6px 12px;
+    margin: 2px 0;
+    color: #525252;
+    text-decoration: none;
+    font-size: 14px;
+    border-radius: 6px;
+}
+.sidebar-link:hover {
+    background: #f5f5f5;
+    color: #1a1a1a;
+}
+.sidebar-link.active {
+    background: #f0f0f0;
+    color: #1a1a1a;
+    font-weight: 500;
+}
+
+/* Help content styles */
+.help-content h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.help-content .subtitle {
+    color: #737373;
+    font-size: 16px;
+    margin-bottom: 32px;
+}
+.help-content h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 32px 0 16px 0;
+    padding-top: 16px;
+    border-top: 1px solid #e5e5e5;
+}
+.help-content h2:first-of-type {
+    border-top: none;
+    margin-top: 0;
+}
+.help-content h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 24px 0 12px 0;
+}
+.help-content p {
+    margin-bottom: 16px;
+    color: #374151;
+}
+.help-content ul, .help-content ol {
+    margin-bottom: 16px;
+    padding-left: 24px;
+}
+.help-content li {
+    margin-bottom: 8px;
+    color: #374151;
+}
+.help-content code {
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 13px;
+}
+.help-content pre {
+    background: #1a1a1a;
+    color: #e5e5e5;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 13px;
+}
+.help-content pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+}
+.help-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+}
+.help-table th, .help-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid #e5e5e5;
+}
+.help-table th {
+    font-weight: 600;
+    background: #f9fafb;
+}
+.help-table tr:hover td {
+    background: #f9fafb;
+}
+.tip-box {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+.tip-box.warning {
+    background: #fef3c7;
+    border-color: #fcd34d;
+}
+.tip-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+@media (max-width: 768px) {
+    .help-layout { flex-direction: column; }
+    .help-sidebar { 
+        width: 100%; 
+        position: static; 
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid #e5e5e5;
+    }
+    .help-content { padding: 24px; }
+}
+{{end}}
+
+{{define "content"}}
+<div class="help-layout">
+    <nav class="help-sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-title">Getting Started</div>
+            <a href="#overview" class="sidebar-link active">Overview</a>
+            <a href="#quick-start" class="sidebar-link">Quick Start</a>
+            <a href="#architecture" class="sidebar-link">Architecture</a>
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title">Dashboard</div>
+            <a href="#tasks" class="sidebar-link">Tasks</a>
+            <a href="#workers" class="sidebar-link">Workers</a>
+            <a href="#groups" class="sidebar-link">Task Groups</a>
+            <a href="#repos" class="sidebar-link">Shared Repositories</a>
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title">Features</div>
+            <a href="#git-integration" class="sidebar-link">Git Integration</a>
+            <a href="#worktrees" class="sidebar-link">Git Worktrees</a>
+            <a href="#artifacts" class="sidebar-link">Artifacts</a>
+            <a href="#real-time" class="sidebar-link">Real-time Updates</a>
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title">API Reference</div>
+            <a href="#api-tasks" class="sidebar-link">Tasks API</a>
+            <a href="#api-workers" class="sidebar-link">Workers API</a>
+            <a href="#api-groups" class="sidebar-link">Groups API</a>
+            <a href="#api-repos" class="sidebar-link">Repos API</a>
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title">CLI Commands</div>
+            <a href="#cli" class="sidebar-link">CLI Reference</a>
+        </div>
+    </nav>
+    
+    <main class="help-content">
+        <h1 id="overview">Shelley Coordinator</h1>
+        <p class="subtitle">Distributed task execution across multiple VMs</p>
+        
+        <p>The Coordinator manages a pool of worker VMs that execute coding tasks in parallel. Each worker runs Shelley (the AI coding agent) to complete tasks like fixing bugs, adding features, or refactoring code.</p>
+        
+        <h2 id="quick-start">Quick Start</h2>
+        <ol>
+            <li><strong>Start the Coordinator</strong> — Click the green "Start" button on the dashboard</li>
+            <li><strong>Scale Workers</strong> — Set the number of worker VMs (1-10) and click "Scale"</li>
+            <li><strong>Add Tasks</strong> — Enter prompts describing what you want done</li>
+            <li><strong>Monitor Progress</strong> — Watch tasks move from Queued → Running → Completed</li>
+        </ol>
+        
+        <h2 id="architecture">Architecture</h2>
+        <pre><code>┌─────────────────┐     ┌─────────────────┐
+│   Dashboard     │     │   Worker VMs    │
+│  (browser UI)  │     │  (exe.dev VMs)  │
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         │ HTTP/WebSocket        │ API
+         │                       │
+         ▼                       ▼
+┌─────────────────────────────────────────┐
+│           Coordinator Server            │
+│  • Task queue (SQLite)                  │
+│  • Worker management                    │
+│  • Git integration                      │
+└─────────────────────────────────────────┘</code></pre>
+        
+        <h2 id="tasks">Tasks</h2>
+        <p>Tasks are units of work sent to workers. Each task contains a prompt describing what you want done.</p>
+        
+        <h3>Task Statuses</h3>
+        <table class="help-table">
+            <tr><th>Status</th><th>Description</th></tr>
+            <tr><td><span class="badge badge-warning">QUEUED</span></td><td>Waiting for an available worker</td></tr>
+            <tr><td><span class="badge badge-info">RUNNING</span></td><td>Being executed by a worker</td></tr>
+            <tr><td><span class="badge badge-success">COMPLETED</span></td><td>Successfully finished</td></tr>
+            <tr><td><span class="badge badge-danger">FAILED</span></td><td>Encountered an error</td></tr>
+        </table>
+        
+        <h3>Task Actions</h3>
+        <ul>
+            <li><strong>Reset to Queued</strong> — Move a stuck or failed task back to the queue</li>
+            <li><strong>Retry Task</strong> — Create a new task with the same prompt</li>
+            <li><strong>View Artifacts</strong> — See files produced by the task</li>
+        </ul>
+        
+        <h3>Example Prompts</h3>
+        <pre><code>"Fix the failing tests in auth_test.go"
+"Add input validation to the signup form"
+"Add a /health endpoint that returns JSON with uptime"
+"Refactor handlers.go - split into separate files by resource"
+"Find and fix SQL injection vulnerabilities"</code></pre>
+        
+        <h2 id="workers">Workers</h2>
+        <p>Workers are exe.dev VMs that execute tasks. The coordinator automatically provisions and manages them.</p>
+        
+        <h3>Worker States</h3>
+        <table class="help-table">
+            <tr><th>State</th><th>Description</th></tr>
+            <tr><td><strong>Starting</strong></td><td>VM is being provisioned</td></tr>
+            <tr><td><strong>Idle</strong></td><td>Ready to accept tasks</td></tr>
+            <tr><td><strong>Busy</strong></td><td>Currently executing a task</td></tr>
+            <tr><td><strong>Failed</strong></td><td>VM creation or setup failed</td></tr>
+        </table>
+        
+        <h3>Worker Health</h3>
+        <p>Workers send periodic heartbeats. Health is indicated by color:</p>
+        <ul>
+            <li><span style="color:#22c55e;">●</span> <strong>Healthy</strong> — Recent heartbeat</li>
+            <li><span style="color:#f59e0b;">●</span> <strong>Warning</strong> — No heartbeat for 60s</li>
+            <li><span style="color:#f97316;">●</span> <strong>Unhealthy</strong> — No heartbeat for 2 min</li>
+            <li><span style="color:#ef4444;">●</span> <strong>Dead</strong> — No heartbeat for 5 min (auto-replaced)</li>
+        </ul>
+        
+        <h2 id="groups">Task Groups</h2>
+        <p>Groups let you batch related tasks together. All tasks in a group can share:</p>
+        <ul>
+            <li>Repository URL (each task gets its own branch)</li>
+            <li>Base branch to start from</li>
+            <li>Progress tracking (X/Y completed)</li>
+        </ul>
+        
+        <h2 id="repos">Shared Repositories</h2>
+        <p>When using Tailscale, repositories can be cloned once and shared across workers via git worktrees. This speeds up task startup significantly.</p>
+        
+        <div class="tip-box">
+            <div class="tip-title">💡 Tip</div>
+            <p style="margin:0;">Shared repos require Tailscale to be configured. Without Tailscale, each worker clones the repo independently.</p>
+        </div>
+        
+        <h2 id="git-integration">Git Integration</h2>
+        <p>Tasks can optionally work on a git repository:</p>
+        <ol>
+            <li>Specify repository URL and base branch when creating a task</li>
+            <li>Worker creates a branch named <code>task-{id}</code></li>
+            <li>Worker commits changes and pushes to the branch</li>
+            <li>View diff or create PR from task details</li>
+        </ol>
+        
+        <h2 id="worktrees">Git Worktrees</h2>
+        <p>Git worktrees allow multiple working directories from a single clone:</p>
+        <ul>
+            <li>Coordinator clones repo once to shared filesystem</li>
+            <li>Each task gets a worktree (lightweight checkout)</li>
+            <li>Workers access via SSHFS mount</li>
+            <li>Much faster than full clone per task</li>
+        </ul>
+        
+        <h2 id="artifacts">Artifacts</h2>
+        <p>Tasks can produce artifacts — files that are saved and accessible after completion. Workers can upload files to the coordinator which are then viewable from the dashboard.</p>
+        
+        <h2 id="real-time">Real-time Updates</h2>
+        <p>The dashboard uses WebSocket for real-time updates:</p>
+        <ul>
+            <li><span style="color:#22c55e;">● Live</span> — WebSocket connected, receiving updates</li>
+            <li><span style="color:#f59e0b;">● Connecting...</span> — Attempting to connect</li>
+            <li><span style="color:#ef4444;">● Disconnected</span> — Falling back to polling</li>
+        </ul>
+        
+        <h2 id="api-tasks">Tasks API</h2>
+        <table class="help-table">
+            <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+            <tr><td><code>/api/enqueue</code></td><td>POST</td><td>Add task to queue</td></tr>
+            <tr><td><code>/api/tasks</code></td><td>GET</td><td>List all tasks</td></tr>
+            <tr><td><code>/api/task?id=ID</code></td><td>GET</td><td>Get task details</td></tr>
+            <tr><td><code>/api/reset-task?id=ID</code></td><td>POST</td><td>Reset task to queued</td></tr>
+            <tr><td><code>/api/clear-tasks</code></td><td>POST</td><td>Clear completed/failed tasks</td></tr>
+            <tr><td><code>/api/stuck-tasks</code></td><td>GET</td><td>List stuck tasks</td></tr>
+        </table>
+        
+        <h3>Create Task Example</h3>
+        <pre><code>curl -X POST /api/enqueue \
+  -H "X-Coordinator-Token: $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Fix the bug in main.go"}'</code></pre>
+        
+        <h2 id="api-workers">Workers API</h2>
+        <table class="help-table">
+            <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+            <tr><td><code>/api/workers</code></td><td>GET</td><td>List workers</td></tr>
+            <tr><td><code>/api/scale?workers=N</code></td><td>POST</td><td>Scale to N workers</td></tr>
+            <tr><td><code>/api/drain</code></td><td>POST</td><td>Gracefully shut down all workers</td></tr>
+            <tr><td><code>/api/workers/clear-failed</code></td><td>POST</td><td>Clear failed worker records</td></tr>
+        </table>
+        
+        <h2 id="api-groups">Groups API</h2>
+        <table class="help-table">
+            <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+            <tr><td><code>/api/group/create</code></td><td>POST</td><td>Create task group</td></tr>
+            <tr><td><code>/api/groups</code></td><td>GET</td><td>List all groups</td></tr>
+            <tr><td><code>/api/group?id=ID</code></td><td>GET</td><td>Get group details</td></tr>
+            <tr><td><code>/api/group/tasks?id=ID</code></td><td>GET</td><td>Get tasks in group</td></tr>
+        </table>
+        
+        <h2 id="api-repos">Repos API</h2>
+        <table class="help-table">
+            <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+            <tr><td><code>/api/repos</code></td><td>GET</td><td>List shared repositories</td></tr>
+            <tr><td><code>/api/repo/create</code></td><td>POST</td><td>Clone a repository</td></tr>
+            <tr><td><code>/api/repo/fetch?id=ID</code></td><td>POST</td><td>Fetch latest changes</td></tr>
+            <tr><td><code>/api/repo/worktrees?repo=ID</code></td><td>GET</td><td>List active worktrees</td></tr>
+        </table>
+        
+        <h2 id="cli">CLI Reference</h2>
+        <p>The coordinator can also be controlled via CLI commands:</p>
+        <table class="help-table">
+            <tr><th>Command</th><th>Description</th></tr>
+            <tr><td><code>/coord start</code></td><td>Start coordinator</td></tr>
+            <tr><td><code>/coord stop</code></td><td>Stop coordinator</td></tr>
+            <tr><td><code>/coord status</code></td><td>Show stats</td></tr>
+            <tr><td><code>/coord workers</code></td><td>List workers</td></tr>
+            <tr><td><code>/coord tasks</code></td><td>List tasks</td></tr>
+            <tr><td><code>/coord scale N</code></td><td>Scale to N workers</td></tr>
+            <tr><td><code>/coord drain</code></td><td>Drain all workers</td></tr>
+            <tr><td><code>/coord add "prompt"</code></td><td>Add a task</td></tr>
+            <tr><td><code>/coord repos</code></td><td>List shared repos</td></tr>
+        </table>
+        
+        <div class="tip-box warning">
+            <div class="tip-title">⚠️ Authentication</div>
+            <p style="margin:0;">All API requests require the header: <code>X-Coordinator-Token: YOUR_TOKEN</code></p>
+        </div>
+    </main>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+// Highlight current section in sidebar based on scroll
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            document.querySelectorAll('.sidebar-link').forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + entry.target.id) {
+                    link.classList.add('active');
+                }
+            });
+        }
+    });
+}, { rootMargin: '-100px 0px -80% 0px' });
+
+document.querySelectorAll('h1[id], h2[id], h3[id]').forEach(el => observer.observe(el));
+
+// Smooth scroll for sidebar links
+document.querySelectorAll('.sidebar-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const id = link.getAttribute('href').slice(1);
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    });
+});
+</script>
+{{end}}

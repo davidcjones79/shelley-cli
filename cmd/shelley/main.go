@@ -883,6 +883,7 @@ func runCoord(global GlobalConfig, args []string) {
 	// Set up HTTP routes
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", coord.HandleIndex)
+	mux.HandleFunc("/help", coord.HandleHelp)
 	mux.HandleFunc("/api/enqueue", coord.HandleEnqueue)
 	mux.HandleFunc("/api/tasks", coord.HandleListTasks)
 	mux.HandleFunc("/api/task", coord.HandleGetTask)
