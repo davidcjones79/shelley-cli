@@ -231,6 +231,31 @@
         <h2 id="tasks">Tasks</h2>
         <p>Tasks are units of work sent to workers. Each task contains a prompt describing what you want done.</p>
         
+        <p>The Tasks section has two tabs:</p>
+        <ul>
+            <li><strong>Worker Tasks</strong> — Tasks that run on spawned worker VMs (for parallel execution)</li>
+            <li><strong>Quick Tasks</strong> — Tasks that run locally on the dashboard VM (for quick one-offs)</li>
+        </ul>
+        
+        <h3>Quick Tasks</h3>
+        <p>Quick Tasks let you run Shelley locally without spawning a worker VM. This is useful for:</p>
+        <ul>
+            <li>Quick one-off tasks while you work on other things</li>
+            <li>Testing prompts before scaling to multiple workers</li>
+            <li>Tasks that don't need VM isolation</li>
+        </ul>
+        <p>To create a quick task:</p>
+        <ol>
+            <li>Switch to the "Quick Tasks" tab</li>
+            <li>Enter your prompt</li>
+            <li>Optionally specify a working directory</li>
+            <li>Click "Run Locally"</li>
+        </ol>
+        <p>Quick tasks run as background processes. You can view their output, kill running tasks, or clear completed ones.</p>
+        
+        <h3>Worker Tasks</h3>
+        <p>Worker tasks are executed on separate VMs and support parallel execution across multiple workers.</p>
+        
         <h3>Search & Filter</h3>
         <p>The dashboard provides tools to find tasks quickly:</p>
         <ul>
