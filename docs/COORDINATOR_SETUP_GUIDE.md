@@ -187,6 +187,23 @@ cd ~/shelley-cli
 
 The coordinator will print an API token on startup - save this for API access.
 
+### Configuring via Settings Page
+
+Instead of passing command-line flags, you can configure Tailscale and GitHub tokens via the web UI:
+
+1. Start the dashboard: `shelley dashboard -port 8080 -auto-start`
+2. Open `https://your-vm.exe.xyz:8080/settings`
+3. Enter your Tailscale auth key and/or GitHub token
+4. Click "Save & Restart Coordinator"
+
+Settings are saved to `~/.config/shelley/coordinator-settings.json` and persist across restarts.
+
+**Settings page features:**
+- Current status overview (Tailscale IP, configured secrets)
+- Tailscale auth key input (for worker network access)
+- GitHub token input (for workers to push branches)
+- Live Tailscale connection status
+
 ## Step 3: Scale Up Workers
 
 ### Via Dashboard
@@ -433,6 +450,59 @@ done
 watch -n 5 "curl -s -H 'X-Coordinator-Token: $TOKEN' http://localhost:8081/api/stats | jq"
 ```
 
+## Skills Integration
+
+Skills provide specialized context and methodology to workers. The coordinator supports two types:
+
+### Anthropic Skills (Remote)
+
+Skills from [github.com/anthropics/skills](https://github.com/anthropics/skills) including:
+- `mcp-builder` - Build MCP servers for APIs
+- `webapp-testing` - Test web applications
+- `frontend-design` - Design frontend components
+- `doc-coauthoring` - Write documentation
+
+### Local Skills
+
+Create custom skills in `~/.config/shelley/skills/`:
+
+```
+~/.config/shelley/skills/
+└── my-skill/
+    ├── SKILL.md          # Main skill document
+    └── reference/        # Optional reference docs
+        ├── guide.md
+        └── examples.md
+```
+
+**SKILL.md frontmatter:**
+```yaml
+---
+name: my-skill
+description: What this skill does
+parallel_friendly: true   # Set to false if not suited for parallel workers
+license: MIT
+---
+
+# Skill content...
+```
+
+### Using Skills in Task Groups
+
+1. Click "New Group" in the dashboard
+2. Select a skill from the dropdown (Local or Anthropic)
+3. Optionally check "Include refs" to load reference documents
+4. The skill context is prepended to each task prompt
+
+**Built-in templates** reference appropriate skills:
+- "Security Audit" → `local:security-review-audit`
+- "Build MCP Server" → `remote:mcp-builder`
+- "Frontend Components" → `remote:frontend-design`
+
+### Parallel-Friendly Skills
+
+Skills marked `parallel_friendly: false` show a warning in the dashboard. These skills (like PR review) work better in a single session rather than across parallel workers.
+
 ## Tips
 
 1. **Use the default `https` install method** - Workers download the binary from the coordinator (fast and reliable)
@@ -440,6 +510,7 @@ watch -n 5 "curl -s -H 'X-Coordinator-Token: $TOKEN' http://localhost:8081/api/s
 3. **Monitor the dashboard** - It shows real-time logs and task status
 4. **Use meaningful task prompts** - Be specific about what you want created and where to save files
 5. **Create coordinator via web dashboard** - Ensures SSH keys are properly set up
+6. **Configure via Settings page** - Use `/settings` to add Tailscale/GitHub tokens without CLI flags
 
 ## Shared Filesystem (Tailscale Required)
 
