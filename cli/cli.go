@@ -167,7 +167,7 @@ type Config struct {
 	ConversationID string // Resume specific conversation
 
 	// Web UI info (for help text)
-	WebUIPort int // Port where web UI is served (default 9000)
+	WebUIPort int // Port where web UI is served (default 9999)
 }
 
 // Model is the Bubble Tea model for the CLI

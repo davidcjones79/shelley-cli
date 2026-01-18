@@ -234,5 +234,5 @@ network where you've got mDNS working fine, you can
 run 
 
 ```
-socat TCP-LISTEN:9001,fork TCP:localhost:9000
+socat TCP-LISTEN:9001,fork TCP:localhost:9999
 ```

@@ -584,7 +584,7 @@ func (m *Model) getWebUIURL() string {
 	}
 	port := m.config.WebUIPort
 	if port == 0 {
-		port = 9000 // default Shelley port
+		port = 9999 // default Shelley port
 	}
 	return fmt.Sprintf("https://%s:%d/", hostname, port)
 }

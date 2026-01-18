@@ -443,7 +443,7 @@ func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, s
 
 func runServe(global GlobalConfig, args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	port := fs.String("port", "9000", "Port to listen on")
+	port := fs.String("port", "9999", "Port to listen on")
 	systemdActivation := fs.Bool("systemd-activation", false, "Use systemd socket activation (listen on fd from systemd)")
 	requireHeader := fs.String("require-header", "", "Require this header on all API requests (e.g., X-Exedev-Userid)")
 	fs.Parse(args)

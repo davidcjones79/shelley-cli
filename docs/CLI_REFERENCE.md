@@ -79,7 +79,7 @@ shelley serve [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-port` | 9000 | Port to listen on |
+| `-port` | 9999 | Port to listen on |
 | `-require-header` | | Require this header on API requests |
 
 ---
