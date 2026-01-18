@@ -556,8 +556,22 @@
                 <input id="group-base-branch" class="input" style="width: 150px;" placeholder="main" value="main">
             </div>
             <div style="margin-bottom: 16px;">
-                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Skill Context <span style="font-weight:400;">(optional - prepended to each task)</span></label>
-                <textarea id="group-skill-context" class="input" style="min-height: 60px;" placeholder="e.g. You are a security expert. Focus on OWASP Top 10..."></textarea>
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Anthropic Skill <span style="font-weight:400;">(optional - loads from github.com/anthropics/skills)</span></label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="group-skill-select" class="input" style="flex: 1;" onchange="onSkillSelect()">
+                        <option value="">None - use custom context below</option>
+                    </select>
+                    <button type="button" class="btn" onclick="refreshSkillsList()" title="Refresh skills list">↻</button>
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: #737373;">
+                        <input type="checkbox" id="group-skill-full" onchange="onSkillSelect()"> Include refs
+                    </label>
+                </div>
+                <p style="font-size: 11px; color: #737373; margin-top: 4px;">Fetches skill from <a href="https://github.com/anthropics/skills" target="_blank">anthropics/skills</a> repo or local ~/.config/shelley/skills/</p>
+                <p id="skill-parallel-warning" style="display: none; font-size: 11px; color: #dc2626; margin-top: 4px; padding: 6px 8px; background: #fef2f2; border-radius: 4px;">⚠️ This skill is not optimized for parallel workers. It may produce duplicate results or not benefit from parallelization. Consider using it directly in a single Shelley session instead.</p>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Skill Context <span style="font-weight:400;">(auto-filled from skill, or custom)</span></label>
+                <textarea id="group-skill-context" class="input" style="min-height: 60px;" placeholder="Select a skill above or enter custom context..."></textarea>
                 <p style="font-size: 11px; color: #737373; margin-top: 4px;">Provides specialized context/expertise to all workers in this group</p>
             </div>
             <div style="margin-bottom: 16px;">
@@ -698,14 +712,265 @@
     <script>
         let token = localStorage.getItem('coordToken') || '';
 
+        // Anthropic Skills cache
+        let skillsCache = null;
+        let skillContentCache = {};
+        let localSkillsCache = null;
+
+        const SKILLS_API = 'https://api.github.com/repos/anthropics/skills/contents/skills';
+        const SKILLS_RAW = 'https://raw.githubusercontent.com/anthropics/skills/main/skills';
+
+        // Skills that aren't ideal for parallel workers
+        const NON_PARALLEL_SKILLS = ['doc-coauthoring', 'brand-guidelines', 'canvas-design', 'internal-comms', 'skill-creator'];
+
+        async function fetchLocalSkillsList() {
+            if (localSkillsCache) return localSkillsCache;
+            try {
+                const resp = await fetch('/local-skills');
+                if (!resp.ok) return [];
+                localSkillsCache = await resp.json();
+                return localSkillsCache;
+            } catch (err) {
+                console.error('Failed to fetch local skills:', err);
+                return [];
+            }
+        }
+
+        async function fetchRemoteSkillsList() {
+            try {
+                const resp = await fetch(SKILLS_API);
+                if (!resp.ok) throw new Error('Failed to fetch skills list');
+                const data = await resp.json();
+                return data.filter(d => d.type === 'dir').map(d => ({ name: d.name, local: false }));
+            } catch (err) {
+                console.error('Failed to fetch remote skills:', err);
+                return [];
+            }
+        }
+
+        async function fetchSkillsList() {
+            if (skillsCache) return skillsCache;
+            
+            const [local, remote] = await Promise.all([
+                fetchLocalSkillsList(),
+                fetchRemoteSkillsList()
+            ]);
+            
+            // Merge, local skills first, mark duplicates
+            const localNames = new Set(local.map(s => s.name));
+            const merged = [
+                ...local,
+                ...remote.filter(s => !localNames.has(s.name))
+            ];
+            
+            skillsCache = merged;
+            return merged;
+        }
+
+        async function fetchLocalSkillContent(skillName, includeFull) {
+            try {
+                const mainResp = await fetch(`/local-skills/${skillName}`);
+                if (!mainResp.ok) throw new Error('SKILL.md not found');
+                let content = await mainResp.text();
+
+                let result = `<skill name="${skillName}" source="local">\n\n${content}\n`;
+
+                // Get local skill info for references
+                const localSkills = await fetchLocalSkillsList();
+                const skillInfo = localSkills.find(s => s.name === skillName);
+
+                if (includeFull && skillInfo?.references) {
+                    for (const ref of skillInfo.references) {
+                        if (ref.name.endsWith('.md')) {
+                            const refResp = await fetch(`/local-skills/${skillName}/reference/${ref.name}`);
+                            if (refResp.ok) {
+                                const text = await refResp.text();
+                                result += `\n<reference file="${ref.name}">\n${text}\n</reference>\n`;
+                            }
+                        }
+                    }
+                } else if (skillInfo?.references?.length > 0) {
+                    result += `\n<!-- Reference documents available: -->\n`;
+                    for (const ref of skillInfo.references) {
+                        result += `<!-- - ${ref.name} (${ref.size} bytes) -->\n`;
+                    }
+                }
+
+                result += `\n</skill>`;
+                return result;
+            } catch (err) {
+                console.error(`Failed to fetch local skill ${skillName}:`, err);
+                return null;
+            }
+        }
+
+        async function fetchRemoteSkillContent(skillName, includeFull) {
+            try {
+                const mainResp = await fetch(`${SKILLS_RAW}/${skillName}/SKILL.md`);
+                if (!mainResp.ok) throw new Error('SKILL.md not found');
+                let content = await mainResp.text();
+
+                let result = `<skill name="${skillName}">\n\n${content}\n`;
+
+                if (includeFull) {
+                    const refResp = await fetch(`${SKILLS_API}/${skillName}/reference`);
+                    if (refResp.ok) {
+                        const refs = await refResp.json();
+                        for (const ref of refs) {
+                            if (ref.name.endsWith('.md')) {
+                                const refContent = await fetch(`${SKILLS_RAW}/${skillName}/reference/${ref.name}`);
+                                if (refContent.ok) {
+                                    const text = await refContent.text();
+                                    result += `\n<reference file="${ref.name}">\n${text}\n</reference>\n`;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    const refResp = await fetch(`${SKILLS_API}/${skillName}/reference`);
+                    if (refResp.ok) {
+                        const refs = await refResp.json();
+                        if (refs.length > 0) {
+                            result += `\n<!-- Reference documents available (fetch with curl as needed): -->\n`;
+                            result += `<!-- Base URL: ${SKILLS_RAW}/${skillName}/reference/ -->\n`;
+                            for (const ref of refs) {
+                                result += `<!-- - ${ref.name} (${ref.size} bytes) -->\n`;
+                            }
+                        }
+                    }
+                }
+
+                result += `\n</skill>`;
+                return result;
+            } catch (err) {
+                console.error(`Failed to fetch remote skill ${skillName}:`, err);
+                return null;
+            }
+        }
+
+        async function fetchSkillContent(skillName, includeFull, isLocal) {
+            const cacheKey = `${skillName}:${includeFull}:${isLocal}`;
+            if (skillContentCache[cacheKey]) return skillContentCache[cacheKey];
+
+            const content = isLocal 
+                ? await fetchLocalSkillContent(skillName, includeFull)
+                : await fetchRemoteSkillContent(skillName, includeFull);
+            
+            if (content) {
+                skillContentCache[cacheKey] = content;
+            }
+            return content;
+        }
+
+        async function refreshSkillsList() {
+            skillsCache = null;
+            localSkillsCache = null;
+            await populateSkillsDropdown();
+        }
+
+        async function populateSkillsDropdown() {
+            const select = document.getElementById('group-skill-select');
+            if (!select) return;
+
+            select.innerHTML = '<option value="">Loading skills...</option>';
+
+            const skills = await fetchSkillsList();
+
+            select.innerHTML = '<option value="">None - use custom context below</option>';
+            
+            // Add local skills first with a label
+            const localSkills = skills.filter(s => s.local);
+            const remoteSkills = skills.filter(s => !s.local);
+            
+            if (localSkills.length > 0) {
+                const localGroup = document.createElement('optgroup');
+                localGroup.label = '📁 Local Skills';
+                for (const skill of localSkills) {
+                    const opt = document.createElement('option');
+                    opt.value = `local:${skill.name}`;
+                    opt.textContent = skill.name;
+                    if (skill.parallel_friendly === false || NON_PARALLEL_SKILLS.includes(skill.name)) {
+                        opt.textContent += ' ⚠️';
+                        opt.title = 'Not ideal for parallel workers';
+                    }
+                    localGroup.appendChild(opt);
+                }
+                select.appendChild(localGroup);
+            }
+            
+            if (remoteSkills.length > 0) {
+                const remoteGroup = document.createElement('optgroup');
+                remoteGroup.label = '🌐 Anthropic Skills';
+                for (const skill of remoteSkills) {
+                    const opt = document.createElement('option');
+                    opt.value = `remote:${skill.name}`;
+                    opt.textContent = skill.name;
+                    if (NON_PARALLEL_SKILLS.includes(skill.name)) {
+                        opt.textContent += ' ⚠️';
+                        opt.title = 'Not ideal for parallel workers';
+                    }
+                    remoteGroup.appendChild(opt);
+                }
+                select.appendChild(remoteGroup);
+            }
+        }
+
+        async function onSkillSelect() {
+            const select = document.getElementById('group-skill-select');
+            const fullCheckbox = document.getElementById('group-skill-full');
+            const textarea = document.getElementById('group-skill-context');
+            const warning = document.getElementById('skill-parallel-warning');
+
+            const value = select.value;
+            if (!value) {
+                warning.style.display = 'none';
+                return;
+            }
+
+            const [source, skillName] = value.split(':');
+            const isLocal = source === 'local';
+
+            // Check if skill is parallel-friendly
+            let isParallelFriendly = true;
+            if (isLocal) {
+                const localSkills = await fetchLocalSkillsList();
+                const skill = localSkills.find(s => s.name === skillName);
+                if (skill && skill.parallel_friendly === false) {
+                    isParallelFriendly = false;
+                }
+            } else if (NON_PARALLEL_SKILLS.includes(skillName)) {
+                isParallelFriendly = false;
+            }
+            warning.style.display = isParallelFriendly ? 'none' : 'block';
+
+            textarea.value = 'Loading skill...';
+            textarea.disabled = true;
+
+            const content = await fetchSkillContent(skillName, fullCheckbox.checked, isLocal);
+            textarea.disabled = false;
+
+            if (content) {
+                textarea.value = content;
+            } else {
+                textarea.value = `Failed to load skill: ${skillName}`;
+            }
+        }
+
+        // Load skills on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            populateSkillsDropdown();
+        });
+
         // Task Templates
+        // Templates now reference skills by name instead of inline skillContext
+        // skill: null = no skill, skill: 'local:name' or 'remote:name' = load that skill
         const taskTemplates = [
             {
                 id: 'documentation',
                 name: 'Documentation Suite',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
                 description: 'Create comprehensive documentation for the project',
-                skillContext: 'You are a technical writer creating documentation for developers. Write clear, concise documentation with practical examples. Use consistent formatting and terminology throughout.',
+                skill: 'remote:doc-coauthoring',
                 prompts: [
                     'Write a comprehensive README.md with project overview, installation instructions, usage examples, and API documentation',
                     'Create a CONTRIBUTING.md with guidelines for contributors, code style, PR process, and development setup',
@@ -718,6 +983,7 @@
                 name: 'Test Coverage',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v8l4 9H5l4-9V3z"/><path d="M9 3h6"/></svg>',
                 description: 'Add unit tests across the codebase',
+                skill: 'remote:webapp-testing',
                 prompts: [
                     'Write unit tests for all handler/controller functions with edge cases and error scenarios',
                     'Write unit tests for all database/repository functions including error handling',
@@ -730,6 +996,7 @@
                 name: 'Standard API Endpoints',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/><circle cx="12" cy="12" r="4"/></svg>',
                 description: 'Add common operational endpoints',
+                skill: null,
                 prompts: [
                     'Add a GET /health endpoint that returns JSON with status, uptime, and version',
                     'Add a GET /metrics endpoint with Prometheus-compatible metrics (requests, latency, errors)',
@@ -739,10 +1006,10 @@
             },
             {
                 id: 'security-review',
-                name: 'Security Review',
+                name: 'Security Audit',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
-                description: 'Review code for security issues',
-                skillContext: 'You are a security expert performing a code audit. Focus on OWASP Top 10 vulnerabilities. For each issue found, explain the vulnerability, its potential impact, and provide a secure fix. Be thorough but avoid false positives.',
+                description: 'Review code for security issues (uses local security-review-audit skill)',
+                skill: 'local:security-review-audit',
                 prompts: [
                     'Review all SQL queries for injection vulnerabilities and fix any issues found',
                     'Review all user input handling for XSS, CSRF, and other injection attacks',
@@ -755,6 +1022,7 @@
                 name: 'Error Handling',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
                 description: 'Improve error handling across the codebase',
+                skill: null,
                 prompts: [
                     'Add proper error handling to all database operations with meaningful error messages',
                     'Add proper error handling to all HTTP handlers with appropriate status codes',
@@ -767,6 +1035,7 @@
                 name: 'Input Validation',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
                 description: 'Add input validation to all endpoints',
+                skill: null,
                 prompts: [
                     'Add input validation to all POST/PUT endpoints with detailed error messages',
                     'Add request size limits and timeout handling to all endpoints',
@@ -779,6 +1048,7 @@
                 name: 'Structured Logging',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
                 description: 'Add comprehensive logging',
+                skill: null,
                 prompts: [
                     'Add structured request/response logging to all HTTP handlers',
                     'Add debug logging to all business logic functions with relevant context',
@@ -791,7 +1061,7 @@
                 name: 'Code Quality',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
                 description: 'Improve code quality and consistency',
-                skillContext: 'You are a senior engineer performing a code quality review. Focus on maintainability, readability, and best practices. Make minimal, focused changes - do not over-engineer. Preserve existing functionality while improving code structure.',
+                skill: null,
                 prompts: [
                     'Fix all linting errors and warnings, ensure consistent code style',
                     'Refactor any functions longer than 50 lines into smaller, focused functions',
@@ -804,11 +1074,38 @@
                 name: 'Performance Review',
                 icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
                 description: 'Review and optimize performance',
+                skill: null,
                 prompts: [
                     'Review all database queries and add indexes where needed, optimize N+1 queries',
                     'Add caching for frequently accessed, rarely changing data',
                     'Review memory usage and fix any memory leaks or excessive allocations',
                     'Add connection pooling and optimize resource management'
+                ]
+            },
+            {
+                id: 'mcp-server',
+                name: 'Build MCP Server',
+                icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+                description: 'Build MCP servers for different APIs (uses Anthropic mcp-builder skill)',
+                skill: 'remote:mcp-builder',
+                prompts: [
+                    'Build an MCP server for the GitHub API with tools for issues, PRs, and repos',
+                    'Build an MCP server for the Slack API with tools for messages and channels',
+                    'Build an MCP server for a REST API (specify the API in the prompt)',
+                    'Build an MCP server for a database with query and schema tools'
+                ]
+            },
+            {
+                id: 'frontend',
+                name: 'Frontend Components',
+                icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>',
+                description: 'Build frontend components (uses Anthropic frontend-design skill)',
+                skill: 'remote:frontend-design',
+                prompts: [
+                    'Create a responsive navigation component with mobile menu',
+                    'Create a data table component with sorting, filtering, and pagination',
+                    'Create a form component with validation and error handling',
+                    'Create a modal/dialog component with accessibility support'
                 ]
             }
         ];
@@ -958,6 +1255,96 @@
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
+        // Render task result - handles both structured JSON and plain text
+        function renderResult(result) {
+            if (!result) return '';
+            
+            // Try to parse as structured DONE.md JSON
+            try {
+                const report = JSON.parse(result);
+                if (report.status && (report.files_changed !== undefined || report.tests !== undefined)) {
+                    return renderStructuredResult(report);
+                }
+            } catch (e) {
+                // Not JSON, render as plain text
+            }
+            
+            return `<p style="margin:16px 0 8px"><strong>Result:</strong></p><div class="result-box" style="max-height:400px;">${escapeHtml(result)}</div>`;
+        }
+
+        // Render structured DONE.md report
+        function renderStructuredResult(report) {
+            const statusBadge = {
+                'success': 'badge-success',
+                'partial': 'badge-warning',
+                'failed': 'badge-danger',
+                'unknown': 'badge-neutral'
+            }[report.status] || 'badge-neutral';
+            
+            let html = `<div style="margin-top:16px;border:1px solid #e5e5e5;border-radius:8px;overflow:hidden;">`;
+            
+            // Header with status and merge readiness
+            html += `<div style="background:#f9fafb;padding:12px 16px;border-bottom:1px solid #e5e5e5;display:flex;justify-content:space-between;align-items:center;">`;
+            html += `<span class="badge ${statusBadge}">${report.status.toUpperCase()}</span>`;
+            if (report.merge_ready !== undefined) {
+                html += `<span style="font-size:12px;color:${report.merge_ready ? '#16a34a' : '#dc2626'};">${report.merge_ready ? '✓ Merge ready' : '⚠ Needs review'}</span>`;
+            }
+            html += `</div>`;
+            
+            // Summary
+            if (report.summary) {
+                html += `<div style="padding:12px 16px;border-bottom:1px solid #e5e5e5;">`;
+                html += `<p style="color:#374151;line-height:1.5;">${escapeHtml(report.summary)}</p>`;
+                html += `</div>`;
+            }
+            
+            // Files changed
+            if (report.files_changed && report.files_changed.length > 0) {
+                html += `<div style="padding:12px 16px;border-bottom:1px solid #e5e5e5;">`;
+                html += `<p style="font-weight:600;margin-bottom:8px;">Files Changed (${report.files_changed.length})</p>`;
+                html += `<div style="font-family:monospace;font-size:12px;">`;
+                for (const f of report.files_changed) {
+                    const actionIcon = {'created': '+', 'modified': '~', 'deleted': '-'}[f.action] || '?';
+                    const actionColor = {'created': '#16a34a', 'modified': '#2563eb', 'deleted': '#dc2626'}[f.action] || '#737373';
+                    html += `<div style="padding:4px 0;"><span style="color:${actionColor};font-weight:bold;">${actionIcon}</span> ${escapeHtml(f.path)}`;
+                    if (f.lines_added || f.lines_removed) {
+                        html += ` <span style="color:#16a34a;">+${f.lines_added || 0}</span> <span style="color:#dc2626;">-${f.lines_removed || 0}</span>`;
+                    }
+                    html += `</div>`;
+                }
+                html += `</div></div>`;
+            }
+            
+            // Tests
+            if (report.tests && (report.tests.passed > 0 || report.tests.failed > 0 || report.tests.skipped > 0)) {
+                html += `<div style="padding:12px 16px;border-bottom:1px solid #e5e5e5;">`;
+                html += `<p style="font-weight:600;margin-bottom:8px;">Tests</p>`;
+                html += `<div style="display:flex;gap:16px;font-size:13px;">`;
+                html += `<span style="color:#16a34a;">✓ ${report.tests.passed} passed</span>`;
+                if (report.tests.failed > 0) {
+                    html += `<span style="color:#dc2626;">✗ ${report.tests.failed} failed</span>`;
+                }
+                if (report.tests.skipped > 0) {
+                    html += `<span style="color:#737373;">○ ${report.tests.skipped} skipped</span>`;
+                }
+                html += `</div></div>`;
+            }
+            
+            // Blockers
+            if (report.blockers && report.blockers.length > 0) {
+                html += `<div style="padding:12px 16px;background:#fef2f2;">`;
+                html += `<p style="font-weight:600;color:#dc2626;margin-bottom:8px;">⚠ Blockers</p>`;
+                html += `<ul style="margin:0;padding-left:20px;color:#991b1b;">`;
+                for (const b of report.blockers) {
+                    html += `<li style="margin-bottom:4px;">${escapeHtml(b)}</li>`;
+                }
+                html += `</ul></div>`;
+            }
+            
+            html += `</div>`;
+            return html;
+        }
+
         async function scaleWorkers() {
             if (!coordRunning) return alert('Start coordinator first');
             const count = document.getElementById('workerCount').value;
@@ -1042,7 +1429,7 @@
                 
                 document.getElementById('taskDetails').innerHTML = `
                     <p style="margin-bottom:12px"><strong>ID:</strong> <code>${task.id}</code></p>
-                    <p style="margin-bottom:12px"><strong>Status:</strong> <span class="badge badge-${task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : 'info'}">${task.status}</span></p>
+                    <p style="margin-bottom:12px"><strong>Status:</strong> <span class="badge badge-${task.status === 'completed' ? 'success' : task.status === 'partial' ? 'warning' : task.status === 'failed' ? 'danger' : 'info'}">${task.status}</span></p>
                     <p style="margin-bottom:12px"><strong>Source:</strong> ${sourceIcon} ${sourceLabel} ${viewLinks}</p>
                     <p style="margin-bottom:12px"><strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}</p>
                     ${task.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
@@ -1051,7 +1438,7 @@
                     <div style="margin-bottom:16px;">${actionButtons}</div>
                     <p style="margin-bottom:8px"><strong>Prompt:</strong></p>
                     <div class="result-box">${escapeHtml(task.prompt || '')}</div>
-                    ${task.result ? `<p style="margin:16px 0 8px"><strong>Result:</strong></p><div class="result-box" style="max-height:400px;">${escapeHtml(task.result)}</div>` : ''}
+                    ${task.result ? renderResult(task.result) : ''}
                     ${task.error ? `<p style="margin:16px 0 8px"><strong>Error:</strong></p><div class="result-box" style="background:#fee2e2;color:#dc2626">${escapeHtml(task.error)}</div>` : ''}
                 `;
                 document.getElementById('taskModal').classList.add('active');
@@ -1095,7 +1482,7 @@
             document.getElementById('templatesModal').classList.remove('active');
         }
 
-        function selectTemplate(templateId) {
+        async function selectTemplate(templateId) {
             const template = taskTemplates.find(t => t.id === templateId);
             if (!template) return;
             
@@ -1104,8 +1491,48 @@
             // Pre-fill the create group form
             document.getElementById('group-name').value = template.name;
             document.getElementById('group-description').value = template.description;
-            document.getElementById('group-skill-context').value = template.skillContext || '';
             document.getElementById('group-prompts').value = template.prompts.join('\n');
+            
+            // Set skill dropdown and load content if template has a skill
+            const skillSelect = document.getElementById('group-skill-select');
+            const skillContext = document.getElementById('group-skill-context');
+            const warning = document.getElementById('skill-parallel-warning');
+            
+            if (template.skill) {
+                // Ensure skills are loaded first
+                await populateSkillsDropdown();
+                
+                // Set the skill dropdown value
+                skillSelect.value = template.skill;
+                
+                // Trigger skill loading
+                skillContext.value = 'Loading skill...';
+                skillContext.disabled = true;
+                
+                const [source, skillName] = template.skill.split(':');
+                const isLocal = source === 'local';
+                
+                // Check parallel-friendly and show warning
+                let isParallelFriendly = true;
+                if (isLocal) {
+                    const localSkills = await fetchLocalSkillsList();
+                    const skill = localSkills.find(s => s.name === skillName);
+                    if (skill && skill.parallel_friendly === false) {
+                        isParallelFriendly = false;
+                    }
+                } else if (NON_PARALLEL_SKILLS.includes(skillName)) {
+                    isParallelFriendly = false;
+                }
+                warning.style.display = isParallelFriendly ? 'none' : 'block';
+                
+                const content = await fetchSkillContent(skillName, false, isLocal);
+                skillContext.disabled = false;
+                skillContext.value = content || `Failed to load skill: ${skillName}`;
+            } else {
+                skillSelect.value = '';
+                skillContext.value = '';
+                warning.style.display = 'none';
+            }
             
             showCreateGroup();
         }
@@ -1122,8 +1549,11 @@
             document.getElementById('group-description').value = '';
             document.getElementById('group-repo-url').value = '';
             document.getElementById('group-base-branch').value = 'main';
+            document.getElementById('group-skill-select').value = '';
+            document.getElementById('group-skill-full').checked = false;
             document.getElementById('group-skill-context').value = '';
             document.getElementById('group-prompts').value = '';
+            document.getElementById('skill-parallel-warning').style.display = 'none';
         }
 
         async function createGroup() {
@@ -1197,7 +1627,7 @@
                             <span style="font-family:monospace;font-size:12px;color:#737373;">${t.id.slice(0,8)}</span>
                             ${commitInfo}
                             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.prompt || '')}</span>
-                            <span class="badge badge-${t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'}" style="font-size:10px;">${t.status}</span>
+                            <span class="badge badge-${t.status === 'completed' ? 'success' : t.status === 'partial' ? 'warning' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'}" style="font-size:10px;">${t.status}</span>
                         </div>
                     `;
                 }).join('') : '<p style="color:#737373;">No tasks in this group</p>';
@@ -1673,7 +2103,7 @@
                         ${commitInfo}
                         <span class="list-item-prompt" onclick="event.stopPropagation(); this.classList.toggle('expanded')" title="Click to expand">${escapeHtml(t.prompt || '')}</span>
                     </div>
-                    <span class="badge badge-${t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'}">${t.status}</span>
+                    <span class="badge badge-${t.status === 'completed' ? 'success' : t.status === 'partial' ? 'warning' : t.status === 'failed' ? 'danger' : t.status === 'running' ? 'info' : 'warning'}">${t.status}</span>
                 </div>
             `}).join('');
         }

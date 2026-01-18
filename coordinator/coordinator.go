@@ -2,6 +2,7 @@
 package coordinator
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -23,6 +25,9 @@ import (
 
 //go:embed schema.sql
 var schemaFS embed.FS
+
+//go:embed templates/worker_context.md
+var workerContextTemplate string
 
 // Config holds coordinator configuration.
 type Config struct {
@@ -68,6 +73,7 @@ type Task struct {
 	GroupID        *string    `json:"group_id,omitempty"`
 	InputDir       *string    `json:"input_dir,omitempty"`       // path to staged input files
 	SkillContext   *string    `json:"skill_context,omitempty"`   // system-level context from group
+	WorkerContext  *string    `json:"worker_context,omitempty"` // rendered worker context template
 	CreatedAt      time.Time  `json:"created_at"`
 	AssignedAt     *time.Time `json:"assigned_at,omitempty"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
@@ -155,6 +161,37 @@ type CompleteRequest struct {
 	PRURL          string `json:"pr_url"`
 	PRNumber       int    `json:"pr_number"`
 	ConversationID string `json:"conversation_id"`
+	DoneMD         string `json:"done_md"` // base64-encoded DONE.md content
+}
+
+// WorkerContextData contains data for rendering the worker context template.
+type WorkerContextData struct {
+	TaskID         string
+	WorkerID       string
+	GroupName      string
+	TasksInGroup   int
+	OwnsFiles      []string
+	ForbiddenFiles []string
+	InputDir       string
+	RepoURL        string
+	BaseBranch     string
+	BranchName     string
+	TaskTimeout    string
+}
+
+// RenderWorkerContext renders the worker context template with the given data.
+func RenderWorkerContext(data WorkerContextData) (string, error) {
+	tmpl, err := template.New("worker_context").Parse(workerContextTemplate)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse worker context template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to render worker context template: %w", err)
+	}
+
+	return buf.String(), nil
 }
 
 // Coordinator manages the worker pool and task queue.
@@ -947,7 +984,62 @@ func (c *Coordinator) GetNextTask(workerID string) (*Task, error) {
 	c.db.Exec(`UPDATE workers SET status = 'busy', current_task_id = ? WHERE id = ?`, taskID, workerID)
 	c.LogEvent("task.assigned", taskID, workerID, nil)
 
-	return c.GetTask(taskID)
+	task, err := c.GetTask(taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Render worker context template
+	c.renderWorkerContext(task, workerID)
+
+	return task, nil
+}
+
+// renderWorkerContext populates the WorkerContext field with rendered template.
+func (c *Coordinator) renderWorkerContext(task *Task, workerID string) {
+	data := WorkerContextData{
+		TaskID:      task.ID,
+		WorkerID:    workerID,
+		TaskTimeout: "15m", // default
+	}
+
+	if c.config.TaskTimeout > 0 {
+		data.TaskTimeout = c.config.TaskTimeout.String()
+	}
+
+	// Get group info if task belongs to a group
+	if task.GroupID != nil {
+		var groupName string
+		var tasksInGroup int
+		err := c.db.QueryRow(`SELECT name, tasks_total FROM task_groups WHERE id = ?`, *task.GroupID).Scan(&groupName, &tasksInGroup)
+		if err == nil {
+			data.GroupName = groupName
+			data.TasksInGroup = tasksInGroup
+		}
+	}
+
+	// Set git info
+	if task.RepoURL != nil {
+		data.RepoURL = *task.RepoURL
+	}
+	if task.BaseBranch != nil {
+		data.BaseBranch = *task.BaseBranch
+	}
+	if task.BranchName != nil {
+		data.BranchName = *task.BranchName
+	}
+	if task.InputDir != nil {
+		data.InputDir = *task.InputDir
+	}
+
+	// Render template
+	context, err := RenderWorkerContext(data)
+	if err != nil {
+		log.Printf("Warning: failed to render worker context: %v", err)
+		return
+	}
+
+	task.WorkerContext = &context
 }
 
 // CompleteTask marks a task as completed with result.
@@ -960,8 +1052,41 @@ func (c *Coordinator) CompleteTask(req CompleteRequest) error {
 		status = "failed"
 	}
 
+	// Parse DONE.md if provided
+	var result string
+	if req.DoneMD != "" {
+		// Decode base64 DONE.md content
+		doneContent, err := base64.StdEncoding.DecodeString(req.DoneMD)
+		if err == nil {
+			// Parse structured report
+			report, parseErr := ParseDoneReport(string(doneContent))
+			if parseErr == nil {
+				// Store as JSON for structured access
+				jsonResult, _ := report.ToJSON()
+				result = jsonResult
+				
+				// Override status based on DONE.md
+				if report.IsFailed() {
+					status = "failed"
+				} else if report.IsPartial() {
+					status = "partial"
+				}
+				
+				log.Printf("Task %s: parsed DONE.md - status=%s, files=%d, tests=%d/%d",
+					req.TaskID, report.Status, len(report.FilesChanged), report.Tests.Passed, report.Tests.Failed)
+			} else {
+				// Fall back to raw content if parsing fails
+				result = string(doneContent)
+				log.Printf("Task %s: DONE.md parse failed, storing raw: %v", req.TaskID, parseErr)
+			}
+		}
+	}
+	if result == "" {
+		result = req.Result
+	}
+
 	query := `UPDATE tasks SET status = ?, result = ?, error = ?, completed_at = CURRENT_TIMESTAMP`
-	args := []interface{}{status, req.Result, req.Error}
+	args := []interface{}{status, result, req.Error}
 
 	if req.CommitSHA != "" {
 		query += `, commit_sha = ?`
@@ -1699,12 +1824,17 @@ while true; do
         WORKTREE_PATH=$(echo "$RESPONSE" | jq -r '.worktree_path // empty')
         INPUT_DIR=$(echo "$RESPONSE" | jq -r '.input_dir // empty')
         SKILL_CONTEXT=$(echo "$RESPONSE" | jq -r '.skill_context // empty')
+        WORKER_CONTEXT=$(echo "$RESPONSE" | jq -r '.worker_context // empty')
         
         echo "=== Task $TASK_ID ==="
         echo "Prompt: $PROMPT"
         if [ -n "$INPUT_DIR" ]; then
             echo "Input files staged at: ~/shared/source/$TASK_ID/"
         fi
+        
+        # Create results directory for this task
+        RESULTS_DIR="$HOME/shared/results/$TASK_ID"
+        mkdir -p "$RESULTS_DIR" 2>/dev/null || true
         
         TASK_DIR="$WORKDIR/$TASK_ID"
         COMMIT_SHA=""
@@ -1782,24 +1912,19 @@ while true; do
         # Uses the same DB as shelley serve, so conversation is viewable in real-time
         cd "$CWD"
         
-        # Build the full prompt with skill context and input files
+        # Build the full prompt with worker context
         FULL_PROMPT=""
         
-        # Add skill context as system-level preamble if provided
-        if [ -n "$SKILL_CONTEXT" ]; then
+        # Use worker context if provided (includes task info, file ownership, output format)
+        if [ -n "$WORKER_CONTEXT" ]; then
+            FULL_PROMPT="[Worker Context]\n$WORKER_CONTEXT\n[End Worker Context]\n\n"
+        # Fall back to skill context for backward compatibility
+        elif [ -n "$SKILL_CONTEXT" ]; then
             FULL_PROMPT="[System Context]\n$SKILL_CONTEXT\n[End System Context]\n\n"
         fi
         
-        # Add input file context if staged
-        if [ -n "$INPUT_DIR" ] && [ -d ~/shared/source/$TASK_ID ]; then
-            INPUT_FILES=$(ls -la ~/shared/source/$TASK_ID 2>/dev/null | tail -n +2 || echo "")
-            if [ -n "$INPUT_FILES" ]; then
-                FULL_PROMPT="${FULL_PROMPT}[Context: Input files have been staged at ~/shared/source/$TASK_ID/. Contents: $INPUT_FILES]\n\n"
-            fi
-        fi
-        
         # Add the actual task prompt
-        FULL_PROMPT="${FULL_PROMPT}$PROMPT"
+        FULL_PROMPT="${FULL_PROMPT}[Task]\n$PROMPT"
         
         OUTPUT=$(shelley -db "$SHELLEY_DB" -config ~/.config/shelley/shelley.json \
             chat -yes -prompt "$FULL_PROMPT" 2>&1) || true
@@ -1858,13 +1983,21 @@ while true; do
             fi
         fi
         
-        # Report completion with conversation ID for reference
+        # Check for DONE.md in results directory
+        DONE_MD=""
+        if [ -f "$RESULTS_DIR/DONE.md" ]; then
+            DONE_MD=$(cat "$RESULTS_DIR/DONE.md" | base64 -w0)
+            echo "Found DONE.md in results directory"
+        fi
+        
+        # Report completion with conversation ID and DONE.md content
         curl -s -X POST "$COORD/api/complete" \
             -H "Content-Type: application/json" \
             -H "X-Coordinator-Token: $API_TOKEN" \
             -d "$(jq -n --arg tid "$TASK_ID" --arg wid "$WORKER_ID" \
                        --arg cid "$CONV_ID" --arg sha "$COMMIT_SHA" --arg err "$ERROR" \
-                '{task_id: $tid, worker_id: $wid, conversation_id: $cid, commit_sha: $sha, error: $err}')"
+                       --arg done "$DONE_MD" \
+                '{task_id: $tid, worker_id: $wid, conversation_id: $cid, commit_sha: $sha, error: $err, done_md: $done}')"
         
         echo "Task $TASK_ID completed"
     else
