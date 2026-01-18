@@ -703,6 +703,35 @@
         </div>
     </div>
 
+    <!-- Aggregation Modal -->
+    <div class="modal" id="aggregationModal">
+        <div class="modal-content" style="max-width: 900px; max-height: 85vh; overflow-y: auto;">
+            <div class="modal-header">
+                <span class="modal-title">Aggregated Results</span>
+                <button class="modal-close" onclick="closeAggregation()">&times;</button>
+            </div>
+            
+            <!-- Summary Stats -->
+            <div id="aggStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;"></div>
+            
+            <!-- Filter/Actions -->
+            <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+                <select id="aggStatusFilter" class="input" style="width:150px;" onchange="filterAggResults()">
+                    <option value="all">All Statuses</option>
+                    <option value="success">Success</option>
+                    <option value="partial">Partial</option>
+                    <option value="failed">Failed</option>
+                </select>
+                <button onclick="exportAggResults('markdown')" class="btn">Export Markdown</button>
+                <button onclick="exportAggResults('json')" class="btn">Export JSON</button>
+                <button onclick="copyAggSummary()" class="btn">Copy Summary</button>
+            </div>
+            
+            <!-- Results List -->
+            <div id="aggResults"></div>
+        </div>
+    </div>
+
     <!-- Help Modal -->
     <div class="modal" id="helpModal">
         <div class="modal-content" style="max-width: 700px;">
@@ -1935,6 +1964,10 @@
                     `;
                 }).join('') : '<p style="color:#737373;">No tasks in this group</p>';
 
+                // Check if any tasks have results for aggregation
+                const hasResults = tasks?.some(t => t.result && (t.status === 'completed' || t.status === 'partial' || t.status === 'failed'));
+                const aggButton = hasResults ? `<button onclick="closeModal(); showAggregation('${id}')" class="btn btn-primary" style="font-size:12px;">View Aggregated Results</button>` : '';
+
                 document.getElementById('taskDetails').innerHTML = `
                     <p style="margin-bottom:12px"><strong>Group:</strong> ${escapeHtml(group.name)}</p>
                     ${group.description ? `<p style="margin-bottom:12px;color:#525252;">${escapeHtml(group.description)}</p>` : ''}
@@ -1943,6 +1976,7 @@
                     <p style="margin-bottom:12px"><strong>Created:</strong> ${new Date(group.created_at).toLocaleString()}</p>
                     ${group.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(group.completed_at).toLocaleString()}</p>` : ''}
                     ${gitSection}
+                    ${aggButton ? `<div style="margin-bottom:16px;">${aggButton}</div>` : ''}
                     <p style="margin-bottom:8px"><strong>Tasks:</strong></p>
                     <div style="max-height:300px;overflow-y:auto;">${tasksHtml}</div>
                 `;
@@ -2206,13 +2240,277 @@
             document.getElementById('artifactsModal').classList.remove('active');
         }
 
+        // Aggregation state
+        let aggData = { groupId: null, groupName: '', tasks: [], results: [] };
+
+        async function showAggregation(groupId) {
+            if (!coordRunning) return;
+            
+            try {
+                const group = await api('/api/group?id=' + groupId);
+                const tasks = await api('/api/group/tasks?id=' + groupId);
+                
+                aggData.groupId = groupId;
+                aggData.groupName = group.name;
+                aggData.tasks = tasks || [];
+                aggData.results = [];
+                
+                // Parse results from each completed task
+                for (const task of aggData.tasks) {
+                    if (task.result && (task.status === 'completed' || task.status === 'partial')) {
+                        try {
+                            const parsed = JSON.parse(task.result);
+                            aggData.results.push({
+                                taskId: task.id,
+                                prompt: task.prompt,
+                                branchName: task.branch_name,
+                                commitSha: task.commit_sha,
+                                ...parsed
+                            });
+                        } catch (e) {
+                            // Not JSON, store raw
+                            aggData.results.push({
+                                taskId: task.id,
+                                prompt: task.prompt,
+                                branchName: task.branch_name,
+                                commitSha: task.commit_sha,
+                                status: task.status === 'completed' ? 'success' : 'unknown',
+                                summary: task.result?.substring(0, 200) || ''
+                            });
+                        }
+                    } else if (task.status === 'failed') {
+                        aggData.results.push({
+                            taskId: task.id,
+                            prompt: task.prompt,
+                            status: 'failed',
+                            summary: task.error || 'Task failed'
+                        });
+                    }
+                }
+                
+                renderAggStats();
+                filterAggResults();
+                document.getElementById('aggregationModal').classList.add('active');
+            } catch (e) {
+                alert('Failed to load aggregation: ' + e.message);
+            }
+        }
+
+        function renderAggStats() {
+            const stats = {
+                total: aggData.tasks.length,
+                completed: aggData.results.filter(r => r.status === 'success').length,
+                partial: aggData.results.filter(r => r.status === 'partial').length,
+                failed: aggData.results.filter(r => r.status === 'failed').length,
+                filesChanged: 0,
+                linesAdded: 0,
+                linesRemoved: 0,
+                testsPassed: 0,
+                testsFailed: 0,
+                mergeReady: 0
+            };
+            
+            for (const r of aggData.results) {
+                if (r.files_changed) {
+                    stats.filesChanged += r.files_changed.length;
+                    for (const f of r.files_changed) {
+                        stats.linesAdded += f.lines_added || 0;
+                        stats.linesRemoved += f.lines_removed || 0;
+                    }
+                }
+                if (r.tests) {
+                    stats.testsPassed += r.tests.passed || 0;
+                    stats.testsFailed += r.tests.failed || 0;
+                }
+                if (r.merge_ready) stats.mergeReady++;
+            }
+            
+            document.getElementById('aggStats').innerHTML = `
+                <div style="background:#f9fafb;border:1px solid #e5e5e5;border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:24px;font-weight:700;color:#16a34a;">${stats.completed}</div>
+                    <div style="font-size:11px;color:#737373;">Completed</div>
+                </div>
+                <div style="background:#f9fafb;border:1px solid #e5e5e5;border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:24px;font-weight:700;color:#f59e0b;">${stats.partial}</div>
+                    <div style="font-size:11px;color:#737373;">Partial</div>
+                </div>
+                <div style="background:#f9fafb;border:1px solid #e5e5e5;border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:24px;font-weight:700;color:#dc2626;">${stats.failed}</div>
+                    <div style="font-size:11px;color:#737373;">Failed</div>
+                </div>
+                <div style="background:#f9fafb;border:1px solid #e5e5e5;border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:24px;font-weight:700;color:#2563eb;">${stats.filesChanged}</div>
+                    <div style="font-size:11px;color:#737373;">Files Changed</div>
+                </div>
+                <div style="background:#f9fafb;border:1px solid #e5e5e5;border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:20px;font-weight:700;"><span style="color:#16a34a;">+${stats.linesAdded}</span> <span style="color:#dc2626;">-${stats.linesRemoved}</span></div>
+                    <div style="font-size:11px;color:#737373;">Lines Changed</div>
+                </div>
+                <div style="background:#f9fafb;border:1px solid #e5e5e5;border-radius:8px;padding:12px;text-align:center;">
+                    <div style="font-size:20px;font-weight:700;"><span style="color:#16a34a;">✓${stats.testsPassed}</span> <span style="color:#dc2626;">✗${stats.testsFailed}</span></div>
+                    <div style="font-size:11px;color:#737373;">Tests</div>
+                </div>
+            `;
+        }
+
+        function filterAggResults() {
+            const filter = document.getElementById('aggStatusFilter').value;
+            let filtered = aggData.results;
+            if (filter !== 'all') {
+                filtered = aggData.results.filter(r => r.status === filter);
+            }
+            
+            const el = document.getElementById('aggResults');
+            if (filtered.length === 0) {
+                el.innerHTML = '<div style="text-align:center;padding:20px;color:#737373;">No results match the filter</div>';
+                return;
+            }
+            
+            el.innerHTML = filtered.map(r => {
+                const statusBadge = {
+                    'success': 'badge-success',
+                    'partial': 'badge-warning',
+                    'failed': 'badge-danger'
+                }[r.status] || 'badge-neutral';
+                
+                let filesHtml = '';
+                if (r.files_changed && r.files_changed.length > 0) {
+                    filesHtml = `<div style="margin-top:8px;font-family:monospace;font-size:11px;">`;
+                    filesHtml += r.files_changed.slice(0, 5).map(f => {
+                        const icon = {created: '+', modified: '~', deleted: '-'}[f.action] || '?';
+                        const color = {created: '#16a34a', modified: '#2563eb', deleted: '#dc2626'}[f.action] || '#737373';
+                        return `<div><span style="color:${color};">${icon}</span> ${escapeHtml(f.path)}</div>`;
+                    }).join('');
+                    if (r.files_changed.length > 5) {
+                        filesHtml += `<div style="color:#737373;">... and ${r.files_changed.length - 5} more</div>`;
+                    }
+                    filesHtml += '</div>';
+                }
+                
+                let testsHtml = '';
+                if (r.tests && (r.tests.passed > 0 || r.tests.failed > 0)) {
+                    testsHtml = `<span style="font-size:11px;margin-left:8px;"><span style="color:#16a34a;">✓${r.tests.passed}</span> <span style="color:#dc2626;">✗${r.tests.failed}</span></span>`;
+                }
+                
+                return `
+                    <div style="border:1px solid #e5e5e5;border-radius:8px;padding:12px;margin-bottom:8px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span class="badge ${statusBadge}">${r.status}</span>
+                            <span style="font-family:monospace;font-size:11px;color:#737373;">${r.taskId.slice(0,8)}</span>
+                            ${r.merge_ready ? '<span style="color:#16a34a;font-size:11px;">✓ merge ready</span>' : ''}
+                            ${testsHtml}
+                            ${r.branchName ? `<span style="font-size:11px;color:#737373;">→ ${r.branchName}</span>` : ''}
+                        </div>
+                        <div style="font-size:13px;margin-bottom:4px;">${escapeHtml(r.prompt?.substring(0, 100) || '')}${r.prompt?.length > 100 ? '...' : ''}</div>
+                        ${r.summary ? `<div style="font-size:12px;color:#525252;">${escapeHtml(r.summary.substring(0, 200))}${r.summary.length > 200 ? '...' : ''}</div>` : ''}
+                        ${filesHtml}
+                        ${r.blockers && r.blockers.length > 0 ? `<div style="margin-top:8px;padding:8px;background:#fef2f2;border-radius:4px;font-size:11px;color:#dc2626;"><strong>Blockers:</strong> ${r.blockers.join(', ')}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function exportAggResults(format) {
+            const results = aggData.results;
+            let content = '';
+            let filename = '';
+            let mimeType = '';
+            
+            if (format === 'json') {
+                content = JSON.stringify({
+                    groupName: aggData.groupName,
+                    exportedAt: new Date().toISOString(),
+                    results: results
+                }, null, 2);
+                filename = `${aggData.groupName.replace(/\s+/g, '-').toLowerCase()}-results.json`;
+                mimeType = 'application/json';
+            } else {
+                // Markdown
+                content = `# ${aggData.groupName} - Aggregated Results\n\n`;
+                content += `Exported: ${new Date().toLocaleString()}\n\n`;
+                
+                // Stats
+                const completed = results.filter(r => r.status === 'success').length;
+                const partial = results.filter(r => r.status === 'partial').length;
+                const failed = results.filter(r => r.status === 'failed').length;
+                content += `## Summary\n\n`;
+                content += `- **Completed:** ${completed}\n`;
+                content += `- **Partial:** ${partial}\n`;
+                content += `- **Failed:** ${failed}\n\n`;
+                
+                // Individual results
+                content += `## Task Results\n\n`;
+                for (const r of results) {
+                    content += `### ${r.taskId.slice(0,8)} - ${r.status.toUpperCase()}\n\n`;
+                    content += `**Prompt:** ${r.prompt}\n\n`;
+                    if (r.summary) content += `**Summary:** ${r.summary}\n\n`;
+                    if (r.branchName) content += `**Branch:** ${r.branchName}\n\n`;
+                    if (r.files_changed && r.files_changed.length > 0) {
+                        content += `**Files Changed:**\n`;
+                        for (const f of r.files_changed) {
+                            content += `- ${f.action}: ${f.path} (+${f.lines_added || 0}/-${f.lines_removed || 0})\n`;
+                        }
+                        content += `\n`;
+                    }
+                    if (r.tests) {
+                        content += `**Tests:** ${r.tests.passed} passed, ${r.tests.failed} failed\n\n`;
+                    }
+                    if (r.blockers && r.blockers.length > 0) {
+                        content += `**Blockers:**\n`;
+                        for (const b of r.blockers) {
+                            content += `- ${b}\n`;
+                        }
+                        content += `\n`;
+                    }
+                    content += `---\n\n`;
+                }
+                filename = `${aggData.groupName.replace(/\s+/g, '-').toLowerCase()}-results.md`;
+                mimeType = 'text/markdown';
+            }
+            
+            // Download file
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function copyAggSummary() {
+            const results = aggData.results;
+            const completed = results.filter(r => r.status === 'success').length;
+            const partial = results.filter(r => r.status === 'partial').length;
+            const failed = results.filter(r => r.status === 'failed').length;
+            
+            let totalFiles = 0, linesAdded = 0, linesRemoved = 0;
+            for (const r of results) {
+                if (r.files_changed) {
+                    totalFiles += r.files_changed.length;
+                    for (const f of r.files_changed) {
+                        linesAdded += f.lines_added || 0;
+                        linesRemoved += f.lines_removed || 0;
+                    }
+                }
+            }
+            
+            const summary = `${aggData.groupName}: ${completed} completed, ${partial} partial, ${failed} failed | ${totalFiles} files changed (+${linesAdded}/-${linesRemoved})`;
+            navigator.clipboard.writeText(summary);
+            addLog('Summary copied to clipboard');
+        }
+
+        function closeAggregation() {
+            document.getElementById('aggregationModal').classList.remove('active');
+        }
+
         function formatBytes(bytes) {
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); closeStuckTasks(); closeAddRepo(); closeArtifacts(); closeTemplates(); } });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); closeStuckTasks(); closeAddRepo(); closeArtifacts(); closeTemplates(); closeAggregation(); } });
 
         // WebSocket connection for real-time updates
         // coordPort is injected by the dashboard server
