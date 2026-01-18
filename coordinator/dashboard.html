@@ -843,7 +843,7 @@
             <div style="margin-bottom:16px;">
                 <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Working Directory</label>
                 <div style="display:flex;gap:8px;">
-                    <input type="text" id="quick-task-dir" class="input" style="flex:1;" placeholder="~/myproject (defaults to home directory)">
+                    <input type="text" id="quick-task-dir" class="input" style="flex:1;" placeholder="~/myproject (remembers last used)">
                     <button type="button" onclick="openDirPicker()" class="btn" title="Browse directories"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
                 </div>
             </div>
@@ -2849,10 +2849,13 @@
         
         // Quick Tasks functionality
         let quickTasks = [];
+        const LAST_QUICK_TASK_DIR_KEY = 'lastQuickTaskDir';
         
         function showNewQuickTask() {
             document.getElementById('quick-task-prompt').value = '';
-            document.getElementById('quick-task-dir').value = '';
+            // Restore last used directory
+            const lastDir = localStorage.getItem(LAST_QUICK_TASK_DIR_KEY) || '';
+            document.getElementById('quick-task-dir').value = lastDir;
             document.getElementById('quickTaskModal').style.display = 'flex';
             document.getElementById('quick-task-prompt').focus();
         }
@@ -2930,6 +2933,10 @@
                 if (!resp.ok) {
                     const err = await resp.text();
                     throw new Error(err);
+                }
+                // Remember the directory for next time
+                if (workingDir) {
+                    localStorage.setItem(LAST_QUICK_TASK_DIR_KEY, workingDir);
                 }
                 closeQuickTaskModal();
                 refreshQuickTasks();
