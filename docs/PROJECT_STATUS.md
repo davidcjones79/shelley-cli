@@ -247,3 +247,26 @@ shelley watch  # Live auto-refreshing dashboard
 shelley coord-cli clear-failed
 shelley coord-cli drain
 ```
+
+## TODO: Slash Command Cleanup
+
+The CLI has many slash commands, some potentially redundant or unclear. Review and consolidate:
+
+**Possibly redundant:**
+- `/convos` vs `/conversations` vs `/sessions`
+- `/q` vs `/quit` vs `/exit`
+- `/y`, `/yes`, `/n`, `/no` - needed as commands?
+- `/keys` vs `/shortcuts`
+
+**Unclear purpose (need investigation):**
+- `/frankenstein`
+- `/mouse`
+- `/imglist`, `/imgresult`
+
+**Consider documenting:**
+- `/archive`, `/unarchive`, `/delete`, `/rename`, `/search` - conversation management
+- `/models`, `/fast`, `/smart`, `/opus` - model switching
+- `/cost`, `/usage` - token tracking
+- `/theme`, `/verbose`, `/context`, `/git`, `/image`, `/attach`
+
+For now, docs focus on the most important commands. Full cleanup deferred.

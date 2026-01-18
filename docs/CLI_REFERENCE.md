@@ -958,3 +958,48 @@ ssh exe.dev "ssh vm 'pgrep -f \"http.server 8000\" || (cd /home/exedev/site && p
 ```bash
 ssh exe.dev "ssh vm 'echo \"cd /home/exedev/site && python3 -m http.server 8000\" | at now'"
 ```
+
+---
+
+# Secure Token Configuration
+
+Tokens can be configured securely in three ways (avoid command-line flags which appear in shell history):
+
+## Option 1: Dashboard Settings Page (Easiest)
+
+Open `/settings` in the coordinator dashboard to configure tokens via the web UI. Settings are saved to `~/.config/shelley/coordinator-settings.json` with restricted permissions.
+
+## Option 2: Environment Variables
+
+| Environment Variable | Equivalent Flag |
+|---------------------|-----------------|
+| `TAILSCALE_AUTHKEY` | `-tailscale-authkey` |
+| `GITHUB_TOKEN` | `-git-token` |
+
+```bash
+export TAILSCALE_AUTHKEY=tskey-auth-xxxxx
+export GITHUB_TOKEN=ghp_xxxxx
+shelley dashboard -auto-start
+```
+
+## Option 3: Systemd Environment File (For Persistent Services)
+
+Create a secrets file with restricted permissions:
+
+```bash
+cat > ~/.config/shelley/secrets.env << 'ENVEOF'
+TAILSCALE_AUTHKEY=tskey-auth-xxxxx
+GITHUB_TOKEN=ghp_xxxxx
+ENVEOF
+chmod 600 ~/.config/shelley/secrets.env
+```
+
+Then reference it in your systemd service:
+
+```ini
+[Service]
+EnvironmentFile=/home/exedev/.config/shelley/secrets.env
+ExecStart=/home/exedev/shelley-cli/bin/shelley dashboard -auto-start
+```
+
+**Security Note:** Avoid passing tokens directly on the command line—they may appear in shell history and process listings.
