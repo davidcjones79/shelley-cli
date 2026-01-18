@@ -471,70 +471,46 @@
         </div>
 
         <!-- Tasks -->
-        <div class="section" id="tasks-section">
+        <!-- Quick Tasks (local) -->
+        <div class="section" id="quick-tasks-section">
             <div class="section-header">
-                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Tasks</span>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <div class="task-tabs" style="display:flex;gap:4px;margin-right:8px;">
-                        <button id="tab-worker-tasks" onclick="switchTaskTab('worker')" class="filter-btn active">Worker Tasks <span id="worker-task-count" style="font-weight:normal;color:#737373;"></span></button>
-                        <button id="tab-quick-tasks" onclick="switchTaskTab('quick')" class="filter-btn">Quick Tasks <span id="quick-task-count" style="font-weight:normal;color:#737373;"></span></button>
-                    </div>
+                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Quick Tasks <span id="quick-task-count" style="font-weight:normal;color:#737373;"></span></span>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="showNewQuickTask()" class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New</button>
+                    <button onclick="clearQuickTasks()" class="btn btn-danger" title="Clear completed tasks"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear</button>
                 </div>
             </div>
-            
-            <!-- Worker Tasks Tab -->
-            <div id="worker-tasks-tab">
-                <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;">
+            <div class="list" id="quick-tasks">
+                <div class="list-empty">No quick tasks — run tasks locally without spawning worker VMs</div>
+            </div>
+        </div>
+
+        <!-- Tasks (worker) -->
+        <div class="section" id="tasks-section">
+            <div class="section-header">
+                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Worker Tasks <span id="task-count" style="font-weight:normal;color:#737373;"></span></span>
+                <div style="display:flex;gap:8px;">
                     <button onclick="showStuckTasks()" class="btn" title="View tasks that may be stuck"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Stuck</button>
                     <button onclick="clearCompletedTasks()" class="btn btn-danger" title="Clear completed and failed tasks"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear Done</button>
                 </div>
-                <div class="search-filter" style="margin-bottom: 12px;">
-                    <input type="text" id="task-search" class="search-input" placeholder="Search tasks..." oninput="currentPage=1; filterTasks()">
-                    <div style="display:flex;gap:4px;">
-                        <button class="filter-btn active" data-status="all" onclick="setTaskFilter('all')">All</button>
-                        <button class="filter-btn" data-status="queued" onclick="setTaskFilter('queued')">Queued</button>
-                        <button class="filter-btn" data-status="running" onclick="setTaskFilter('running')">Running</button>
-                        <button class="filter-btn" data-status="completed" onclick="setTaskFilter('completed')">Completed</button>
-                        <button class="filter-btn" data-status="failed" onclick="setTaskFilter('failed')">Failed</button>
-                    </div>
-                </div>
-                <div class="list" id="tasks">
-                    <div class="list-empty">No tasks</div>
-                </div>
-                <div id="tasks-pagination" style="display:none;margin-top:12px;align-items:center;justify-content:center;gap:8px;">
-                    <button onclick="prevPage()" class="btn" id="prev-page-btn" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Prev</button>
-                    <span id="page-info" style="font-size:13px;color:#737373;">Page 1 of 1</span>
-                    <button onclick="nextPage()" class="btn" id="next-page-btn" disabled>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
+            </div>
+            <div class="search-filter" style="margin-bottom: 12px;">
+                <input type="text" id="task-search" class="search-input" placeholder="Search tasks..." oninput="currentPage=1; filterTasks()">
+                <div style="display:flex;gap:4px;">
+                    <button class="filter-btn active" data-status="all" onclick="setTaskFilter('all')">All</button>
+                    <button class="filter-btn" data-status="queued" onclick="setTaskFilter('queued')">Queued</button>
+                    <button class="filter-btn" data-status="running" onclick="setTaskFilter('running')">Running</button>
+                    <button class="filter-btn" data-status="completed" onclick="setTaskFilter('completed')">Completed</button>
+                    <button class="filter-btn" data-status="failed" onclick="setTaskFilter('failed')">Failed</button>
                 </div>
             </div>
-            
-            <!-- Quick Tasks Tab -->
-            <div id="quick-tasks-tab" style="display:none;">
-                <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;">
-                    <button onclick="clearQuickTasks()" class="btn btn-danger" title="Clear completed tasks"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear Done</button>
-                </div>
-                
-                <!-- Quick Task Form -->
-                <div style="background:#f9fafb;border:1px solid #e5e5e5;border-radius:8px;padding:16px;margin-bottom:16px;">
-                    <div style="font-weight:600;margin-bottom:12px;">New Quick Task</div>
-                    <div style="margin-bottom:12px;">
-                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Prompt</label>
-                        <textarea id="quick-task-prompt" class="input" style="width:100%;min-height:80px;resize:vertical;" placeholder="What do you want Shelley to do?"></textarea>
-                    </div>
-                    <div style="margin-bottom:12px;">
-                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Working Directory</label>
-                        <div style="display:flex;gap:8px;">
-                            <input type="text" id="quick-task-dir" class="input" style="flex:1;" placeholder="~/myproject (defaults to home directory)">
-                            <button type="button" onclick="openDirPicker()" class="btn" title="Browse directories"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
-                        </div>
-                    </div>
-                    <button onclick="createQuickTask()" class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Locally</button>
-                </div>
-                
-                <!-- Quick Tasks List -->
-                <div class="list" id="quick-tasks">
-                    <div class="list-empty">No quick tasks yet. Run a task locally above.</div>
-                </div>
+            <div class="list" id="tasks">
+                <div class="list-empty">No worker tasks</div>
+            </div>
+            <div id="tasks-pagination" style="display:none;margin-top:12px;align-items:center;justify-content:center;gap:8px;">
+                <button onclick="prevPage()" class="btn" id="prev-page-btn" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Prev</button>
+                <span id="page-info" style="font-size:13px;color:#737373;">Page 1 of 1</span>
+                <button onclick="nextPage()" class="btn" id="next-page-btn" disabled>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
             </div>
         </div>
 
@@ -848,6 +824,32 @@
                     <p style="margin-bottom: 8px; color: #737373;"># Check stats</p>
                     <p style="margin-bottom: 0;">curl -H "X-Coordinator-Token: $TOKEN" /api/stats</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Quick Task Modal -->
+    <div class="modal" id="quickTaskModal">
+        <div class="modal-content" style="max-width: 550px;">
+            <div class="modal-header">
+                <span class="modal-title">New Quick Task</span>
+                <button class="modal-close" onclick="closeQuickTaskModal()">&times;</button>
+            </div>
+            <p style="color:#737373;font-size:13px;margin-bottom:16px;">Run a task locally on this VM without spawning a worker. Good for quick one-offs and testing prompts.</p>
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Prompt</label>
+                <textarea id="quick-task-prompt" class="input" style="width:100%;min-height:100px;resize:vertical;" placeholder="What do you want Shelley to do?"></textarea>
+            </div>
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Working Directory</label>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="quick-task-dir" class="input" style="flex:1;" placeholder="~/myproject (defaults to home directory)">
+                    <button type="button" onclick="openDirPicker()" class="btn" title="Browse directories"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button onclick="closeQuickTaskModal()" class="btn">Cancel</button>
+                <button onclick="createQuickTask()" class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Locally</button>
             </div>
         </div>
     </div>
@@ -2847,17 +2849,16 @@
         
         // Quick Tasks functionality
         let quickTasks = [];
-        let currentTaskTab = 'worker';
         
-        function switchTaskTab(tab) {
-            currentTaskTab = tab;
-            document.getElementById('tab-worker-tasks').classList.toggle('active', tab === 'worker');
-            document.getElementById('tab-quick-tasks').classList.toggle('active', tab === 'quick');
-            document.getElementById('worker-tasks-tab').style.display = tab === 'worker' ? 'block' : 'none';
-            document.getElementById('quick-tasks-tab').style.display = tab === 'quick' ? 'block' : 'none';
-            if (tab === 'quick') {
-                refreshQuickTasks();
-            }
+        function showNewQuickTask() {
+            document.getElementById('quick-task-prompt').value = '';
+            document.getElementById('quick-task-dir').value = '';
+            document.getElementById('quickTaskModal').style.display = 'flex';
+            document.getElementById('quick-task-prompt').focus();
+        }
+        
+        function closeQuickTaskModal() {
+            document.getElementById('quickTaskModal').style.display = 'none';
         }
         
         async function refreshQuickTasks() {
@@ -2883,7 +2884,7 @@
         function renderQuickTasks() {
             const el = document.getElementById('quick-tasks');
             if (!quickTasks || quickTasks.length === 0) {
-                el.innerHTML = '<div class="list-empty">No quick tasks yet. Run a task locally above.</div>';
+                el.innerHTML = '<div class="list-empty">No quick tasks — click "+ New" to run a task locally</div>';
                 return;
             }
             // Sort by created_at descending
@@ -2930,7 +2931,7 @@
                     const err = await resp.text();
                     throw new Error(err);
                 }
-                document.getElementById('quick-task-prompt').value = '';
+                closeQuickTaskModal();
                 refreshQuickTasks();
             } catch (err) {
                 alert('Failed to create task: ' + err.message);
@@ -2980,12 +2981,11 @@
             }
         }
         
-        // Poll quick tasks when on that tab
-        setInterval(() => {
-            if (currentTaskTab === 'quick') {
-                refreshQuickTasks();
-            }
-        }, 3000);
+        // Poll quick tasks periodically
+        setInterval(refreshQuickTasks, 5000);
+        
+        // Initial load of quick tasks
+        refreshQuickTasks();
         
         // Directory Picker
         let dirPickerCurrentPath = '';
