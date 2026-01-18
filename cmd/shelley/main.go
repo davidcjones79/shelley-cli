@@ -813,7 +813,7 @@ func runCoord(global GlobalConfig, args []string) {
 	gitUser := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
 	shelleyDB := fs.String("shelley-db", "", "Path to main shelley DB for syncing conversations (enables viewing worker chats in main UI)")
 	installScript := fs.String("install-script", "", "Worker install method: 'https' (default) or URL to custom script")
-	tailscaleAuthKey := fs.String("tailscale-authkey", "", "Tailscale auth key for workers to join private network (enables SSHFS shared filesystem)")
+	tailscaleAuthKey := fs.String("tailscale-authkey", "", "Tailscale auth key for workers to join private network (env: TAILSCALE_AUTHKEY)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley coord [flags]\n\n")
@@ -842,6 +842,11 @@ func runCoord(global GlobalConfig, args []string) {
 	// Use environment variable for git token if not provided
 	if *gitToken == "" {
 		*gitToken = os.Getenv("GITHUB_TOKEN")
+	}
+
+	// Use environment variable for tailscale auth key if not provided
+	if *tailscaleAuthKey == "" {
+		*tailscaleAuthKey = os.Getenv("TAILSCALE_AUTHKEY")
 	}
 
 	// Note: API token is now handled by coordinator (persistent in DB)
@@ -954,7 +959,7 @@ func runDashboard(global GlobalConfig, args []string) {
 	gitUserDash := fs.String("git-user", "", "Git username for HTTPS auth (default: token owner)")
 	shelleyDBDash := fs.String("shelley-db", "/home/exedev/.config/shelley/shelley.db", "Path to main shelley DB for syncing conversations")
 	installScriptDash := fs.String("install-script", "", "Worker install method: 'https' (default) or URL to custom script")
-	tailscaleAuthKeyDash := fs.String("tailscale-authkey", "", "Tailscale auth key for workers to join private network (enables SSHFS shared filesystem)")
+	tailscaleAuthKeyDash := fs.String("tailscale-authkey", "", "Tailscale auth key for workers to join private network (env: TAILSCALE_AUTHKEY)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley dashboard [flags]\n\n")
@@ -983,6 +988,11 @@ func runDashboard(global GlobalConfig, args []string) {
 	// Use environment variable for git token if not provided
 	if *gitTokenDash == "" {
 		*gitTokenDash = os.Getenv("GITHUB_TOKEN")
+	}
+
+	// Use environment variable for tailscale auth key if not provided
+	if *tailscaleAuthKeyDash == "" {
+		*tailscaleAuthKeyDash = os.Getenv("TAILSCALE_AUTHKEY")
 	}
 
 	// Note: API token is now handled by coordinator (persistent in DB)
