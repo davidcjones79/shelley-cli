@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -1105,6 +1106,91 @@ func (d *Dashboard) HandleClearQuickTasks(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// HandleListDirs returns directory listing for the directory picker.
+func (d *Dashboard) HandleListDirs(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	
+	// Default to home directory
+	if path == "" {
+		var err error
+		path, err = os.UserHomeDir()
+		if err != nil {
+			http.Error(w, "Failed to get home directory", http.StatusInternalServerError)
+			return
+		}
+	}
+	
+	// Expand ~ to home directory
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	} else if path == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = home
+		}
+	}
+	
+	// Clean and resolve the path
+	path = filepath.Clean(path)
+	
+	// Check if path exists and is a directory
+	info, err := os.Stat(path)
+	if err != nil {
+		http.Error(w, "Path not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	if !info.IsDir() {
+		http.Error(w, "Path is not a directory", http.StatusBadRequest)
+		return
+	}
+	
+	// Read directory entries
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		http.Error(w, "Failed to read directory: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	type DirEntry struct {
+		Name  string `json:"name"`
+		IsDir bool   `json:"is_dir"`
+	}
+	
+	var dirs []DirEntry
+	for _, entry := range entries {
+		// Skip hidden files/dirs (starting with .)
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		dirs = append(dirs, DirEntry{
+			Name:  entry.Name(),
+			IsDir: entry.IsDir(),
+		})
+	}
+	
+	// Sort: directories first, then files, alphabetically
+	sort.Slice(dirs, func(i, j int) bool {
+		if dirs[i].IsDir != dirs[j].IsDir {
+			return dirs[i].IsDir // dirs first
+		}
+		return strings.ToLower(dirs[i].Name) < strings.ToLower(dirs[j].Name)
+	})
+	
+	result := struct {
+		Path    string     `json:"path"`
+		Parent  string     `json:"parent"`
+		Entries []DirEntry `json:"entries"`
+	}{
+		Path:    path,
+		Parent:  filepath.Dir(path),
+		Entries: dirs,
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 // SetupRoutes configures HTTP routes for the dashboard.
 func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", d.HandleDashboardIndex)
@@ -1119,6 +1205,7 @@ func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/quick-task", d.HandleQuickTask)
 	mux.HandleFunc("/api/quick-task/output", d.HandleQuickTaskOutput)
 	mux.HandleFunc("/api/quick-tasks/clear", d.HandleClearQuickTasks)
+	mux.HandleFunc("/api/list-dirs", d.HandleListDirs)
 	mux.HandleFunc("/api/", d.HandleAPIProxy)
 	mux.HandleFunc("/shelley-bin", d.HandleAPIProxy)
 	mux.HandleFunc("/local-skills", d.HandleLocalSkills)

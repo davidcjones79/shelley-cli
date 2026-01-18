@@ -523,7 +523,10 @@
                     </div>
                     <div style="margin-bottom:12px;">
                         <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Working Directory</label>
-                        <input type="text" id="quick-task-dir" class="input" style="width:100%;" placeholder="~/myproject (defaults to home directory)">
+                        <div style="display:flex;gap:8px;">
+                            <input type="text" id="quick-task-dir" class="input" style="flex:1;" placeholder="~/myproject (defaults to home directory)">
+                            <button type="button" onclick="openDirPicker()" class="btn" title="Browse directories"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+                        </div>
                     </div>
                     <button onclick="createQuickTask()" class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Locally</button>
                 </div>
@@ -845,6 +848,30 @@
                     <p style="margin-bottom: 8px; color: #737373;"># Check stats</p>
                     <p style="margin-bottom: 0;">curl -H "X-Coordinator-Token: $TOKEN" /api/stats</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Directory Picker Modal -->
+    <div class="modal" id="dirPickerModal">
+        <div class="modal-content" style="max-width: 500px; max-height: 70vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <span class="modal-title">Select Directory</span>
+                <button class="modal-close" onclick="closeDirPicker()">&times;</button>
+            </div>
+            <div style="padding: 0 16px; margin-bottom: 12px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button onclick="dirPickerUp()" class="btn" title="Go up" style="padding: 6px 10px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 15l-6-6-6 6"/></svg></button>
+                    <input type="text" id="dir-picker-path" class="input" style="flex: 1; font-family: monospace; font-size: 13px;" onkeydown="if(event.key==='Enter')dirPickerGo()">
+                    <button onclick="dirPickerGo()" class="btn" style="padding: 6px 10px;">Go</button>
+                </div>
+            </div>
+            <div id="dir-picker-list" style="flex: 1; overflow-y: auto; border: 1px solid #e5e5e5; border-radius: 8px; margin: 0 16px;">
+                <div class="list-empty">Loading...</div>
+            </div>
+            <div style="padding: 16px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e5e5e5; margin-top: 12px;">
+                <button onclick="closeDirPicker()" class="btn">Cancel</button>
+                <button onclick="selectDir()" class="btn btn-primary">Select</button>
             </div>
         </div>
     </div>
@@ -2959,6 +2986,76 @@
                 refreshQuickTasks();
             }
         }, 3000);
+        
+        // Directory Picker
+        let dirPickerCurrentPath = '';
+        
+        async function openDirPicker() {
+            document.getElementById('dirPickerModal').style.display = 'flex';
+            const currentDir = document.getElementById('quick-task-dir').value.trim() || '~';
+            await loadDir(currentDir);
+        }
+        
+        function closeDirPicker() {
+            document.getElementById('dirPickerModal').style.display = 'none';
+        }
+        
+        async function loadDir(path) {
+            try {
+                const resp = await fetch(`/api/list-dirs?path=${encodeURIComponent(path)}`);
+                if (!resp.ok) {
+                    const err = await resp.text();
+                    throw new Error(err);
+                }
+                const data = await resp.json();
+                dirPickerCurrentPath = data.path;
+                document.getElementById('dir-picker-path').value = data.path;
+                renderDirList(data);
+            } catch (err) {
+                document.getElementById('dir-picker-list').innerHTML = `<div class="list-empty" style="color:#dc2626;">Error: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+        
+        function renderDirList(data) {
+            const el = document.getElementById('dir-picker-list');
+            if (!data.entries || data.entries.length === 0) {
+                el.innerHTML = '<div class="list-empty">Empty directory</div>';
+                return;
+            }
+            el.innerHTML = data.entries.map(e => {
+                const icon = e.is_dir 
+                    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#f59e0b;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
+                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#737373;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+                const style = e.is_dir ? 'cursor:pointer;' : 'opacity:0.5;';
+                const onclick = e.is_dir ? `onclick="loadDir('${escapeHtml(dirPickerCurrentPath + '/' + e.name)}')"`  : '';
+                return `
+                <div class="list-item" style="${style}padding:8px 12px;" ${onclick}>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        ${icon}
+                        <span>${escapeHtml(e.name)}</span>
+                    </div>
+                </div>
+            `}).join('');
+        }
+        
+        function dirPickerUp() {
+            const pathInput = document.getElementById('dir-picker-path');
+            const parts = pathInput.value.split('/');
+            if (parts.length > 1) {
+                parts.pop();
+                loadDir(parts.join('/') || '/');
+            }
+        }
+        
+        function dirPickerGo() {
+            const path = document.getElementById('dir-picker-path').value.trim();
+            if (path) loadDir(path);
+        }
+        
+        function selectDir() {
+            document.getElementById('quick-task-dir').value = dirPickerCurrentPath;
+            closeDirPicker();
+        }
         
         function renderWorkers(workers) {
             // Update failed count badge
