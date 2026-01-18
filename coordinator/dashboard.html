@@ -522,13 +522,69 @@
 
     <!-- Templates Modal -->
     <div class="modal" id="templatesModal">
-        <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-content" style="max-width: 900px; max-height: 80vh; overflow-y: auto;">
             <div class="modal-header">
                 <span class="modal-title">Task Templates</span>
                 <button class="modal-close" onclick="closeTemplates()">&times;</button>
             </div>
-            <p style="color:#737373;margin-bottom:16px;">Select a template to create a group of parallel tasks</p>
-            <div id="templatesList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;"></div>
+            
+            <!-- Tab navigation -->
+            <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid #e5e5e5;padding-bottom:8px;">
+                <button id="tab-preset" onclick="switchTemplateTab('preset')" class="btn" style="font-size:13px;">Preset Templates</button>
+                <button id="tab-file" onclick="switchTemplateTab('file')" class="btn" style="font-size:13px;">File-Based Templates</button>
+            </div>
+            
+            <!-- Preset templates tab -->
+            <div id="presetTemplatesTab">
+                <p style="color:#737373;margin-bottom:16px;">Select a template to create a group of parallel tasks</p>
+                <div id="templatesList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;"></div>
+            </div>
+            
+            <!-- File-based templates tab -->
+            <div id="fileTemplatesTab" style="display:none;">
+                <p style="color:#737373;margin-bottom:16px;">Apply a template to each file matching a pattern. Requires a repository.</p>
+                
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px;" id="fileTemplatesList"></div>
+                
+                <div id="fileTemplateConfig" style="display:none;border:1px solid #e5e5e5;border-radius:8px;padding:16px;background:#f9fafb;">
+                    <h4 style="margin:0 0 12px 0;font-size:15px;" id="selectedFileTemplateName">Configure Template</h4>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Repository</label>
+                        <select id="fileTemplateRepo" class="input" style="width:100%;" onchange="loadRepoFiles()">
+                            <option value="">Select a shared repository...</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">File Pattern (glob)</label>
+                        <input id="fileTemplatePattern" class="input" style="width:100%;" placeholder="**/*.go" onchange="filterFiles()">
+                    </div>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Exclude Pattern (optional)</label>
+                        <input id="fileTemplateExclude" class="input" style="width:100%;" placeholder="**/*_test.go" onchange="filterFiles()">
+                    </div>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Matching Files <span id="fileCount" style="color:#16a34a;"></span></label>
+                        <div id="matchingFiles" style="max-height:150px;overflow-y:auto;border:1px solid #e5e5e5;border-radius:4px;background:white;padding:8px;font-family:monospace;font-size:12px;">
+                            <span style="color:#737373;">Select a repository first</span>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Prompt Template</label>
+                        <textarea id="fileTemplatePrompt" class="input" style="width:100%;height:80px;font-family:monospace;font-size:12px;" placeholder="Review {file} for..."></textarea>
+                        <p style="font-size:11px;color:#737373;margin-top:4px;">{file} = full path, {filename} = basename, {dir} = directory</p>
+                    </div>
+                    
+                    <div style="display:flex;gap:8px;justify-content:flex-end;">
+                        <button onclick="cancelFileTemplate()" class="btn">Cancel</button>
+                        <button onclick="createFileTemplateTasks()" class="btn btn-primary" id="createFileTasksBtn" disabled>Create Tasks</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1109,6 +1165,54 @@
                 ]
             }
         ];
+
+        // File-based templates - apply a prompt template to each matching file
+        const fileTemplates = [
+            {
+                id: 'review-files',
+                name: 'Code Review',
+                icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+                description: 'Review each file for bugs, security issues, and improvements',
+                promptTemplate: 'Review {file} for bugs, security vulnerabilities, and potential improvements. Write a detailed report.',
+                defaultPattern: '**/*.go',
+                outputPath: '~/shared/results/{task-id}/review-{filename}.md'
+            },
+            {
+                id: 'test-files',
+                name: 'Generate Tests',
+                icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 3h6v8l4 9H5l4-9V3z"/><path d="M9 3h6"/></svg>',
+                description: 'Generate unit tests for each file',
+                promptTemplate: 'Write comprehensive unit tests for {file}. Include edge cases, error scenarios, and aim for high coverage. Save tests to {file}_test.go (or appropriate test file convention).',
+                defaultPattern: '**/*.go',
+                excludePattern: '**/*_test.go'
+            },
+            {
+                id: 'document-files',
+                name: 'Document Files',
+                icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+                description: 'Add documentation comments to each file',
+                promptTemplate: 'Add comprehensive documentation to {file}. Include package docs, function docs, type docs, and inline comments for complex logic. Follow the language\'s documentation conventions.',
+                defaultPattern: '**/*.go',
+                excludePattern: '**/*_test.go'
+            },
+            {
+                id: 'refactor-files',
+                name: 'Refactor Files',
+                icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+                description: 'Refactor each file for better code quality',
+                promptTemplate: 'Refactor {file} to improve code quality: extract long functions, improve naming, reduce complexity, add error handling. Maintain all existing functionality.',
+                defaultPattern: '**/*.go',
+                excludePattern: '**/*_test.go'
+            },
+            {
+                id: 'security-files',
+                name: 'Security Audit',
+                icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+                description: 'Security audit each file for vulnerabilities',
+                promptTemplate: 'Perform a security audit of {file}. Check for: SQL injection, XSS, CSRF, auth issues, input validation, sensitive data exposure, insecure dependencies. Report findings and fix any issues.',
+                defaultPattern: '**/*.go'
+            }
+        ];
         let logs = [];
         let coordRunning = false;
         let allTasks = [];  // Store all tasks for filtering
@@ -1469,8 +1573,21 @@
 
         // Group functions
         // Template functions
+        // Template tab state
+        let currentTemplateTab = 'preset';
+        let selectedFileTemplate = null;
+        let repoFiles = [];
+        let filteredFiles = [];
+
         function showTemplates() {
             if (!coordRunning) return alert('Start coordinator first');
+            renderPresetTemplates();
+            renderFileTemplates();
+            switchTemplateTab('preset');
+            document.getElementById('templatesModal').classList.add('active');
+        }
+
+        function renderPresetTemplates() {
             const el = document.getElementById('templatesList');
             el.innerHTML = taskTemplates.map(t => `
                 <div onclick="selectTemplate('${t.id}')" style="border:1px solid #e5e5e5;border-radius:12px;padding:16px;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.borderColor='#a3a3a3';this.style.background='#fafafa'" onmouseout="this.style.borderColor='#e5e5e5';this.style.background='white'">
@@ -1482,11 +1599,190 @@
                     <p style="color:#737373;font-size:12px;">${t.prompts.length} parallel tasks</p>
                 </div>
             `).join('');
-            document.getElementById('templatesModal').classList.add('active');
+        }
+
+        function renderFileTemplates() {
+            const el = document.getElementById('fileTemplatesList');
+            el.innerHTML = fileTemplates.map(t => `
+                <div onclick="selectFileTemplate('${t.id}')" style="border:1px solid #e5e5e5;border-radius:12px;padding:12px;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.borderColor='#a3a3a3';this.style.background='#fafafa'" onmouseout="this.style.borderColor='#e5e5e5';this.style.background='white'">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                        <span style="color:#525252;">${t.icon}</span>
+                        <span style="font-weight:600;font-size:14px;">${t.name}</span>
+                    </div>
+                    <p style="color:#737373;font-size:12px;">${t.description}</p>
+                </div>
+            `).join('');
+        }
+
+        function switchTemplateTab(tab) {
+            currentTemplateTab = tab;
+            document.getElementById('presetTemplatesTab').style.display = tab === 'preset' ? 'block' : 'none';
+            document.getElementById('fileTemplatesTab').style.display = tab === 'file' ? 'block' : 'none';
+            document.getElementById('tab-preset').className = tab === 'preset' ? 'btn btn-primary' : 'btn';
+            document.getElementById('tab-file').className = tab === 'file' ? 'btn btn-primary' : 'btn';
+        }
+
+        async function selectFileTemplate(templateId) {
+            selectedFileTemplate = fileTemplates.find(t => t.id === templateId);
+            if (!selectedFileTemplate) return;
+            
+            document.getElementById('fileTemplateConfig').style.display = 'block';
+            document.getElementById('selectedFileTemplateName').textContent = selectedFileTemplate.name;
+            document.getElementById('fileTemplatePattern').value = selectedFileTemplate.defaultPattern || '**/*.go';
+            document.getElementById('fileTemplateExclude').value = selectedFileTemplate.excludePattern || '';
+            document.getElementById('fileTemplatePrompt').value = selectedFileTemplate.promptTemplate;
+            
+            // Populate repo dropdown
+            const repoSelect = document.getElementById('fileTemplateRepo');
+            repoSelect.innerHTML = '<option value="">Select a shared repository...</option>';
+            try {
+                const repos = await api('/api/repos');
+                if (repos && repos.length > 0) {
+                    repos.forEach(r => {
+                        const name = r.url.replace(/.*github\.com[\/:]/, '').replace(/\.git$/, '');
+                        repoSelect.innerHTML += `<option value="${r.id}">${name}</option>`;
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to load repos:', e);
+            }
+            
+            repoFiles = [];
+            filteredFiles = [];
+            document.getElementById('matchingFiles').innerHTML = '<span style="color:#737373;">Select a repository first</span>';
+            document.getElementById('fileCount').textContent = '';
+            document.getElementById('createFileTasksBtn').disabled = true;
+        }
+
+        async function loadRepoFiles() {
+            const repoId = document.getElementById('fileTemplateRepo').value;
+            if (!repoId) {
+                repoFiles = [];
+                filterFiles();
+                return;
+            }
+            
+            document.getElementById('matchingFiles').innerHTML = '<span style="color:#737373;">Loading files...</span>';
+            
+            try {
+                // Get repo path and list files
+                const repos = await api('/api/repos');
+                const repo = repos.find(r => r.id === repoId);
+                if (!repo) throw new Error('Repo not found');
+                
+                // Use the worktree listing or git ls-files via a new endpoint
+                const files = await api(`/api/repo/files?id=${repoId}`);
+                repoFiles = files || [];
+                filterFiles();
+            } catch (e) {
+                document.getElementById('matchingFiles').innerHTML = `<span style="color:#dc2626;">Error: ${e.message}</span>`;
+                repoFiles = [];
+            }
+        }
+
+        function filterFiles() {
+            const pattern = document.getElementById('fileTemplatePattern').value.trim();
+            const exclude = document.getElementById('fileTemplateExclude').value.trim();
+            
+            if (!pattern || repoFiles.length === 0) {
+                filteredFiles = [];
+                document.getElementById('matchingFiles').innerHTML = repoFiles.length === 0 
+                    ? '<span style="color:#737373;">Select a repository first</span>'
+                    : '<span style="color:#737373;">Enter a file pattern</span>';
+                document.getElementById('fileCount').textContent = '';
+                document.getElementById('createFileTasksBtn').disabled = true;
+                return;
+            }
+            
+            // Simple glob matching (convert glob to regex)
+            const patternRegex = globToRegex(pattern);
+            const excludeRegex = exclude ? globToRegex(exclude) : null;
+            
+            filteredFiles = repoFiles.filter(f => {
+                if (!patternRegex.test(f)) return false;
+                if (excludeRegex && excludeRegex.test(f)) return false;
+                return true;
+            });
+            
+            const el = document.getElementById('matchingFiles');
+            if (filteredFiles.length === 0) {
+                el.innerHTML = '<span style="color:#737373;">No files match the pattern</span>';
+            } else {
+                el.innerHTML = filteredFiles.slice(0, 50).map(f => 
+                    `<div style="padding:2px 0;">${escapeHtml(f)}</div>`
+                ).join('') + (filteredFiles.length > 50 ? `<div style="color:#737373;padding-top:4px;">... and ${filteredFiles.length - 50} more</div>` : '');
+            }
+            
+            document.getElementById('fileCount').textContent = `(${filteredFiles.length} files)`;
+            document.getElementById('createFileTasksBtn').disabled = filteredFiles.length === 0;
+        }
+
+        function globToRegex(glob) {
+            // Convert glob pattern to regex
+            let regex = glob
+                .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Escape special chars
+                .replace(/\*\*/g, '{{GLOBSTAR}}')        // Temp placeholder for **
+                .replace(/\*/g, '[^/]*')                 // * matches anything except /
+                .replace(/\?/g, '[^/]')                  // ? matches single char
+                .replace(/{{GLOBSTAR}}/g, '.*');         // ** matches anything
+            return new RegExp(`^${regex}$`);
+        }
+
+        async function createFileTemplateTasks() {
+            if (!selectedFileTemplate || filteredFiles.length === 0) return;
+            
+            const repoId = document.getElementById('fileTemplateRepo').value;
+            const promptTemplate = document.getElementById('fileTemplatePrompt').value;
+            
+            // Get repo info for the group
+            const repos = await api('/api/repos');
+            const repo = repos.find(r => r.id === repoId);
+            if (!repo) {
+                alert('Repository not found');
+                return;
+            }
+            
+            // Generate prompts for each file
+            const prompts = filteredFiles.map(file => {
+                const filename = file.split('/').pop();
+                const dir = file.split('/').slice(0, -1).join('/');
+                return promptTemplate
+                    .replace(/\{file\}/g, file)
+                    .replace(/\{filename\}/g, filename)
+                    .replace(/\{dir\}/g, dir || '.');
+            });
+            
+            // Create task group
+            try {
+                const result = await api('/api/group/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: `${selectedFileTemplate.name} (${filteredFiles.length} files)`,
+                        description: selectedFileTemplate.description,
+                        repo_url: repo.url,
+                        base_branch: repo.default_branch || 'main',
+                        prompts: prompts
+                    })
+                });
+                
+                addLog(`Created ${prompts.length} tasks for ${selectedFileTemplate.name}`);
+                closeTemplates();
+                refresh();
+            } catch (e) {
+                alert('Failed to create tasks: ' + e.message);
+            }
+        }
+
+        function cancelFileTemplate() {
+            selectedFileTemplate = null;
+            document.getElementById('fileTemplateConfig').style.display = 'none';
         }
 
         function closeTemplates() {
             document.getElementById('templatesModal').classList.remove('active');
+            selectedFileTemplate = null;
+            document.getElementById('fileTemplateConfig').style.display = 'none';
         }
 
         async function selectTemplate(templateId) {

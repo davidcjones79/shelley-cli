@@ -919,6 +919,7 @@ func runCoord(global GlobalConfig, args []string) {
 	mux.HandleFunc("/api/repo", coord.HandleGetRepo)
 	mux.HandleFunc("/api/repo/create", coord.HandleCreateRepo)
 	mux.HandleFunc("/api/repo/fetch", coord.HandleFetchRepo)
+	mux.HandleFunc("/api/repo/files", coord.HandleListRepoFiles)
 	mux.HandleFunc("/api/repo/worktrees", coord.HandleListWorktrees)
 	mux.HandleFunc("/api/repo/delete", coord.HandleDeleteRepo)
 	mux.HandleFunc("/api/ws", coord.HandleWebSocket)

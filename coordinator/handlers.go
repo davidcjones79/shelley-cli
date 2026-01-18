@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1027,6 +1028,47 @@ func (c *Coordinator) HandleFetchRepo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(repo)
+}
+
+// HandleListRepoFiles returns all files in a repository.
+func (c *Coordinator) HandleListRepoFiles(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+
+	repoID := r.URL.Query().Get("id")
+	if repoID == "" {
+		writeAPIError(w, http.StatusBadRequest, "id parameter is required", "MISSING_PARAM")
+		return
+	}
+
+	// Get repo path
+	repo, err := c.GetSharedRepo(repoID)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, "repository not found", "NOT_FOUND")
+		return
+	}
+
+	// Use git ls-files to get tracked files
+	cmd := exec.Command("git", "ls-files")
+	cmd.Dir = repo.Path
+	output, err := cmd.Output()
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to list files: "+err.Error(), "GIT_ERROR")
+		return
+	}
+
+	// Split output into lines and filter empty
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var files []string
+	for _, line := range lines {
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(files)
 }
 
 // HandleDeleteRepo removes a shared repository.
