@@ -473,29 +473,65 @@
         <!-- Tasks -->
         <div class="section" id="tasks-section">
             <div class="section-header">
-                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Tasks <span id="task-count" style="font-weight:normal;color:#737373;"></span></span>
-                <div style="display:flex;gap:8px;">
+                <span class="section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Tasks</span>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <div class="task-tabs" style="display:flex;gap:4px;margin-right:8px;">
+                        <button id="tab-worker-tasks" onclick="switchTaskTab('worker')" class="filter-btn active">Worker Tasks <span id="worker-task-count" style="font-weight:normal;color:#737373;"></span></button>
+                        <button id="tab-quick-tasks" onclick="switchTaskTab('quick')" class="filter-btn">Quick Tasks <span id="quick-task-count" style="font-weight:normal;color:#737373;"></span></button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Worker Tasks Tab -->
+            <div id="worker-tasks-tab">
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;">
                     <button onclick="showStuckTasks()" class="btn" title="View tasks that may be stuck"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Stuck</button>
                     <button onclick="clearCompletedTasks()" class="btn btn-danger" title="Clear completed and failed tasks"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear Done</button>
                 </div>
-            </div>
-            <div class="search-filter" style="margin-bottom: 12px;">
-                <input type="text" id="task-search" class="search-input" placeholder="Search tasks..." oninput="currentPage=1; filterTasks()">
-                <div style="display:flex;gap:4px;">
-                    <button class="filter-btn active" data-status="all" onclick="setTaskFilter('all')">All</button>
-                    <button class="filter-btn" data-status="queued" onclick="setTaskFilter('queued')">Queued</button>
-                    <button class="filter-btn" data-status="running" onclick="setTaskFilter('running')">Running</button>
-                    <button class="filter-btn" data-status="completed" onclick="setTaskFilter('completed')">Completed</button>
-                    <button class="filter-btn" data-status="failed" onclick="setTaskFilter('failed')">Failed</button>
+                <div class="search-filter" style="margin-bottom: 12px;">
+                    <input type="text" id="task-search" class="search-input" placeholder="Search tasks..." oninput="currentPage=1; filterTasks()">
+                    <div style="display:flex;gap:4px;">
+                        <button class="filter-btn active" data-status="all" onclick="setTaskFilter('all')">All</button>
+                        <button class="filter-btn" data-status="queued" onclick="setTaskFilter('queued')">Queued</button>
+                        <button class="filter-btn" data-status="running" onclick="setTaskFilter('running')">Running</button>
+                        <button class="filter-btn" data-status="completed" onclick="setTaskFilter('completed')">Completed</button>
+                        <button class="filter-btn" data-status="failed" onclick="setTaskFilter('failed')">Failed</button>
+                    </div>
+                </div>
+                <div class="list" id="tasks">
+                    <div class="list-empty">No tasks</div>
+                </div>
+                <div id="tasks-pagination" style="display:none;margin-top:12px;align-items:center;justify-content:center;gap:8px;">
+                    <button onclick="prevPage()" class="btn" id="prev-page-btn" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Prev</button>
+                    <span id="page-info" style="font-size:13px;color:#737373;">Page 1 of 1</span>
+                    <button onclick="nextPage()" class="btn" id="next-page-btn" disabled>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
                 </div>
             </div>
-            <div class="list" id="tasks">
-                <div class="list-empty">No tasks</div>
-            </div>
-            <div id="tasks-pagination" style="display:none;margin-top:12px;align-items:center;justify-content:center;gap:8px;">
-                <button onclick="prevPage()" class="btn" id="prev-page-btn" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Prev</button>
-                <span id="page-info" style="font-size:13px;color:#737373;">Page 1 of 1</span>
-                <button onclick="nextPage()" class="btn" id="next-page-btn" disabled>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
+            
+            <!-- Quick Tasks Tab -->
+            <div id="quick-tasks-tab" style="display:none;">
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;">
+                    <button onclick="clearQuickTasks()" class="btn btn-danger" title="Clear completed tasks"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear Done</button>
+                </div>
+                
+                <!-- Quick Task Form -->
+                <div style="background:#f9fafb;border:1px solid #e5e5e5;border-radius:8px;padding:16px;margin-bottom:16px;">
+                    <div style="font-weight:600;margin-bottom:12px;">New Quick Task</div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Prompt</label>
+                        <textarea id="quick-task-prompt" class="input" style="width:100%;min-height:80px;resize:vertical;" placeholder="What do you want Shelley to do?"></textarea>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-size:12px;font-weight:500;color:#737373;margin-bottom:4px;">Working Directory</label>
+                        <input type="text" id="quick-task-dir" class="input" style="width:100%;" placeholder="~/myproject (defaults to home directory)">
+                    </div>
+                    <button onclick="createQuickTask()" class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Locally</button>
+                </div>
+                
+                <!-- Quick Tasks List -->
+                <div class="list" id="quick-tasks">
+                    <div class="list-empty">No quick tasks yet. Run a task locally above.</div>
+                </div>
             </div>
         </div>
 
@@ -2781,6 +2817,148 @@
                 </div>
             `}).join('');
         }
+        
+        // Quick Tasks functionality
+        let quickTasks = [];
+        let currentTaskTab = 'worker';
+        
+        function switchTaskTab(tab) {
+            currentTaskTab = tab;
+            document.getElementById('tab-worker-tasks').classList.toggle('active', tab === 'worker');
+            document.getElementById('tab-quick-tasks').classList.toggle('active', tab === 'quick');
+            document.getElementById('worker-tasks-tab').style.display = tab === 'worker' ? 'block' : 'none';
+            document.getElementById('quick-tasks-tab').style.display = tab === 'quick' ? 'block' : 'none';
+            if (tab === 'quick') {
+                refreshQuickTasks();
+            }
+        }
+        
+        async function refreshQuickTasks() {
+            try {
+                const resp = await fetch('/api/quick-tasks');
+                if (!resp.ok) throw new Error('Failed to fetch quick tasks');
+                quickTasks = await resp.json();
+                renderQuickTasks();
+                updateQuickTaskCount();
+            } catch (err) {
+                console.error('Failed to refresh quick tasks:', err);
+            }
+        }
+        
+        function updateQuickTaskCount() {
+            const running = quickTasks.filter(t => t.status === 'running').length;
+            const el = document.getElementById('quick-task-count');
+            if (el) {
+                el.textContent = running > 0 ? `(${running} running)` : (quickTasks.length > 0 ? `(${quickTasks.length})` : '');
+            }
+        }
+        
+        function renderQuickTasks() {
+            const el = document.getElementById('quick-tasks');
+            if (!quickTasks || quickTasks.length === 0) {
+                el.innerHTML = '<div class="list-empty">No quick tasks yet. Run a task locally above.</div>';
+                return;
+            }
+            // Sort by created_at descending
+            const sorted = [...quickTasks].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            el.innerHTML = sorted.map(t => {
+                const statusClass = t.status === 'completed' ? 'success' : t.status === 'failed' ? 'danger' : t.status === 'killed' ? 'warning' : 'info';
+                const dotClass = t.status === 'completed' ? 'running' : t.status === 'failed' || t.status === 'killed' ? 'stopped' : 'busy';
+                const prompt = escapeHtml(t.prompt.length > 100 ? t.prompt.slice(0, 100) + '...' : t.prompt);
+                const dir = t.working_dir ? `<span style="color:#737373;font-size:11px;margin-left:8px;">${escapeHtml(t.working_dir)}</span>` : '';
+                const actions = t.status === 'running' 
+                    ? `<button onclick="event.stopPropagation();killQuickTask('${t.id}')" class="btn btn-danger" style="font-size:11px;padding:4px 8px;">Kill</button>`
+                    : `<button onclick="event.stopPropagation();viewQuickTaskOutput('${t.id}')" class="btn" style="font-size:11px;padding:4px 8px;">View</button>`;
+                return `
+                <div class="list-item" onclick="viewQuickTaskOutput('${t.id}')" style="cursor:pointer">
+                    <div class="list-item-info">
+                        <span class="status-dot ${dotClass}"></span>
+                        <span class="list-item-name">${prompt}</span>
+                        ${dir}
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        ${actions}
+                        <span class="badge badge-${statusClass}">${t.status}</span>
+                    </div>
+                </div>
+            `}).join('');
+        }
+        
+        async function createQuickTask() {
+            const prompt = document.getElementById('quick-task-prompt').value.trim();
+            const workingDir = document.getElementById('quick-task-dir').value.trim();
+            
+            if (!prompt) {
+                alert('Please enter a prompt');
+                return;
+            }
+            
+            try {
+                const resp = await fetch('/api/quick-tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, working_dir: workingDir })
+                });
+                if (!resp.ok) {
+                    const err = await resp.text();
+                    throw new Error(err);
+                }
+                document.getElementById('quick-task-prompt').value = '';
+                refreshQuickTasks();
+            } catch (err) {
+                alert('Failed to create task: ' + err.message);
+            }
+        }
+        
+        async function killQuickTask(id) {
+            if (!confirm('Kill this task?')) return;
+            try {
+                await fetch(`/api/quick-task?id=${id}`, { method: 'DELETE' });
+                refreshQuickTasks();
+            } catch (err) {
+                alert('Failed to kill task: ' + err.message);
+            }
+        }
+        
+        async function viewQuickTaskOutput(id) {
+            try {
+                const resp = await fetch(`/api/quick-task/output?id=${id}`);
+                const output = await resp.text();
+                const task = quickTasks.find(t => t.id === id);
+                
+                // Show in modal
+                document.getElementById('taskDetails').innerHTML = `
+                    <h3 style="margin-bottom:12px;">Quick Task Output</h3>
+                    <div style="margin-bottom:12px;">
+                        <strong>Prompt:</strong> ${escapeHtml(task?.prompt || id)}
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <strong>Status:</strong> <span class="badge badge-${task?.status === 'completed' ? 'success' : task?.status === 'failed' ? 'danger' : 'info'}">${task?.status || 'unknown'}</span>
+                    </div>
+                    <div style="margin-bottom:8px;"><strong>Output:</strong></div>
+                    <pre style="background:#1a1a1a;color:#e5e5e5;padding:12px;border-radius:8px;overflow:auto;max-height:400px;font-size:12px;white-space:pre-wrap;">${escapeHtml(output || '(no output)')}</pre>
+                `;
+                document.getElementById('taskModal').style.display = 'flex';
+            } catch (err) {
+                alert('Failed to load output: ' + err.message);
+            }
+        }
+        
+        async function clearQuickTasks() {
+            try {
+                await fetch('/api/quick-tasks/clear', { method: 'POST' });
+                refreshQuickTasks();
+            } catch (err) {
+                alert('Failed to clear tasks: ' + err.message);
+            }
+        }
+        
+        // Poll quick tasks when on that tab
+        setInterval(() => {
+            if (currentTaskTab === 'quick') {
+                refreshQuickTasks();
+            }
+        }, 3000);
         
         function renderWorkers(workers) {
             // Update failed count badge

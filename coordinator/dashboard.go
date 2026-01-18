@@ -43,6 +43,21 @@ type DashboardConfig struct {
 }
 
 // Dashboard manages the coordinator subprocess and serves the web UI.
+// QuickTask represents a local sub-agent task running on the dashboard VM.
+type QuickTask struct {
+	ID         string     `json:"id"`
+	Prompt     string     `json:"prompt"`
+	WorkingDir string     `json:"working_dir"`
+	Status     string     `json:"status"` // running, completed, failed, killed
+	PID        int        `json:"pid,omitempty"`
+	OutputFile string     `json:"-"` // path to output file (not sent to client)
+	Output     string     `json:"output,omitempty"` // tail of output for preview
+	Error      *string    `json:"error,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	cmd        *exec.Cmd  `json:"-"` // running process
+}
+
 type Dashboard struct {
 	config    DashboardConfig
 	mu        sync.RWMutex
@@ -52,6 +67,10 @@ type Dashboard struct {
 	maxLogs   int
 	proxy     *httputil.ReverseProxy
 	apiToken  string
+
+	// Quick tasks (local sub-agents)
+	quickTasks   map[string]*QuickTask
+	quickTasksMu sync.RWMutex
 }
 
 // NewDashboard creates a new dashboard instance.
@@ -73,10 +92,11 @@ func NewDashboard(cfg DashboardConfig) *Dashboard {
 	}
 
 	return &Dashboard{
-		config:   cfg,
-		maxLogs:  1000,
-		proxy:    proxy,
-		apiToken: cfg.APIToken,
+		config:     cfg,
+		maxLogs:    1000,
+		proxy:      proxy,
+		apiToken:   cfg.APIToken,
+		quickTasks: make(map[string]*QuickTask),
 	}
 }
 
@@ -810,6 +830,281 @@ func (d *Dashboard) LoadSavedSettings() {
 	}
 }
 
+// Quick Task Handlers
+
+// HandleQuickTasks returns list of quick tasks or creates a new one.
+func (d *Dashboard) HandleQuickTasks(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		d.listQuickTasks(w, r)
+	case http.MethodPost:
+		d.createQuickTask(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (d *Dashboard) listQuickTasks(w http.ResponseWriter, r *http.Request) {
+	d.quickTasksMu.RLock()
+	tasks := make([]*QuickTask, 0, len(d.quickTasks))
+	for _, t := range d.quickTasks {
+		// Update output preview for running tasks
+		if t.Status == "running" {
+			d.updateTaskOutput(t)
+		}
+		tasks = append(tasks, t)
+	}
+	d.quickTasksMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tasks)
+}
+
+func (d *Dashboard) createQuickTask(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt     string `json:"prompt"`
+		WorkingDir string `json:"working_dir"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Prompt == "" {
+		http.Error(w, "prompt is required", http.StatusBadRequest)
+		return
+	}
+
+	// Default working dir to home
+	if req.WorkingDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			req.WorkingDir = home
+		}
+	}
+
+	// Expand ~ in path
+	if strings.HasPrefix(req.WorkingDir, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			req.WorkingDir = filepath.Join(home, req.WorkingDir[2:])
+		}
+	}
+
+	taskID := fmt.Sprintf("quick-%d", time.Now().UnixNano())
+	outputFile := filepath.Join(os.TempDir(), fmt.Sprintf("shelley-quick-%s.log", taskID))
+
+	task := &QuickTask{
+		ID:         taskID,
+		Prompt:     req.Prompt,
+		WorkingDir: req.WorkingDir,
+		Status:     "running",
+		OutputFile: outputFile,
+		CreatedAt:  time.Now(),
+	}
+
+	// Find shelley binary
+	shelleyBin := "shelley"
+	if path, err := exec.LookPath("shelley"); err == nil {
+		shelleyBin = path
+	} else {
+		// Try common locations
+		for _, p := range []string{
+			"/home/exedev/shelley-cli/bin/shelley",
+			"/usr/local/bin/shelley",
+			filepath.Join(os.Getenv("HOME"), ".local/bin/shelley"),
+		} {
+			if _, err := os.Stat(p); err == nil {
+				shelleyBin = p
+				break
+			}
+		}
+	}
+
+	// Create output file
+	outFile, err := os.Create(outputFile)
+	if err != nil {
+		http.Error(w, "Failed to create output file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Start shelley process
+	cmd := exec.Command(shelleyBin, "chat", "-yes", "-no-sync", "-prompt", req.Prompt)
+	cmd.Dir = req.WorkingDir
+	cmd.Stdout = outFile
+	cmd.Stderr = outFile
+
+	if err := cmd.Start(); err != nil {
+		outFile.Close()
+		errMsg := err.Error()
+		task.Status = "failed"
+		task.Error = &errMsg
+		now := time.Now()
+		task.FinishedAt = &now
+	} else {
+		task.PID = cmd.Process.Pid
+		task.cmd = cmd
+
+		// Monitor process in background
+		go d.monitorQuickTask(task, outFile)
+	}
+
+	d.quickTasksMu.Lock()
+	d.quickTasks[taskID] = task
+	d.quickTasksMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(task)
+}
+
+func (d *Dashboard) monitorQuickTask(task *QuickTask, outFile *os.File) {
+	defer outFile.Close()
+
+	err := task.cmd.Wait()
+
+	d.quickTasksMu.Lock()
+	now := time.Now()
+	task.FinishedAt = &now
+	if err != nil {
+		task.Status = "failed"
+		errMsg := err.Error()
+		task.Error = &errMsg
+	} else {
+		task.Status = "completed"
+	}
+	d.updateTaskOutput(task)
+	d.quickTasksMu.Unlock()
+}
+
+func (d *Dashboard) updateTaskOutput(task *QuickTask) {
+	// Read last 2KB of output file for preview
+	if task.OutputFile == "" {
+		return
+	}
+	f, err := os.Open(task.OutputFile)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	// Seek to last 2KB
+	info, _ := f.Stat()
+	offset := int64(0)
+	if info.Size() > 2048 {
+		offset = info.Size() - 2048
+	}
+	f.Seek(offset, 0)
+
+	buf := make([]byte, 2048)
+	n, _ := f.Read(buf)
+	if n > 0 {
+		task.Output = string(buf[:n])
+		// If we started mid-stream, skip to first newline
+		if offset > 0 {
+			if idx := strings.Index(task.Output, "\n"); idx >= 0 {
+				task.Output = task.Output[idx+1:]
+			}
+		}
+	}
+}
+
+// HandleQuickTask handles individual quick task operations (get, kill).
+func (d *Dashboard) HandleQuickTask(w http.ResponseWriter, r *http.Request) {
+	taskID := r.URL.Query().Get("id")
+	if taskID == "" {
+		http.Error(w, "id parameter required", http.StatusBadRequest)
+		return
+	}
+
+	d.quickTasksMu.RLock()
+	task, exists := d.quickTasks[taskID]
+	d.quickTasksMu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Task not found", http.StatusNotFound)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		// Return task with full output
+		d.quickTasksMu.Lock()
+		d.updateTaskOutput(task)
+		d.quickTasksMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(task)
+
+	case http.MethodDelete:
+		// Kill task if running
+		d.quickTasksMu.Lock()
+		if task.Status == "running" && task.cmd != nil && task.cmd.Process != nil {
+			task.cmd.Process.Kill()
+			task.Status = "killed"
+			now := time.Now()
+			task.FinishedAt = &now
+		}
+		d.quickTasksMu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(task)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleQuickTaskOutput streams the full output of a quick task.
+func (d *Dashboard) HandleQuickTaskOutput(w http.ResponseWriter, r *http.Request) {
+	taskID := r.URL.Query().Get("id")
+	if taskID == "" {
+		http.Error(w, "id parameter required", http.StatusBadRequest)
+		return
+	}
+
+	d.quickTasksMu.RLock()
+	task, exists := d.quickTasks[taskID]
+	d.quickTasksMu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Task not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+
+	if task.OutputFile == "" {
+		return
+	}
+
+	data, err := os.ReadFile(task.OutputFile)
+	if err != nil {
+		http.Error(w, "Failed to read output", http.StatusInternalServerError)
+		return
+	}
+	w.Write(data)
+}
+
+// HandleClearQuickTasks removes completed/failed/killed quick tasks.
+func (d *Dashboard) HandleClearQuickTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	d.quickTasksMu.Lock()
+	for id, task := range d.quickTasks {
+		if task.Status != "running" {
+			// Clean up output file
+			if task.OutputFile != "" {
+				os.Remove(task.OutputFile)
+			}
+			delete(d.quickTasks, id)
+		}
+	}
+	d.quickTasksMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 // SetupRoutes configures HTTP routes for the dashboard.
 func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", d.HandleDashboardIndex)
@@ -820,6 +1115,10 @@ func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/dashboard/stop", d.HandleDashboardStop)
 	mux.HandleFunc("/dashboard/status", d.HandleDashboardStatus)
 	mux.HandleFunc("/api/settings", d.HandleSettings)
+	mux.HandleFunc("/api/quick-tasks", d.HandleQuickTasks)
+	mux.HandleFunc("/api/quick-task", d.HandleQuickTask)
+	mux.HandleFunc("/api/quick-task/output", d.HandleQuickTaskOutput)
+	mux.HandleFunc("/api/quick-tasks/clear", d.HandleClearQuickTasks)
 	mux.HandleFunc("/api/", d.HandleAPIProxy)
 	mux.HandleFunc("/shelley-bin", d.HandleAPIProxy)
 	mux.HandleFunc("/local-skills", d.HandleLocalSkills)
