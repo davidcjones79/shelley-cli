@@ -1,0 +1,17 @@
+{
+  "id": "a4afa77beadc7eac",
+  "prompt": "List all files in the current directory and describe what this project does",
+  "status": "completed",
+  "priority": 0,
+  "worker_id": "wk-1da-x9b56106d71b8",
+  "result": "",
+  "error": "",
+  "conversation_id": "cYY7PG7",
+  "source": "autonomous",
+  "group_id": "30e75d6b8d65ef43",
+  "skill_context": "You are a helpful assistant. Be concise.",
+  "created_at": "2026-01-18T00:59:28Z",
+  "assigned_at": "2026-01-18T01:07:54Z",
+  "started_at": "2026-01-18T01:07:54Z",
+  "completed_at": "2026-01-18T01:08:00Z"
+}
