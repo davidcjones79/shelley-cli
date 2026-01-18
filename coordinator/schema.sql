@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     retry_count INTEGER DEFAULT 0,
     -- Input staging
     input_dir TEXT,          -- path to staged input files: ~/shared/source/<task-id>/
+    -- File ownership (for conflict detection)
+    owns_files TEXT,         -- JSON array of glob patterns this task may modify
+    forbidden_files TEXT,    -- JSON array of glob patterns this task must not touch
     -- Timestamps
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     assigned_at DATETIME,

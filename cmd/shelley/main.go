@@ -914,6 +914,9 @@ func runCoord(global GlobalConfig, args []string) {
 
 	mux.HandleFunc("/api/register-ssh-key", coord.HandleRegisterSSHKey)
 
+	// File conflict detection
+	mux.HandleFunc("/api/check-conflicts", coord.HandleCheckConflicts)
+
 	// Shared repository management
 	mux.HandleFunc("/api/repos", coord.HandleListRepos)
 	mux.HandleFunc("/api/repo", coord.HandleGetRepo)

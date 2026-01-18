@@ -636,6 +636,24 @@
                 <textarea id="group-prompts" class="input" style="min-height: 120px;" placeholder="Add input validation to signup form&#10;Fix failing tests in auth_test.go&#10;Add rate limiting to login endpoint"></textarea>
                 <p style="font-size: 11px; color: #737373; margin-top: 4px;">Each line becomes a separate task that runs in parallel</p>
             </div>
+            <details style="margin-bottom: 16px;">
+                <summary style="cursor: pointer; font-size: 12px; font-weight: 500; color: #737373; padding: 4px 0;">File Ownership (optional - prevents parallel conflicts)</summary>
+                <div style="margin-top: 12px; padding: 12px; background: #fafafa; border-radius: 8px;">
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Files to Own (glob patterns, one per line)</label>
+                        <textarea id="group-owns-files" class="input" style="min-height: 60px; font-family: monospace; font-size: 12px;" placeholder="auth/*.go&#10;middleware/auth.go"></textarea>
+                        <p style="font-size: 11px; color: #737373; margin-top: 4px;">All tasks may modify these files</p>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Forbidden Files (glob patterns, one per line)</label>
+                        <textarea id="group-forbidden-files" class="input" style="min-height: 60px; font-family: monospace; font-size: 12px;" placeholder="config/*&#10;main.go"></textarea>
+                        <p style="font-size: 11px; color: #737373; margin-top: 4px;">Tasks must not modify these files</p>
+                    </div>
+                    <div id="conflict-warning" style="display: none; padding: 8px 12px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; margin-top: 8px;">
+                        <p style="font-size: 12px; color: #92400e; margin: 0;"><strong>⚠️ Conflict Warning:</strong> <span id="conflict-message"></span></p>
+                    </div>
+                </div>
+            </details>
             <div style="display: flex; gap: 8px; justify-content: flex-end;">
                 <button onclick="closeCreateGroup()" class="btn">Cancel</button>
                 <button onclick="createGroup()" class="btn btn-primary">Create Group</button>
@@ -1542,6 +1560,24 @@
                     `;
                 }
                 
+                // File ownership section
+                let fileOwnershipSection = '';
+                if ((task.owns_files && task.owns_files.length > 0) || (task.forbidden_files && task.forbidden_files.length > 0)) {
+                    fileOwnershipSection = `
+                        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px;margin-bottom:16px;">
+                            <p style="margin-bottom:8px;font-weight:600;color:#1e40af;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>File Ownership</p>
+                            ${task.owns_files && task.owns_files.length > 0 ? `
+                                <p style="margin-bottom:4px;font-size:12px;color:#16a34a;"><strong>May Modify:</strong></p>
+                                <div style="font-family:monospace;font-size:11px;color:#166534;margin-bottom:8px;">${task.owns_files.map(f => `<code style="background:#dcfce7;padding:2px 6px;border-radius:4px;margin-right:4px;">${escapeHtml(f)}</code>`).join('')}</div>
+                            ` : ''}
+                            ${task.forbidden_files && task.forbidden_files.length > 0 ? `
+                                <p style="margin-bottom:4px;font-size:12px;color:#dc2626;"><strong>Must Not Touch:</strong></p>
+                                <div style="font-family:monospace;font-size:11px;color:#991b1b;">${task.forbidden_files.map(f => `<code style="background:#fee2e2;padding:2px 6px;border-radius:4px;margin-right:4px;">${escapeHtml(f)}</code>`).join('')}</div>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+                
                 const sourceIcon = '';  // Source shown in badge instead
                 const sourceLabel = task.source === 'manual' ? 'Manual' : task.source === 'autonomous' ? 'Autonomous' : 'API';
                 
@@ -1576,6 +1612,7 @@
                     ${task.completed_at ? `<p style="margin-bottom:12px"><strong>Completed:</strong> ${new Date(task.completed_at).toLocaleString()}</p>` : ''}
                     ${task.worker_id ? `<p style="margin-bottom:12px"><strong>Worker:</strong> ${task.worker_id}</p>` : ''}
                     ${gitSection}
+                    ${fileOwnershipSection}
                     <div style="margin-bottom:16px;">${actionButtons}</div>
                     <p style="margin-bottom:8px"><strong>Prompt:</strong></p>
                     <div class="result-box">${escapeHtml(task.prompt || '')}</div>
@@ -1772,17 +1809,23 @@
                 return;
             }
             
-            // Generate prompts for each file
-            const prompts = filteredFiles.map(file => {
+            // Generate task specs for each file with file ownership
+            const tasks = filteredFiles.map(file => {
                 const filename = file.split('/').pop();
                 const dir = file.split('/').slice(0, -1).join('/');
-                return promptTemplate
+                const prompt = promptTemplate
                     .replace(/\{file\}/g, file)
                     .replace(/\{filename\}/g, filename)
                     .replace(/\{dir\}/g, dir || '.');
+                
+                return {
+                    prompt: prompt,
+                    owns_files: [file],  // This task owns the specific file it's working on
+                    forbidden_files: filteredFiles.filter(f => f !== file)  // Don't touch other files in the batch
+                };
             });
             
-            // Create task group
+            // Create task group with file ownership
             try {
                 const result = await api('/api/group/create', {
                     method: 'POST',
@@ -1792,11 +1835,11 @@
                         description: selectedFileTemplate.description,
                         repo_url: repo.url,
                         base_branch: repo.default_branch || 'main',
-                        prompts: prompts
+                        tasks: tasks  // Use tasks array instead of prompts for file ownership
                     })
                 });
                 
-                addLog(`Created ${prompts.length} tasks for ${selectedFileTemplate.name}`);
+                addLog(`Created ${tasks.length} tasks for ${selectedFileTemplate.name}`);
                 closeTemplates();
                 refresh();
             } catch (e) {
@@ -1887,6 +1930,16 @@
             document.getElementById('group-skill-context').value = '';
             document.getElementById('group-prompts').value = '';
             document.getElementById('skill-parallel-warning').style.display = 'none';
+            // Clear file ownership fields
+            if (document.getElementById('group-owns-files')) {
+                document.getElementById('group-owns-files').value = '';
+            }
+            if (document.getElementById('group-forbidden-files')) {
+                document.getElementById('group-forbidden-files').value = '';
+            }
+            if (document.getElementById('conflict-warning')) {
+                document.getElementById('conflict-warning').style.display = 'none';
+            }
         }
 
         async function createGroup() {
@@ -1896,6 +1949,12 @@
             const baseBranch = document.getElementById('group-base-branch').value.trim() || 'main';
             const skillContext = document.getElementById('group-skill-context').value.trim();
             const promptsText = document.getElementById('group-prompts').value.trim();
+            
+            // Parse optional file ownership
+            const ownsFilesText = document.getElementById('group-owns-files')?.value.trim() || '';
+            const forbiddenFilesText = document.getElementById('group-forbidden-files')?.value.trim() || '';
+            const ownsFiles = ownsFilesText.split('\n').map(p => p.trim()).filter(p => p);
+            const forbiddenFiles = forbiddenFilesText.split('\n').map(p => p.trim()).filter(p => p);
 
             if (!name) return alert('Group name required');
             if (!promptsText) return alert('At least one task prompt required');
@@ -1913,12 +1972,25 @@
                 }
             }
 
-            const payload = { name, prompts };
+            // Build payload - use tasks array if file ownership specified, otherwise use simple prompts
+            const payload = { name };
             if (description) payload.description = description;
             if (skillContext) payload.skill_context = skillContext;
             if (repoUrl) {
                 payload.repo_url = repoUrl;
                 payload.base_branch = baseBranch;
+            }
+            
+            if (ownsFiles.length > 0 || forbiddenFiles.length > 0) {
+                // Use detailed task specs with file ownership
+                payload.tasks = prompts.map(prompt => ({
+                    prompt,
+                    owns_files: ownsFiles,
+                    forbidden_files: forbiddenFiles
+                }));
+            } else {
+                // Use simple prompts for backwards compatibility
+                payload.prompts = prompts;
             }
 
             try {

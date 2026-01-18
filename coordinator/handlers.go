@@ -900,6 +900,42 @@ func (c *Coordinator) HandleRegisterSSHKey(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 }
 
+// HandleCheckConflicts checks if file patterns would conflict with running tasks.
+// POST with {"owns_files": [...], "forbidden_files": [...]} to check before enqueueing.
+func (c *Coordinator) HandleCheckConflicts(w http.ResponseWriter, r *http.Request) {
+	if !c.CheckAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST method required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		TaskID         string   `json:"task_id"`         // Optional: exclude this task from conflict check
+		OwnsFiles      []string `json:"owns_files"`
+		ForbiddenFiles []string `json:"forbidden_files"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Generate temp ID if not provided
+	taskID := req.TaskID
+	if taskID == "" {
+		taskID = "__check__"
+	}
+
+	conflicts := c.CheckFileConflicts(taskID, req.OwnsFiles, req.ForbiddenFiles)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"has_conflicts": len(conflicts) > 0,
+		"conflicts":     conflicts,
+	})
+}
+
 // HandleListRepos returns all shared repositories.
 func (c *Coordinator) HandleListRepos(w http.ResponseWriter, r *http.Request) {
 	if !c.CheckAuth(w, r) {

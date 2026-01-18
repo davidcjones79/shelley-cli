@@ -72,8 +72,10 @@ type Task struct {
 	Source         string     `json:"source"`                    // manual, autonomous, api
 	GroupID        *string    `json:"group_id,omitempty"`
 	InputDir       *string    `json:"input_dir,omitempty"`       // path to staged input files
+	OwnsFiles      []string   `json:"owns_files,omitempty"`      // glob patterns this task may modify
+	ForbiddenFiles []string   `json:"forbidden_files,omitempty"` // glob patterns this task must not touch
 	SkillContext   *string    `json:"skill_context,omitempty"`   // system-level context from group
-	WorkerContext  *string    `json:"worker_context,omitempty"` // rendered worker context template
+	WorkerContext  *string    `json:"worker_context,omitempty"`  // rendered worker context template
 	CreatedAt      time.Time  `json:"created_at"`
 	AssignedAt     *time.Time `json:"assigned_at,omitempty"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
@@ -113,15 +115,17 @@ type InputFile struct {
 }
 
 type TaskRequest struct {
-	ID            string      `json:"id"`
-	Prompt        string      `json:"prompt"`
-	Priority      int         `json:"priority"`
-	RepoURL       string      `json:"repo_url"`
-	BaseBranch    string      `json:"base_branch"`
-	GroupID       string      `json:"group_id"`       // Optional: assign to existing group
-	InputFiles    []InputFile `json:"input_files"`    // Optional: files to stage in ~/shared/source/<task-id>/
-	UseWorktree   bool        `json:"use_worktree"`   // Use shared repo with git worktree (default: true if Tailscale enabled)
-	WorktreePath  string      `json:"worktree_path"`  // Set by coordinator: path to worktree
+	ID             string      `json:"id"`
+	Prompt         string      `json:"prompt"`
+	Priority       int         `json:"priority"`
+	RepoURL        string      `json:"repo_url"`
+	BaseBranch     string      `json:"base_branch"`
+	GroupID        string      `json:"group_id"`        // Optional: assign to existing group
+	InputFiles     []InputFile `json:"input_files"`     // Optional: files to stage in ~/shared/source/<task-id>/
+	UseWorktree    bool        `json:"use_worktree"`    // Use shared repo with git worktree (default: true if Tailscale enabled)
+	WorktreePath   string      `json:"worktree_path"`   // Set by coordinator: path to worktree
+	OwnsFiles      []string    `json:"owns_files"`      // Glob patterns this task may modify
+	ForbiddenFiles []string    `json:"forbidden_files"` // Glob patterns this task must not touch
 }
 
 // TaskGroup represents a batch of related tasks.
@@ -141,14 +145,23 @@ type TaskGroup struct {
 }
 
 // GroupRequest contains parameters for creating a task group.
+// GroupTaskSpec specifies a task to create within a group.
+// Either Prompt (simple string) or TaskRequest (detailed spec) should be set.
+type GroupTaskSpec struct {
+	Prompt         string   `json:"prompt"`          // Simple prompt string
+	OwnsFiles      []string `json:"owns_files"`      // Optional: files this task may modify
+	ForbiddenFiles []string `json:"forbidden_files"` // Optional: files this task must not touch
+}
+
 type GroupRequest struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	RepoURL      string   `json:"repo_url"`
-	BaseBranch   string   `json:"base_branch"`
-	SkillContext string   `json:"skill_context"` // System-level context for workers
-	Prompts      []string `json:"prompts"`       // Optional: create tasks immediately
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	RepoURL      string          `json:"repo_url"`
+	BaseBranch   string          `json:"base_branch"`
+	SkillContext string          `json:"skill_context"` // System-level context for workers
+	Prompts      []string        `json:"prompts"`       // Simple prompts (backwards compatible)
+	Tasks        []GroupTaskSpec `json:"tasks"`         // Detailed task specs with file ownership
 }
 
 // CompleteRequest contains the result of a completed task.
@@ -764,8 +777,21 @@ func (c *Coordinator) EnqueueTask(req TaskRequest) (*Task, error) {
 		inputDir = stagePath
 	}
 
-	_, err := c.db.Exec(`INSERT INTO tasks (id, prompt, priority, repo_url, base_branch, branch_name, worktree_path, group_id, input_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		req.ID, req.Prompt, req.Priority, repoURL, baseBranch, branch, worktreePath, groupID, inputDir)
+	// Serialize file ownership patterns as JSON
+	var ownsFilesJSON, forbiddenFilesJSON interface{}
+	if len(req.OwnsFiles) > 0 {
+		if b, err := json.Marshal(req.OwnsFiles); err == nil {
+			ownsFilesJSON = string(b)
+		}
+	}
+	if len(req.ForbiddenFiles) > 0 {
+		if b, err := json.Marshal(req.ForbiddenFiles); err == nil {
+			forbiddenFilesJSON = string(b)
+		}
+	}
+
+	_, err := c.db.Exec(`INSERT INTO tasks (id, prompt, priority, repo_url, base_branch, branch_name, worktree_path, group_id, input_dir, owns_files, forbidden_files) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		req.ID, req.Prompt, req.Priority, repoURL, baseBranch, branch, worktreePath, groupID, inputDir, ownsFilesJSON, forbiddenFilesJSON)
 	if err != nil {
 		return nil, fmt.Errorf("enqueue task: %w", err)
 	}
@@ -861,16 +887,19 @@ func (c *Coordinator) GetTask(id string) (*Task, error) {
 	var workerID, result, errorMsg sql.NullString
 	var repoURL, baseBranch, branchName, worktreePath, commitSHA, prURL, groupID sql.NullString
 	var conversationID, source, inputDir sql.NullString
+	var ownsFilesJSON, forbiddenFilesJSON sql.NullString
 	var prNumber sql.NullInt64
 	var assignedAt, startedAt, completedAt sql.NullTime
 
 	err := c.db.QueryRow(`SELECT id, prompt, status, priority, worker_id, result, error, 
 		repo_url, base_branch, branch_name, worktree_path, commit_sha, pr_url, pr_number,
 		conversation_id, COALESCE(source, 'autonomous') as source, group_id, input_dir,
+		owns_files, forbidden_files,
 		created_at, assigned_at, started_at, completed_at FROM tasks WHERE id = ?`, id).Scan(
 		&t.ID, &t.Prompt, &t.Status, &t.Priority, &workerID, &result, &errorMsg,
 		&repoURL, &baseBranch, &branchName, &worktreePath, &commitSHA, &prURL, &prNumber,
 		&conversationID, &source, &groupID, &inputDir,
+		&ownsFilesJSON, &forbiddenFilesJSON,
 		&t.CreatedAt, &assignedAt, &startedAt, &completedAt)
 	if err != nil {
 		return nil, err
@@ -921,6 +950,12 @@ func (c *Coordinator) GetTask(id string) (*Task, error) {
 	if inputDir.Valid {
 		t.InputDir = &inputDir.String
 	}
+	if ownsFilesJSON.Valid {
+		json.Unmarshal([]byte(ownsFilesJSON.String), &t.OwnsFiles)
+	}
+	if forbiddenFilesJSON.Valid {
+		json.Unmarshal([]byte(forbiddenFilesJSON.String), &t.ForbiddenFiles)
+	}
 	if assignedAt.Valid {
 		t.AssignedAt = &assignedAt.Time
 	}
@@ -941,6 +976,184 @@ func (c *Coordinator) GetTask(id string) (*Task, error) {
 	}
 
 	return &t, nil
+}
+
+// FileConflict describes a conflict between two tasks' file ownership.
+type FileConflict struct {
+	TaskID         string `json:"task_id"`
+	ConflictTaskID string `json:"conflict_task_id"`
+	Pattern1       string `json:"pattern1"`
+	Pattern2       string `json:"pattern2"`
+	Reason         string `json:"reason"` // "overlap", "owns_forbidden", "forbidden_owns"
+}
+
+// patternsOverlap checks if two glob patterns could match the same files.
+// This is a conservative check - it may report false positives but not false negatives.
+func patternsOverlap(p1, p2 string) bool {
+	// Exact match
+	if p1 == p2 {
+		return true
+	}
+
+	// Check if one pattern could match a file that the other could also match.
+	// We do this by checking if either pattern is a prefix/suffix of the other,
+	// or if they share common path components.
+
+	// Normalize patterns
+	p1 = strings.TrimPrefix(p1, "./")
+	p2 = strings.TrimPrefix(p2, "./")
+
+	// If either is "*" or "**", they overlap with everything
+	if p1 == "*" || p1 == "**" || p1 == "**/*" || p2 == "*" || p2 == "**" || p2 == "**/*" {
+		return true
+	}
+
+	// Extract directory parts
+	dir1 := filepath.Dir(p1)
+	dir2 := filepath.Dir(p2)
+
+	// If directories don't overlap, patterns can't overlap
+	if dir1 != "." && dir2 != "." {
+		// Check if one dir is prefix of the other or they're equal
+		if !strings.HasPrefix(dir1, dir2) && !strings.HasPrefix(dir2, dir1) && dir1 != dir2 {
+			// Check for ** which matches any depth
+			if !strings.Contains(p1, "**") && !strings.Contains(p2, "**") {
+				return false
+			}
+		}
+	}
+
+	// Extract base patterns (filename part)
+	base1 := filepath.Base(p1)
+	base2 := filepath.Base(p2)
+
+	// If either base is *, they could match anything in that dir
+	if base1 == "*" || base2 == "*" {
+		return true
+	}
+
+	// Check for extension patterns like *.go
+	if strings.HasPrefix(base1, "*.") || strings.HasPrefix(base2, "*.") {
+		ext1 := strings.TrimPrefix(base1, "*")
+		ext2 := strings.TrimPrefix(base2, "*")
+		
+		// Both are extension patterns
+		if strings.HasPrefix(base1, "*.") && strings.HasPrefix(base2, "*.") {
+			// *.go vs *.ts don't overlap
+			return ext1 == ext2
+		}
+		
+		// One is extension pattern, one is specific file
+		if strings.HasPrefix(base1, "*.") {
+			// *.go overlaps with main.go but not main.rs
+			return strings.HasSuffix(base2, ext1)
+		}
+		if strings.HasPrefix(base2, "*.") {
+			return strings.HasSuffix(base1, ext2)
+		}
+	}
+
+	// Check exact filename match
+	if base1 == base2 {
+		return true
+	}
+
+	// Different specific filenames in same directory don't overlap
+	// (unless one contains wildcards, which we've handled above)
+	if !strings.Contains(base1, "*") && !strings.Contains(base2, "*") {
+		return false
+	}
+
+	// If we can't prove they don't overlap, assume they might (conservative)
+	return true
+}
+
+// CheckFileConflicts checks if a task would conflict with any running/assigned tasks.
+// Returns a list of conflicts (empty if no conflicts).
+func (c *Coordinator) CheckFileConflicts(taskID string, ownsFiles, forbiddenFiles []string) []FileConflict {
+	var conflicts []FileConflict
+
+	// If no file ownership specified, no conflicts possible
+	if len(ownsFiles) == 0 && len(forbiddenFiles) == 0 {
+		return conflicts
+	}
+
+	// Get all running/assigned tasks with file ownership
+	rows, err := c.db.Query(`
+		SELECT id, owns_files, forbidden_files 
+		FROM tasks 
+		WHERE status IN ('assigned', 'running') 
+		  AND id != ? 
+		  AND (owns_files IS NOT NULL OR forbidden_files IS NOT NULL)`,
+		taskID)
+	if err != nil {
+		log.Printf("Warning: failed to check file conflicts: %v", err)
+		return conflicts
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var otherID string
+		var otherOwnsJSON, otherForbiddenJSON sql.NullString
+		if err := rows.Scan(&otherID, &otherOwnsJSON, &otherForbiddenJSON); err != nil {
+			continue
+		}
+
+		var otherOwns, otherForbidden []string
+		if otherOwnsJSON.Valid {
+			json.Unmarshal([]byte(otherOwnsJSON.String), &otherOwns)
+		}
+		if otherForbiddenJSON.Valid {
+			json.Unmarshal([]byte(otherForbiddenJSON.String), &otherForbidden)
+		}
+
+		// Check: our owns vs their owns (overlap)
+		for _, p1 := range ownsFiles {
+			for _, p2 := range otherOwns {
+				if patternsOverlap(p1, p2) {
+					conflicts = append(conflicts, FileConflict{
+						TaskID:         taskID,
+						ConflictTaskID: otherID,
+						Pattern1:       p1,
+						Pattern2:       p2,
+						Reason:         "overlap",
+					})
+				}
+			}
+		}
+
+		// Check: our owns vs their forbidden
+		for _, p1 := range ownsFiles {
+			for _, p2 := range otherForbidden {
+				if patternsOverlap(p1, p2) {
+					conflicts = append(conflicts, FileConflict{
+						TaskID:         taskID,
+						ConflictTaskID: otherID,
+						Pattern1:       p1,
+						Pattern2:       p2,
+						Reason:         "owns_forbidden",
+					})
+				}
+			}
+		}
+
+		// Check: our forbidden vs their owns
+		for _, p1 := range forbiddenFiles {
+			for _, p2 := range otherOwns {
+				if patternsOverlap(p1, p2) {
+					conflicts = append(conflicts, FileConflict{
+						TaskID:         taskID,
+						ConflictTaskID: otherID,
+						Pattern1:       p1,
+						Pattern2:       p2,
+						Reason:         "forbidden_owns",
+					})
+				}
+			}
+		}
+	}
+
+	return conflicts
 }
 
 // GetNextTask assigns the next queued task to a worker.
@@ -966,13 +1179,49 @@ func (c *Coordinator) GetNextTask(workerID string) (*Task, error) {
 		c.db.Exec(`UPDATE workers SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = ? AND status != 'busy'`, workerID)
 	}
 
-	var taskID string
-	err := c.db.QueryRow(`SELECT id FROM tasks WHERE status = 'queued' ORDER BY priority DESC, created_at ASC LIMIT 1`).Scan(&taskID)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+	// Get queued tasks in priority order
+	rows, err := c.db.Query(`
+		SELECT id, owns_files, forbidden_files 
+		FROM tasks 
+		WHERE status = 'queued' 
+		ORDER BY priority DESC, created_at ASC 
+		LIMIT 10`) // Check up to 10 tasks for conflicts
 	if err != nil {
 		return nil, err
+	}
+	defer rows.Close()
+
+	var taskID string
+	for rows.Next() {
+		var id string
+		var ownsFilesJSON, forbiddenFilesJSON sql.NullString
+		if err := rows.Scan(&id, &ownsFilesJSON, &forbiddenFilesJSON); err != nil {
+			continue
+		}
+
+		// Parse file ownership patterns
+		var ownsFiles, forbiddenFiles []string
+		if ownsFilesJSON.Valid {
+			json.Unmarshal([]byte(ownsFilesJSON.String), &ownsFiles)
+		}
+		if forbiddenFilesJSON.Valid {
+			json.Unmarshal([]byte(forbiddenFilesJSON.String), &forbiddenFiles)
+		}
+
+		// Check for conflicts with running tasks
+		conflicts := c.CheckFileConflicts(id, ownsFiles, forbiddenFiles)
+		if len(conflicts) > 0 {
+			// Log the conflict and skip this task
+			log.Printf("Task %s has file conflicts with running tasks, skipping: %v", id, conflicts)
+			continue
+		}
+
+		taskID = id
+		break
+	}
+
+	if taskID == "" {
+		return nil, nil // No conflict-free tasks available
 	}
 
 	_, err = c.db.Exec(`UPDATE tasks SET status = 'assigned', worker_id = ?, assigned_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -1031,6 +1280,10 @@ func (c *Coordinator) renderWorkerContext(task *Task, workerID string) {
 	if task.InputDir != nil {
 		data.InputDir = *task.InputDir
 	}
+
+	// Set file ownership patterns
+	data.OwnsFiles = task.OwnsFiles
+	data.ForbiddenFiles = task.ForbiddenFiles
 
 	// Render template
 	context, err := RenderWorkerContext(data)
@@ -1213,7 +1466,7 @@ func (c *Coordinator) CreateGroup(req GroupRequest) (*TaskGroup, error) {
 		"repo_url": req.RepoURL,
 	})
 
-	// If prompts provided, create tasks for each with retry logic
+	// If simple prompts provided, create tasks for each with retry logic
 	for i, prompt := range req.Prompts {
 		var lastErr error
 		for retry := 0; retry < 3; retry++ {
@@ -1235,6 +1488,32 @@ func (c *Coordinator) CreateGroup(req GroupRequest) (*TaskGroup, error) {
 		}
 		if lastErr != nil {
 			return nil, fmt.Errorf("create task %d for group: %w", i+1, lastErr)
+		}
+	}
+
+	// If detailed task specs provided, create tasks with file ownership
+	for i, taskSpec := range req.Tasks {
+		var lastErr error
+		for retry := 0; retry < 3; retry++ {
+			_, err := c.EnqueueTask(TaskRequest{
+				Prompt:         taskSpec.Prompt,
+				GroupID:        req.ID,
+				OwnsFiles:      taskSpec.OwnsFiles,
+				ForbiddenFiles: taskSpec.ForbiddenFiles,
+			})
+			if err == nil {
+				lastErr = nil
+				break
+			}
+			lastErr = err
+			if !strings.Contains(err.Error(), "SQLITE_BUSY") && !strings.Contains(err.Error(), "database is locked") {
+				break
+			}
+			log.Printf("Retrying task spec %d for group %s (attempt %d): %v", i+1, req.ID, retry+1, err)
+			time.Sleep(time.Duration(100*(1<<retry)) * time.Millisecond)
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("create task spec %d for group: %w", i+1, lastErr)
 		}
 	}
 
