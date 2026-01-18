@@ -402,10 +402,78 @@ curl -X POST https://your-vm.exe.xyz:8080/api/drain \
 3. **Workers are isolated** - Each runs in its own exe.dev VM
 4. **Git tokens are passed securely** - Not stored in database, passed via environment to workers
 
+## File Ownership / Conflict Detection
+
+To prevent parallel tasks from modifying the same files, you can specify file ownership:
+
+### Per-Task File Ownership
+
+```bash
+curl -X POST https://your-vm.exe.xyz:8080/api/enqueue \
+  -H "X-Coordinator-Token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Add input validation to auth/login.go",
+    "repo_url": "https://github.com/user/repo.git",
+    "owns_files": ["auth/login.go", "auth/login_test.go"],
+    "forbidden_files": ["auth/session.go", "config/*"]
+  }'
+```
+
+- **owns_files**: Glob patterns for files this task may modify
+- **forbidden_files**: Glob patterns for files this task must NOT touch
+
+### Group Tasks with File Ownership
+
+```bash
+curl -X POST https://your-vm.exe.xyz:8080/api/group/create \
+  -H "X-Coordinator-Token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Code Review Batch",
+    "repo_url": "https://github.com/user/repo.git",
+    "tasks": [
+      {"prompt": "Review auth/login.go", "owns_files": ["auth/login.go"]},
+      {"prompt": "Review auth/session.go", "owns_files": ["auth/session.go"]},
+      {"prompt": "Review auth/oauth.go", "owns_files": ["auth/oauth.go"]}
+    ]
+  }'
+```
+
+### Conflict Detection
+
+When a worker requests a task, the coordinator checks for conflicts:
+1. Tasks with overlapping `owns_files` patterns cannot run simultaneously
+2. A task's `owns_files` cannot overlap with another running task's `forbidden_files`
+3. Conflicting tasks stay queued until the blocking task completes
+
+### Check Conflicts Before Enqueueing
+
+```bash
+curl -X POST https://your-vm.exe.xyz:8080/api/check-conflicts \
+  -H "X-Coordinator-Token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "owns_files": ["auth/*.go"],
+    "forbidden_files": ["config/*"]
+  }'
+
+# Response:
+# {"has_conflicts": true, "conflicts": [{...}]}
+```
+
+### File-Based Templates (Dashboard)
+
+When using file-based templates in the dashboard (e.g., "Code Review" for `*.go` files), each task automatically:
+- Sets `owns_files` to the specific file it's working on
+- Sets `forbidden_files` to all other files in the batch
+
+This ensures parallel tasks never step on each other.
+
 ## Database Schema
 
 - **task_groups** - id, name, description, repo_url, base_branch, status, tasks_total, tasks_completed, tasks_failed, timestamps
-- **tasks** - id, prompt, status, priority, worker_id, result, error, repo_url, base_branch, branch_name, commit_sha, pr_url, group_id, conversation_id, timestamps
+- **tasks** - id, prompt, status, priority, worker_id, result, error, repo_url, base_branch, branch_name, commit_sha, pr_url, group_id, conversation_id, owns_files, forbidden_files, timestamps
 - **workers** - id, status, current_task_id, tailscale_ip, created_at, last_heartbeat, tasks_completed
 - **events** - audit log of all events
 

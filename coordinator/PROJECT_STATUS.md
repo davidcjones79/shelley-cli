@@ -1,6 +1,6 @@
 # Shelley Coordinator - Project Status
 
-**Last Updated:** January 16, 2026
+**Last Updated:** January 18, 2026
 
 ## What's Built
 
@@ -50,7 +50,7 @@ coordinator/
 ## Database Schema
 
 - **task_groups** - id, name, description, repo_url, base_branch, status, tasks_total, tasks_completed, tasks_failed, timestamps
-- **tasks** - id, prompt, status, priority, worker_id, result, error, repo_url, base_branch, branch_name, commit_sha, pr_url, group_id, timestamps
+- **tasks** - id, prompt, status, priority, worker_id, result, error, repo_url, base_branch, branch_name, commit_sha, pr_url, group_id, owns_files, forbidden_files, timestamps
 - **workers** - id, status, current_task_id, tailscale_ip, created_at, last_heartbeat, tasks_completed
 - **events** - audit log of all events
 
@@ -152,35 +152,34 @@ shelley coord-cli reset-task <id>
 
 ## What's Next (Planned)
 
-1. **Task Templates UI**
-   - Pre-built prompt templates (Security Review, Test Generation, Documentation)
-   - File picker to apply templates to multiple files
-   - Spawns N parallel tasks automatically
-
-2. **Auto-Aggregation Dashboard**
-   - View all completed DONE.md summaries in one place
-   - Aggregated stats (total files changed, tests passed/failed)
-   - Export combined changelog
-   - Bulk PR creation
-
-3. **Task Dependencies (DAG)**
+1. **Task Dependencies (DAG)**
    - `depends_on` field for tasks
    - Workers only claim tasks with satisfied dependencies
    - Visual dependency graph in dashboard
 
-4. **File Ownership / Conflict Detection**
-   - `owns_files` and `forbidden_files` fields on tasks
-   - Coordinator warns/blocks conflicting file patterns
-   - Prevents parallel tasks from stepping on each other
-
-5. **Auto-merge**
+2. **Auto-merge**
    - Combine completed task branches
    - Sequential merge strategy
    - Conflict detection/reporting
 
+3. **Enhanced Conflict UI**
+   - Real-time conflict warnings in dashboard
+   - Visualization of file ownership across tasks
+   - Suggested file ownership based on prompt analysis
+
 ## Recent Changes
 
 ### January 18, 2026 (Latest)
+
+- **File Ownership / Conflict Detection**
+  - New `owns_files` and `forbidden_files` columns on tasks table
+  - Glob pattern matching to detect file conflicts between tasks
+  - Coordinator skips queued tasks that conflict with running tasks
+  - `/api/check-conflicts` endpoint for pre-enqueue conflict checking
+  - Dashboard shows file ownership in task details
+  - Create group modal has optional file ownership section
+  - File-based templates auto-set ownership per task
+  - Unit tests for pattern overlap detection
 
 - **Structured Output (DONE.md)**
   - Workers write DONE.md with YAML frontmatter to `~/shared/results/{task-id}/`
