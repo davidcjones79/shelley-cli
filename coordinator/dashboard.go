@@ -381,6 +381,39 @@ func (d *Dashboard) HandleHelp(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleSettingsPage serves the settings configuration page.
+func (d *Dashboard) HandleSettingsPage(w http.ResponseWriter, r *http.Request) {
+	// Require exe.dev authentication (or allow local access)
+	userID := r.Header.Get("X-Exedev-Userid")
+	if userID == "" {
+		host := r.Host
+		if !strings.HasPrefix(host, "localhost") && !strings.HasPrefix(host, "127.0.0.1") {
+			http.Redirect(w, r, "/__exe.dev/login?redirect=/settings", http.StatusFound)
+			return
+		}
+	}
+
+	data := PageData{
+		Title:    "Settings",
+		Page:     "settings",
+		APIToken: d.apiToken,
+	}
+
+	tmpl, err := template.ParseFS(templatesFS,
+		"templates/base.html",
+		"templates/settings.html",
+	)
+	if err != nil {
+		http.Error(w, "Template parse error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
+		http.Error(w, "Template error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
 // HandleConversation serves a synced conversation from the main Shelley DB.
 func (d *Dashboard) HandleConversation(w http.ResponseWriter, r *http.Request) {
 	// Extract conversation ID from path: /conversation/{id}
@@ -665,14 +698,128 @@ func (d *Dashboard) HandleLocalSkillContent(w http.ResponseWriter, r *http.Reque
 	w.Write(content)
 }
 
+// HandleSettings handles GET/POST for coordinator settings.
+func (d *Dashboard) HandleSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		d.handleSettingsGet(w, r)
+	} else if r.Method == "POST" {
+		d.handleSettingsPost(w, r)
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (d *Dashboard) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
+	// Get Tailscale IP if connected
+	tailscaleIP := ""
+	if out, err := exec.Command("tailscale", "ip", "-4").Output(); err == nil {
+		tailscaleIP = strings.TrimSpace(string(out))
+	}
+
+	response := map[string]interface{}{
+		"coord_host":         d.config.CoordHost,
+		"tailscale_ip":       tailscaleIP,
+		"tailscale_key_set":  d.config.TailscaleAuthKey != "",
+		"github_token_set":   d.config.GitToken != "",
+		"worker_prefix":      d.config.WorkerPrefix,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (d *Dashboard) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TailscaleKey string `json:"tailscale_key"`
+		GitHubToken  string `json:"github_token"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	restartRequired := false
+
+	// Save settings to file
+	settings := d.loadSettingsFile()
+
+	if req.TailscaleKey != "" {
+		settings["tailscale_key"] = req.TailscaleKey
+		d.config.TailscaleAuthKey = req.TailscaleKey
+		restartRequired = true
+	}
+
+	if req.GitHubToken != "" {
+		settings["github_token"] = req.GitHubToken
+		d.config.GitToken = req.GitHubToken
+		restartRequired = true
+	}
+
+	// Save to file
+	if err := d.saveSettingsFile(settings); err != nil {
+		http.Error(w, "Failed to save settings: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"status":           "ok",
+		"restart_required": restartRequired,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (d *Dashboard) getSettingsPath() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".config", "shelley", "coordinator-settings.json")
+}
+
+func (d *Dashboard) loadSettingsFile() map[string]string {
+	settings := make(map[string]string)
+	data, err := os.ReadFile(d.getSettingsPath())
+	if err != nil {
+		return settings
+	}
+	json.Unmarshal(data, &settings)
+	return settings
+}
+
+func (d *Dashboard) saveSettingsFile(settings map[string]string) error {
+	path := d.getSettingsPath()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+// LoadSavedSettings loads settings from the settings file and applies them to config.
+func (d *Dashboard) LoadSavedSettings() {
+	settings := d.loadSettingsFile()
+	if key, ok := settings["tailscale_key"]; ok && key != "" {
+		d.config.TailscaleAuthKey = key
+	}
+	if token, ok := settings["github_token"]; ok && token != "" {
+		d.config.GitToken = token
+	}
+}
+
 // SetupRoutes configures HTTP routes for the dashboard.
 func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", d.HandleDashboardIndex)
 	mux.HandleFunc("/help", d.HandleHelp)
+	mux.HandleFunc("/settings", d.HandleSettingsPage)
 	mux.HandleFunc("/conversation/", d.HandleConversation)
 	mux.HandleFunc("/dashboard/start", d.HandleDashboardStart)
 	mux.HandleFunc("/dashboard/stop", d.HandleDashboardStop)
 	mux.HandleFunc("/dashboard/status", d.HandleDashboardStatus)
+	mux.HandleFunc("/api/settings", d.HandleSettings)
 	mux.HandleFunc("/api/", d.HandleAPIProxy)
 	mux.HandleFunc("/shelley-bin", d.HandleAPIProxy)
 	mux.HandleFunc("/local-skills", d.HandleLocalSkills)

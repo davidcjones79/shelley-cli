@@ -1,0 +1,383 @@
+{{define "extra_styles"}}
+.settings-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 32px 24px;
+}
+.settings-header {
+    margin-bottom: 32px;
+}
+.settings-header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.settings-header p {
+    color: #737373;
+    font-size: 14px;
+}
+.settings-section {
+    background: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+.settings-section h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.settings-section > p {
+    color: #737373;
+    font-size: 13px;
+    margin-bottom: 20px;
+}
+.form-group {
+    margin-bottom: 20px;
+}
+.form-group:last-child {
+    margin-bottom: 0;
+}
+.form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: #525252;
+    margin-bottom: 6px;
+}
+.form-group input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: monospace;
+}
+.form-group input:focus {
+    outline: none;
+    border-color: #1a1a1a;
+}
+.form-group .hint {
+    font-size: 12px;
+    color: #737373;
+    margin-top: 6px;
+}
+.form-group .hint a {
+    color: #525252;
+}
+.status-box {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 16px;
+}
+.status-box.success {
+    background: #dcfce7;
+    color: #16a34a;
+    border: 1px solid #bbf7d0;
+}
+.status-box.warning {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
+.status-box.info {
+    background: #f0f9ff;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+.status-box.neutral {
+    background: #f5f5f5;
+    color: #525252;
+    border: 1px solid #e5e5e5;
+}
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+.status-item {
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 8px;
+}
+.status-item .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #737373;
+    margin-bottom: 4px;
+}
+.status-item .value {
+    font-size: 14px;
+    font-weight: 500;
+    font-family: monospace;
+}
+.status-item .value.set {
+    color: #16a34a;
+}
+.status-item .value.unset {
+    color: #dc2626;
+}
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    background: #fff;
+    color: #1a1a1a;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn:hover {
+    background: #f5f5f5;
+    border-color: #d0d0d0;
+}
+.btn-primary {
+    background: #1a1a1a;
+    color: #fff;
+    border-color: #1a1a1a;
+}
+.btn-primary:hover {
+    background: #333;
+}
+.btn-danger {
+    color: #dc2626;
+    border-color: #fca5a5;
+}
+.btn-danger:hover {
+    background: #fef2f2;
+}
+.actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid #e5e5e5;
+}
+.save-notice {
+    display: none;
+    padding: 12px 16px;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    color: #92400e;
+    font-size: 13px;
+    margin-bottom: 24px;
+}
+.save-notice.visible {
+    display: block;
+}
+{{end}}
+
+{{define "content"}}
+<div class="settings-container">
+    <div class="settings-header">
+        <h1><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -5px; margin-right: 8px;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Coordinator Settings</h1>
+        <p>Configure Tailscale, GitHub integration, and other coordinator options.</p>
+    </div>
+
+    <div id="save-notice" class="save-notice">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 6px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>You have unsaved changes. Click "Save & Restart" to apply them.
+    </div>
+
+    <!-- Current Status -->
+    <div class="settings-section">
+        <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -3px; margin-right: 6px;"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Current Status</h2>
+        <p>Overview of coordinator configuration and connectivity.</p>
+        
+        <div id="tailscale-status" class="status-box neutral">Checking Tailscale status...</div>
+        
+        <div class="status-grid">
+            <div class="status-item">
+                <div class="label">Coordinator Host</div>
+                <div class="value" id="status-host">-</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Tailscale IP</div>
+                <div class="value" id="status-tailscale-ip">-</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Worker Prefix</div>
+                <div class="value" id="status-prefix">-</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Tailscale Auth Key</div>
+                <div class="value" id="status-ts-key">-</div>
+            </div>
+            <div class="status-item">
+                <div class="label">GitHub Token</div>
+                <div class="value" id="status-gh-token">-</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tailscale Integration -->
+    <div class="settings-section">
+        <h2>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Tailscale Integration
+        </h2>
+        <p>Enable direct network access between coordinator and workers. This bypasses the exe.dev auth proxy and enables the SSHFS shared filesystem for faster file transfers.</p>
+        
+        <div class="form-group">
+            <label for="tailscale-key">Tailscale Auth Key</label>
+            <input type="password" id="tailscale-key" placeholder="tskey-auth-..." onchange="markDirty()">
+            <p class="hint">Generate a <strong>reusable, ephemeral</strong> key from the <a href="https://login.tailscale.com/admin/settings/keys" target="_blank">Tailscale Admin Console</a>. Workers will automatically join your Tailnet.</p>
+        </div>
+    </div>
+
+    <!-- GitHub Integration -->
+    <div class="settings-section">
+        <h2>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+            GitHub Integration
+        </h2>
+        <p>Allow workers to push branches and create commits to repositories.</p>
+        
+        <div class="form-group">
+            <label for="github-token">GitHub Personal Access Token</label>
+            <input type="password" id="github-token" placeholder="ghp_..." onchange="markDirty()">
+            <p class="hint">Create a token with <strong>repo</strong> scope from <a href="https://github.com/settings/tokens" target="_blank">GitHub Settings</a>.</p>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+        <a href="/" class="btn">← Back to Dashboard</a>
+        <button onclick="saveSettings()" class="btn btn-primary" id="save-btn">Save & Restart Coordinator</button>
+    </div>
+</div>
+
+<script>
+    let isDirty = false;
+    let token = localStorage.getItem('coordToken') || '';
+
+    function markDirty() {
+        isDirty = true;
+        document.getElementById('save-notice').classList.add('visible');
+    }
+
+    async function loadSettings() {
+        try {
+            const res = await fetch('/api/settings', {
+                headers: { 'X-Coordinator-Token': token }
+            });
+            const data = await res.json();
+            
+            // Update status display
+            document.getElementById('status-host').textContent = data.coord_host || 'auto';
+            document.getElementById('status-prefix').textContent = data.worker_prefix || 'wk';
+            
+            const tsIp = document.getElementById('status-tailscale-ip');
+            tsIp.textContent = data.tailscale_ip || 'Not connected';
+            tsIp.className = 'value ' + (data.tailscale_ip ? 'set' : 'unset');
+            
+            const tsKey = document.getElementById('status-ts-key');
+            tsKey.textContent = data.tailscale_key_set ? 'Configured' : 'Not set';
+            tsKey.className = 'value ' + (data.tailscale_key_set ? 'set' : 'unset');
+            
+            const ghToken = document.getElementById('status-gh-token');
+            ghToken.textContent = data.github_token_set ? 'Configured' : 'Not set';
+            ghToken.className = 'value ' + (data.github_token_set ? 'set' : 'unset');
+            
+            // Update placeholders
+            document.getElementById('tailscale-key').placeholder = data.tailscale_key_set ? 'Key is set (enter new to replace)' : 'tskey-auth-...';
+            document.getElementById('github-token').placeholder = data.github_token_set ? 'Token is set (enter new to replace)' : 'ghp_...';
+            
+            // Tailscale status box
+            const statusBox = document.getElementById('tailscale-status');
+            if (data.tailscale_ip) {
+                statusBox.className = 'status-box success';
+                statusBox.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><strong>Tailscale connected:</strong> ' + data.tailscale_ip + ' — Workers will connect directly via Tailscale.';
+            } else if (data.tailscale_key_set) {
+                statusBox.className = 'status-box warning';
+                statusBox.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><strong>Auth key configured</strong> but Tailscale not connected on this VM. Run <code>sudo tailscale up</code> to connect.';
+            } else {
+                statusBox.className = 'status-box info';
+                statusBox.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><strong>Tailscale not configured.</strong> Workers will use the exe.dev HTTPS proxy (requires public port, slower).';
+            }
+        } catch (err) {
+            console.error('Failed to load settings:', err);
+        }
+    }
+
+    async function saveSettings() {
+        const tailscaleKey = document.getElementById('tailscale-key').value.trim();
+        const githubToken = document.getElementById('github-token').value.trim();
+        
+        if (!tailscaleKey && !githubToken) {
+            alert('Enter at least one value to save.');
+            return;
+        }
+        
+        const payload = {};
+        if (tailscaleKey) payload.tailscale_key = tailscaleKey;
+        if (githubToken) payload.github_token = githubToken;
+        
+        const btn = document.getElementById('save-btn');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        
+        try {
+            const res = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Coordinator-Token': token
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            const data = await res.json();
+            
+            if (data.restart_required) {
+                btn.textContent = 'Restarting...';
+                
+                // Stop coordinator
+                await fetch('/dashboard/stop', { method: 'POST' });
+                await new Promise(r => setTimeout(r, 2000));
+                
+                // Start coordinator
+                await fetch('/dashboard/start', { method: 'POST' });
+                await new Promise(r => setTimeout(r, 3000));
+                
+                // Reload settings
+                isDirty = false;
+                document.getElementById('save-notice').classList.remove('visible');
+                document.getElementById('tailscale-key').value = '';
+                document.getElementById('github-token').value = '';
+                await loadSettings();
+                
+                btn.textContent = 'Saved!';
+                setTimeout(() => { btn.textContent = 'Save & Restart Coordinator'; btn.disabled = false; }, 2000);
+            }
+        } catch (err) {
+            alert('Failed to save: ' + err.message);
+            btn.textContent = 'Save & Restart Coordinator';
+            btn.disabled = false;
+        }
+    }
+
+    // Load on page load
+    loadSettings();
+    
+    // Warn before leaving with unsaved changes
+    window.addEventListener('beforeunload', (e) => {
+        if (isDirty) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+</script>
+{{end}}

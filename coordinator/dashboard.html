@@ -397,6 +397,7 @@
             <a href="#" class="nav-link" onclick="scrollToSection('workers')">Workers</a>
             <a href="#" class="nav-link" onclick="scrollToSection('repos')">Repos</a>
             <a href="/help" class="nav-link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Help</a>
+            <a href="/settings" class="nav-link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Settings</a>
         </div>
         <div class="header-right">
             <div class="ws-indicator" id="ws-indicator">
@@ -411,7 +412,7 @@
         <!-- Health Alert Banner (shown when workers are unhealthy/dead) -->
         <div id="health-alert" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
             <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:18px;">⚠️</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 <span style="font-weight:600;color:#dc2626;">Worker Health Issue</span>
                 <span id="health-alert-text" style="color:#7f1d1d;"></span>
                 <button onclick="document.getElementById('health-alert').style.display='none'" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:16px;color:#7f1d1d;">×</button>
@@ -623,7 +624,7 @@
                     </label>
                 </div>
                 <p style="font-size: 11px; color: #737373; margin-top: 4px;">Fetches skill from <a href="https://github.com/anthropics/skills" target="_blank">anthropics/skills</a> repo or local ~/.config/shelley/skills/</p>
-                <p id="skill-parallel-warning" style="display: none; font-size: 11px; color: #dc2626; margin-top: 4px; padding: 6px 8px; background: #fef2f2; border-radius: 4px;">⚠️ This skill is not optimized for parallel workers. It may produce duplicate results or not benefit from parallelization. Consider using it directly in a single Shelley session instead.</p>
+                <p id="skill-parallel-warning" style="display: none; font-size: 11px; color: #dc2626; margin-top: 4px; padding: 6px 8px; background: #fef2f2; border-radius: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>This skill is not optimized for parallel workers. It may produce duplicate results or not benefit from parallelization. Consider using it directly in a single Shelley session instead.</p>
             </div>
             <div style="margin-bottom: 16px;">
                 <label style="display: block; font-size: 12px; font-weight: 500; color: #737373; margin-bottom: 4px;">Skill Context <span style="font-weight:400;">(auto-filled from skill, or custom)</span></label>
@@ -969,13 +970,13 @@
             
             if (localSkills.length > 0) {
                 const localGroup = document.createElement('optgroup');
-                localGroup.label = '📁 Local Skills';
+                localGroup.label = 'Local Skills';
                 for (const skill of localSkills) {
                     const opt = document.createElement('option');
                     opt.value = `local:${skill.name}`;
                     opt.textContent = skill.name;
                     if (skill.parallel_friendly === false || NON_PARALLEL_SKILLS.includes(skill.name)) {
-                        opt.textContent += ' ⚠️';
+                        opt.textContent += ' *';
                         opt.title = 'Not ideal for parallel workers';
                     }
                     localGroup.appendChild(opt);
@@ -985,13 +986,13 @@
             
             if (remoteSkills.length > 0) {
                 const remoteGroup = document.createElement('optgroup');
-                remoteGroup.label = '🌐 Anthropic Skills';
+                remoteGroup.label = 'Anthropic Skills';
                 for (const skill of remoteSkills) {
                     const opt = document.createElement('option');
                     opt.value = `remote:${skill.name}`;
                     opt.textContent = skill.name;
                     if (NON_PARALLEL_SKILLS.includes(skill.name)) {
-                        opt.textContent += ' ⚠️';
+                        opt.textContent += ' *';
                         opt.title = 'Not ideal for parallel workers';
                     }
                     remoteGroup.appendChild(opt);
@@ -1541,7 +1542,7 @@
                     `;
                 }
                 
-                const sourceIcon = task.source === 'manual' ? '👤' : task.source === 'autonomous' ? '🤖' : '🔌';
+                const sourceIcon = '';  // Source shown in badge instead
                 const sourceLabel = task.source === 'manual' ? 'Manual' : task.source === 'autonomous' ? 'Autonomous' : 'API';
                 
                 // Build chat view links
@@ -2691,7 +2692,7 @@
                 const branchInfo = t.branch_name ? `<span style="color:#737373;">→ ${t.branch_name}</span>` : '';
                 const commitInfo = t.commit_sha ? `<span style="color:#22c55e;" title="${t.commit_sha}">✓</span>` : '';
                 const groupInfo = t.group_id ? `<span class="badge badge-info" style="margin-left:8px;font-size:10px;">grouped</span>` : '';
-                const sourceIcon = t.source === 'manual' ? '👤' : t.source === 'autonomous' ? '🤖' : '🔌';
+                const sourceIcon = '';  // Source shown in badge instead
                 return `
                 <div class="list-item" onclick="showTask('${t.id}')" style="cursor:pointer">
                     <div class="list-item-info">
@@ -2751,7 +2752,7 @@
                     const healthColor = healthColors[w.health] || '#a3a3a3';
                     const heartbeatText = w.heartbeat_age_sec !== undefined ? formatHeartbeatAge(w.heartbeat_age_sec) : '';
                     if (w.health === 'unhealthy' || w.health === 'dead') {
-                        healthIndicator = `<span style="background:${healthColor}20;color:${healthColor};padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;margin-left:8px;">⚠️ ${w.health.toUpperCase()}</span>`;
+                        healthIndicator = `<span style="background:${healthColor}20;color:${healthColor};padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;margin-left:8px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>${w.health.toUpperCase()}</span>`;
                     } else if (heartbeatText) {
                         healthIndicator = `<span style="color:${healthColor};font-size:11px;margin-left:8px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${healthColor};margin-right:4px;"></span>${heartbeatText}</span>`;
                     }

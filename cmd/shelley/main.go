@@ -1002,6 +1002,9 @@ func runDashboard(global GlobalConfig, args []string) {
 
 	dash := coordinator.NewDashboard(config)
 
+	// Load saved settings (tailscale key, github token, etc.)
+	dash.LoadSavedSettings()
+
 	if *autoStart {
 		if err := dash.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to auto-start coordinator: %v\n", err)
