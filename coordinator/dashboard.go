@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -335,10 +336,15 @@ func (d *Dashboard) HandleDashboardStop(w http.ResponseWriter, r *http.Request) 
 
 // HandleDashboardStatus returns coordinator status.
 func (d *Dashboard) HandleDashboardStatus(w http.ResponseWriter, r *http.Request) {
+	d.mu.RLock()
+	token := d.apiToken
+	d.mu.RUnlock()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"running": d.IsRunning(),
 		"logs":    d.GetLogs(),
+		"token":   token,
 	})
 }
 
@@ -536,6 +542,129 @@ func (d *Dashboard) HandleAPIProxy(w http.ResponseWriter, r *http.Request) {
 	d.proxy.ServeHTTP(w, r)
 }
 
+// HandleLocalSkills returns a list of locally installed skills.
+func (d *Dashboard) HandleLocalSkills(w http.ResponseWriter, r *http.Request) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		http.Error(w, "Failed to get home directory", http.StatusInternalServerError)
+		return
+	}
+
+	skillsDir := filepath.Join(homeDir, ".config", "shelley", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		// No local skills directory, return empty list
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+
+	var skills []map[string]interface{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		// Check if SKILL.md exists
+		skillPath := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
+		if _, err := os.Stat(skillPath); err != nil {
+			continue
+		}
+
+		// Get skill info
+		skill := map[string]interface{}{
+			"name":  entry.Name(),
+			"local": true,
+		}
+
+		// Parse SKILL.md frontmatter for parallel_friendly
+		if content, err := os.ReadFile(skillPath); err == nil {
+			lines := strings.Split(string(content), "\n")
+			inFrontmatter := false
+			for _, line := range lines {
+				if line == "---" {
+					if inFrontmatter {
+						break // End of frontmatter
+					}
+					inFrontmatter = true
+					continue
+				}
+				if inFrontmatter && strings.HasPrefix(line, "parallel_friendly:") {
+					val := strings.TrimSpace(strings.TrimPrefix(line, "parallel_friendly:"))
+					skill["parallel_friendly"] = val == "true"
+					break
+				}
+			}
+		}
+
+		// Check for reference files
+		refDir := filepath.Join(skillsDir, entry.Name(), "reference")
+		if refs, err := os.ReadDir(refDir); err == nil {
+			var refList []map[string]interface{}
+			for _, ref := range refs {
+				if ref.IsDir() {
+					continue
+				}
+				info, _ := ref.Info()
+				refList = append(refList, map[string]interface{}{
+					"name": ref.Name(),
+					"size": info.Size(),
+				})
+			}
+			skill["references"] = refList
+		}
+
+		skills = append(skills, skill)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(skills)
+}
+
+// HandleLocalSkillContent returns the content of a local skill.
+func (d *Dashboard) HandleLocalSkillContent(w http.ResponseWriter, r *http.Request) {
+	// Parse path: /local-skills/{skill-name} or /local-skills/{skill-name}/reference/{file}
+	path := strings.TrimPrefix(r.URL.Path, "/local-skills/")
+	parts := strings.Split(path, "/")
+
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Skill name required", http.StatusBadRequest)
+		return
+	}
+
+	skillName := parts[0]
+	homeDir, _ := os.UserHomeDir()
+	skillsDir := filepath.Join(homeDir, ".config", "shelley", "skills")
+
+	// Security: ensure skill name doesn't contain path traversal
+	if strings.Contains(skillName, "..") || strings.Contains(skillName, "/") {
+		http.Error(w, "Invalid skill name", http.StatusBadRequest)
+		return
+	}
+
+	var filePath string
+	if len(parts) >= 3 && parts[1] == "reference" {
+		// Reference file
+		refName := parts[2]
+		if strings.Contains(refName, "..") || strings.Contains(refName, "/") {
+			http.Error(w, "Invalid reference name", http.StatusBadRequest)
+			return
+		}
+		filePath = filepath.Join(skillsDir, skillName, "reference", refName)
+	} else {
+		// Main SKILL.md
+		filePath = filepath.Join(skillsDir, skillName, "SKILL.md")
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		http.Error(w, "Skill not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write(content)
+}
+
 // SetupRoutes configures HTTP routes for the dashboard.
 func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", d.HandleDashboardIndex)
@@ -546,6 +675,8 @@ func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/dashboard/status", d.HandleDashboardStatus)
 	mux.HandleFunc("/api/", d.HandleAPIProxy)
 	mux.HandleFunc("/shelley-bin", d.HandleAPIProxy)
+	mux.HandleFunc("/local-skills", d.HandleLocalSkills)
+	mux.HandleFunc("/local-skills/", d.HandleLocalSkillContent)
 }
 
 // Run starts the dashboard HTTP server.

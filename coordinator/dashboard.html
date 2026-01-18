@@ -1123,6 +1123,13 @@
                 const res = await fetch('/dashboard/status');
                 const data = await res.json();
                 coordRunning = data.running;
+                
+                // Update token from status response (handles async token loading)
+                if (data.token && data.token !== token) {
+                    token = data.token;
+                    localStorage.setItem('coordToken', token);
+                }
+                
                 updateCoordUI();
                 if (data.logs && data.logs.length > 0) {
                     data.logs.slice(-10).forEach(log => {
