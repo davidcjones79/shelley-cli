@@ -24,6 +24,7 @@ import (
 
 	"shelley.exe.dev/models"
 	"shelley.exe.dev/server"
+	"shelley.exe.dev/slug"
 	"shelley.exe.dev/templates"
 	"shelley.exe.dev/coordinator"
 	"shelley.exe.dev/version"
@@ -235,7 +236,7 @@ func runChat(global GlobalConfig, args []string) {
 			}
 		}
 		
-		runNonInteractiveChat(llmService, modelID, wd, system, fullPrompt, *yesMode, logger, database)
+		runNonInteractiveChat(llmService, modelID, wd, system, fullPrompt, *yesMode, logger, database, manager)
 		return
 	}
 
@@ -320,7 +321,7 @@ func buildUserMessageWithImages(text string, maxImageDimension int) llm.Message 
 	}
 }
 
-func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, system []llm.SystemContent, prompt string, yesMode bool, logger *slog.Logger, database *db.DB) {
+func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, system []llm.SystemContent, prompt string, yesMode bool, logger *slog.Logger, database *db.DB, manager *models.Manager) {
 	ctx := context.Background()
 
 	// Create toolset
@@ -435,6 +436,15 @@ func runNonInteractiveChat(llmService llm.Service, modelID, workingDir string, s
 		}
 	}
 	
+	// Generate slug for the conversation
+	if database != nil && conversationID != "" && manager != nil {
+		if generatedSlug, err := slug.GenerateSlug(ctx, manager, database, logger, conversationID, prompt, modelID); err != nil {
+			logger.Debug("Failed to generate slug", "error", err)
+		} else {
+			logger.Info("Generated slug", "slug", generatedSlug)
+		}
+	}
+
 	// Print conversation ID for reference
 	if conversationID != "" {
 		fmt.Fprintf(os.Stderr, "\n[Conversation: %s]\n", conversationID)
@@ -960,6 +970,7 @@ func runDashboard(global GlobalConfig, args []string) {
 	shelleyDBDash := fs.String("shelley-db", "/home/exedev/.config/shelley/shelley.db", "Path to main shelley DB for syncing conversations")
 	installScriptDash := fs.String("install-script", "", "Worker install method: 'https' (default) or URL to custom script")
 	tailscaleAuthKeyDash := fs.String("tailscale-authkey", "", "Tailscale auth key for workers to join private network (env: TAILSCALE_AUTHKEY)")
+	artifactsDirDash := fs.String("artifacts-dir", "", "Directory to store quick task artifacts (default: $TMPDIR/shelley-artifacts)")
 
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: shelley dashboard [flags]\n\n")
@@ -1011,6 +1022,7 @@ func runDashboard(global GlobalConfig, args []string) {
 		ShelleyDB:        *shelleyDBDash,
 		InstallScript:    *installScriptDash,
 		TailscaleAuthKey: *tailscaleAuthKeyDash,
+		ArtifactsDir:     *artifactsDirDash,
 	}
 
 	dash := coordinator.NewDashboard(config)

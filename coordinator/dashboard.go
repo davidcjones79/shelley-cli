@@ -41,22 +41,26 @@ type DashboardConfig struct {
 	ShelleyDB     string // Path to main shelley DB for syncing conversations
 	InstallScript string // URL to install script for workers
 	TailscaleAuthKey string // Tailscale auth key for workers
+	ArtifactsDir  string // Directory to store quick task artifacts
 }
 
 // Dashboard manages the coordinator subprocess and serves the web UI.
 // QuickTask represents a local sub-agent task running on the dashboard VM.
 type QuickTask struct {
-	ID         string     `json:"id"`
-	Prompt     string     `json:"prompt"`
-	WorkingDir string     `json:"working_dir"`
-	Status     string     `json:"status"` // running, completed, failed, killed
-	PID        int        `json:"pid,omitempty"`
-	OutputFile string     `json:"-"` // path to output file (not sent to client)
-	Output     string     `json:"output,omitempty"` // tail of output for preview
-	Error      *string    `json:"error,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	cmd        *exec.Cmd  `json:"-"` // running process
+	ID             string     `json:"id"`
+	Prompt         string     `json:"prompt"`
+	WorkingDir     string     `json:"working_dir"`
+	Status         string     `json:"status"` // running, completed, failed, killed
+	PID            int        `json:"pid,omitempty"`
+	OutputFile     string     `json:"-"` // path to output file (not sent to client)
+	Output         string     `json:"output,omitempty"` // tail of output for preview
+	Error          *string    `json:"error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	HasArtifacts   bool       `json:"has_artifacts,omitempty"` // true if task has collected artifacts
+	ConversationID string     `json:"conversation_id,omitempty"` // shelley conversation ID for continuing
+	ParentTaskID   string     `json:"parent_task_id,omitempty"` // if continuation, link to parent
+	cmd            *exec.Cmd  `json:"-"` // running process
 }
 
 type Dashboard struct {
@@ -72,6 +76,10 @@ type Dashboard struct {
 	// Quick tasks (local sub-agents)
 	quickTasks   map[string]*QuickTask
 	quickTasksMu sync.RWMutex
+
+	// Database for quick task persistence
+	db           *sql.DB
+	artifactsDir string
 }
 
 // NewDashboard creates a new dashboard instance.
@@ -79,10 +87,10 @@ func NewDashboard(cfg DashboardConfig) *Dashboard {
 	// Set up reverse proxy to coordinator
 	coordURL, _ := url.Parse(fmt.Sprintf("http://localhost:%d", cfg.CoordPort))
 	proxy := httputil.NewSingleHostReverseProxy(coordURL)
-	
+
 	// Enable streaming/WebSocket support
 	proxy.FlushInterval = -1 // Flush immediately for WebSocket
-	
+
 	// Custom error handler for when coordinator is down
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("Content-Type", "application/json")
@@ -92,12 +100,64 @@ func NewDashboard(cfg DashboardConfig) *Dashboard {
 		})
 	}
 
+	// Set default artifacts directory
+	artifactsDir := cfg.ArtifactsDir
+	if artifactsDir == "" {
+		artifactsDir = filepath.Join(os.TempDir(), "shelley-artifacts")
+	}
+	os.MkdirAll(artifactsDir, 0755)
+
+	// Open database for quick task persistence
+	var db *sql.DB
+	if cfg.CoordDBPath != "" {
+		var err error
+		db, err = sql.Open("sqlite", cfg.CoordDBPath)
+		if err != nil {
+			log.Printf("Warning: failed to open database for quick tasks: %v", err)
+		} else {
+			db.Exec("PRAGMA busy_timeout = 5000")
+			// Create quick tasks tables if they don't exist
+			db.Exec(`CREATE TABLE IF NOT EXISTS quick_tasks (
+				id TEXT PRIMARY KEY,
+				prompt TEXT NOT NULL,
+				working_dir TEXT,
+				status TEXT NOT NULL DEFAULT 'running',
+				pid INTEGER,
+				output_file TEXT,
+				error TEXT,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				finished_at DATETIME,
+				conversation_id TEXT,
+				parent_task_id TEXT
+			)`)
+			db.Exec(`CREATE TABLE IF NOT EXISTS quick_task_artifacts (
+				id TEXT PRIMARY KEY,
+				quick_task_id TEXT NOT NULL,
+				filename TEXT NOT NULL,
+				original_path TEXT NOT NULL,
+				stored_path TEXT NOT NULL,
+				size_bytes INTEGER,
+				content_type TEXT,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (quick_task_id) REFERENCES quick_tasks(id)
+			)`)
+			db.Exec(`CREATE INDEX IF NOT EXISTS idx_quick_tasks_status ON quick_tasks(status)`)
+			db.Exec(`CREATE INDEX IF NOT EXISTS idx_quick_tasks_created ON quick_tasks(created_at DESC)`)
+			db.Exec(`CREATE INDEX IF NOT EXISTS idx_quick_task_artifacts_task ON quick_task_artifacts(quick_task_id)`)
+			// Migrations for new columns
+			db.Exec(`ALTER TABLE quick_tasks ADD COLUMN conversation_id TEXT`)
+			db.Exec(`ALTER TABLE quick_tasks ADD COLUMN parent_task_id TEXT`)
+		}
+	}
+
 	return &Dashboard{
-		config:     cfg,
-		maxLogs:    1000,
-		proxy:      proxy,
-		apiToken:   cfg.APIToken,
-		quickTasks: make(map[string]*QuickTask),
+		config:       cfg,
+		maxLogs:      1000,
+		proxy:        proxy,
+		apiToken:     cfg.APIToken,
+		quickTasks:   make(map[string]*QuickTask),
+		db:           db,
+		artifactsDir: artifactsDir,
 	}
 }
 
@@ -834,6 +894,86 @@ func (d *Dashboard) LoadSavedSettings() {
 // Quick Task Handlers
 
 // HandleQuickTasks returns list of quick tasks or creates a new one.
+// loadQuickTasksFromDB loads persisted quick tasks from the database on startup.
+func (d *Dashboard) loadQuickTasksFromDB() {
+	if d.db == nil {
+		return
+	}
+
+	rows, err := d.db.Query(`
+		SELECT id, prompt, working_dir, status, pid, output_file, error, created_at, finished_at, conversation_id, parent_task_id
+		FROM quick_tasks
+		ORDER BY created_at DESC
+		LIMIT 100
+	`)
+	if err != nil {
+		log.Printf("Failed to load quick tasks: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	d.quickTasksMu.Lock()
+	defer d.quickTasksMu.Unlock()
+
+	for rows.Next() {
+		var task QuickTask
+		var errorStr, outputFile, workingDir, conversationID, parentTaskID sql.NullString
+		var finishedAt sql.NullTime
+		var pid sql.NullInt64
+
+		err := rows.Scan(&task.ID, &task.Prompt, &workingDir, &task.Status,
+			&pid, &outputFile, &errorStr, &task.CreatedAt, &finishedAt, &conversationID, &parentTaskID)
+		if err != nil {
+			log.Printf("Failed to scan quick task: %v", err)
+			continue
+		}
+
+		if workingDir.Valid {
+			task.WorkingDir = workingDir.String
+		}
+		if pid.Valid {
+			task.PID = int(pid.Int64)
+		}
+		if outputFile.Valid {
+			task.OutputFile = outputFile.String
+		}
+		if errorStr.Valid {
+			task.Error = &errorStr.String
+		}
+		if finishedAt.Valid {
+			task.FinishedAt = &finishedAt.Time
+		}
+		if conversationID.Valid {
+			task.ConversationID = conversationID.String
+		}
+		if parentTaskID.Valid {
+			task.ParentTaskID = parentTaskID.String
+		}
+
+		// Mark interrupted running tasks as failed
+		if task.Status == "running" {
+			task.Status = "failed"
+			errMsg := "Task was interrupted by dashboard restart"
+			task.Error = &errMsg
+			now := time.Now()
+			task.FinishedAt = &now
+			d.db.Exec(`UPDATE quick_tasks SET status = ?, error = ?, finished_at = ? WHERE id = ?`,
+				task.Status, errMsg, now, task.ID)
+		}
+
+		// Check if task has artifacts
+		if d.db != nil {
+			var count int
+			d.db.QueryRow(`SELECT COUNT(*) FROM quick_task_artifacts WHERE quick_task_id = ?`, task.ID).Scan(&count)
+			task.HasArtifacts = count > 0
+		}
+
+		d.quickTasks[task.ID] = &task
+	}
+
+	log.Printf("Loaded %d quick tasks from database", len(d.quickTasks))
+}
+
 func (d *Dashboard) HandleQuickTasks(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -853,6 +993,12 @@ func (d *Dashboard) listQuickTasks(w http.ResponseWriter, r *http.Request) {
 		if t.Status == "running" {
 			d.updateTaskOutput(t)
 		}
+		// Check for artifacts if we have a DB
+		if d.db != nil && !t.HasArtifacts {
+			var count int
+			d.db.QueryRow(`SELECT COUNT(*) FROM quick_task_artifacts WHERE quick_task_id = ?`, t.ID).Scan(&count)
+			t.HasArtifacts = count > 0
+		}
 		tasks = append(tasks, t)
 	}
 	d.quickTasksMu.RUnlock()
@@ -863,8 +1009,10 @@ func (d *Dashboard) listQuickTasks(w http.ResponseWriter, r *http.Request) {
 
 func (d *Dashboard) createQuickTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Prompt     string `json:"prompt"`
-		WorkingDir string `json:"working_dir"`
+		Prompt         string `json:"prompt"`
+		WorkingDir     string `json:"working_dir"`
+		ConversationID string `json:"conversation_id"` // for continuing a conversation
+		ParentTaskID   string `json:"parent_task_id"`  // link to parent task
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -893,12 +1041,14 @@ func (d *Dashboard) createQuickTask(w http.ResponseWriter, r *http.Request) {
 	outputFile := filepath.Join(os.TempDir(), fmt.Sprintf("shelley-quick-%s.log", taskID))
 
 	task := &QuickTask{
-		ID:         taskID,
-		Prompt:     req.Prompt,
-		WorkingDir: req.WorkingDir,
-		Status:     "running",
-		OutputFile: outputFile,
-		CreatedAt:  time.Now(),
+		ID:             taskID,
+		Prompt:         req.Prompt,
+		WorkingDir:     req.WorkingDir,
+		Status:         "running",
+		OutputFile:     outputFile,
+		CreatedAt:      time.Now(),
+		ConversationID: req.ConversationID,
+		ParentTaskID:   req.ParentTaskID,
 	}
 
 	// Find shelley binary
@@ -926,8 +1076,22 @@ func (d *Dashboard) createQuickTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start shelley process
-	cmd := exec.Command(shelleyBin, "chat", "-yes", "-no-sync", "-prompt", req.Prompt)
+	// Build shelley command arguments
+	// Note: We use -sync (default) to save conversations for the continue feature
+	// Use the global shelley DB so conversations are available in the web client
+	shelleyDBPath := d.config.ShelleyDB
+	if shelleyDBPath == "" {
+		shelleyDBPath = filepath.Join(os.Getenv("HOME"), ".config/shelley/shelley.db")
+	}
+
+	var cmd *exec.Cmd
+	if req.ConversationID != "" {
+		// Continue existing conversation
+		cmd = exec.Command(shelleyBin, "-db", shelleyDBPath, "chat", "-yes", "-conversation", req.ConversationID, "-prompt", req.Prompt)
+	} else {
+		// Start new conversation (sync enabled so we can continue later)
+		cmd = exec.Command(shelleyBin, "-db", shelleyDBPath, "chat", "-yes", "-prompt", req.Prompt)
+	}
 	cmd.Dir = req.WorkingDir
 	cmd.Stdout = outFile
 	cmd.Stderr = outFile
@@ -951,6 +1115,13 @@ func (d *Dashboard) createQuickTask(w http.ResponseWriter, r *http.Request) {
 	d.quickTasks[taskID] = task
 	d.quickTasksMu.Unlock()
 
+	// Persist to database
+	if d.db != nil {
+		d.db.Exec(`INSERT INTO quick_tasks (id, prompt, working_dir, status, pid, output_file, created_at, conversation_id, parent_task_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			task.ID, task.Prompt, task.WorkingDir, task.Status, task.PID, task.OutputFile, task.CreatedAt, task.ConversationID, task.ParentTaskID)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(task)
 }
@@ -971,7 +1142,74 @@ func (d *Dashboard) monitorQuickTask(task *QuickTask, outFile *os.File) {
 		task.Status = "completed"
 	}
 	d.updateTaskOutput(task)
+
+	// Look up conversation ID from shelley database (if not already set from continuation)
+	if task.ConversationID == "" {
+		task.ConversationID = d.findConversationID(task)
+	}
+
+	// Persist status change to database
+	if d.db != nil {
+		var errStr interface{} = nil
+		if task.Error != nil {
+			errStr = *task.Error
+		}
+		d.db.Exec(`UPDATE quick_tasks SET status = ?, error = ?, finished_at = ?, conversation_id = ? WHERE id = ?`,
+			task.Status, errStr, task.FinishedAt, task.ConversationID, task.ID)
+	}
+
+	// Collect artifacts after task completes (only for successful tasks)
+	if task.Status == "completed" {
+		d.collectQuickTaskArtifacts(task)
+	}
+
 	d.quickTasksMu.Unlock()
+}
+
+// findConversationID looks up the conversation ID from shelley's database.
+// It finds the most recent conversation created in the task's working directory
+// around the task's start time.
+func (d *Dashboard) findConversationID(task *QuickTask) string {
+	// Use the global shelley DB (same one quick tasks write to)
+	shelleyDBPath := d.config.ShelleyDB
+	if shelleyDBPath == "" {
+		shelleyDBPath = filepath.Join(os.Getenv("HOME"), ".config/shelley/shelley.db")
+	}
+
+	shelleyDB, err := sql.Open("sqlite", shelleyDBPath)
+	if err != nil {
+		log.Printf("Failed to open shelley database at %s: %v", shelleyDBPath, err)
+		return ""
+	}
+	defer shelleyDB.Close()
+
+	// Find the most recent conversation that:
+	// 1. Was created after the task started
+	// 2. Has matching working directory (cwd)
+	var conversationID string
+	err = shelleyDB.QueryRow(`
+		SELECT conversation_id FROM conversations
+		WHERE cwd = ? AND created_at >= ?
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, task.WorkingDir, task.CreatedAt.Add(-time.Second)).Scan(&conversationID)
+
+	if err != nil {
+		// Try without cwd filter if that fails
+		err = shelleyDB.QueryRow(`
+			SELECT conversation_id FROM conversations
+			WHERE created_at >= ?
+			ORDER BY created_at DESC
+			LIMIT 1
+		`, task.CreatedAt.Add(-time.Second)).Scan(&conversationID)
+		if err != nil {
+			log.Printf("Failed to find conversation ID in %s: %v", shelleyDBPath, err)
+			return ""
+		}
+	}
+
+	log.Printf("Found conversation ID %s for quick task %s in %s", conversationID, task.ID, shelleyDBPath)
+	return conversationID
 }
 
 func (d *Dashboard) updateTaskOutput(task *QuickTask) {
@@ -1004,6 +1242,241 @@ func (d *Dashboard) updateTaskOutput(task *QuickTask) {
 			}
 		}
 	}
+}
+
+// collectQuickTaskArtifacts scans the task's working directory for files created/modified
+// during the task execution and copies eligible files to the dashboard's artifact storage.
+func (d *Dashboard) collectQuickTaskArtifacts(task *QuickTask) {
+	if d.db == nil || task.WorkingDir == "" {
+		return
+	}
+
+	// Eligible file extensions and their content types
+	validExtensions := map[string]string{
+		".md":   "text/markdown",
+		".html": "text/html",
+		".htm":  "text/html",
+		".jsx":  "text/javascript",
+		".tsx":  "text/typescript",
+		".json": "application/json",
+		".txt":  "text/plain",
+		".css":  "text/css",
+		".svg":  "image/svg+xml",
+		".js":   "text/javascript",
+		".ts":   "text/typescript",
+		".py":   "text/x-python",
+		".go":   "text/x-go",
+		".sh":   "text/x-shellscript",
+		".yaml": "text/yaml",
+		".yml":  "text/yaml",
+	}
+
+	// Directories to skip
+	skipDirs := map[string]bool{
+		".git":         true,
+		"node_modules": true,
+		"vendor":       true,
+		".next":        true,
+		"dist":         true,
+		"build":        true,
+		"__pycache__":  true,
+		".venv":        true,
+		"venv":         true,
+	}
+
+	// Create task-specific storage directory
+	taskArtifactsDir := filepath.Join(d.artifactsDir, task.ID)
+	os.MkdirAll(taskArtifactsDir, 0755)
+
+	// Use task creation time as threshold (with 1 second buffer)
+	threshold := task.CreatedAt.Add(-time.Second)
+
+	var artifactsCollected int
+	filepath.WalkDir(task.WorkingDir, func(path string, info os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		// Skip excluded directories
+		if info.IsDir() {
+			if skipDirs[info.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		contentType, ok := validExtensions[ext]
+		if !ok {
+			return nil
+		}
+
+		// Get file info
+		fileInfo, err := info.Info()
+		if err != nil {
+			return nil
+		}
+
+		// Only collect files modified after the task started
+		if fileInfo.ModTime().Before(threshold) {
+			return nil
+		}
+
+		// Skip files larger than 10MB
+		if fileInfo.Size() > 10*1024*1024 {
+			return nil
+		}
+
+		// Skip the output file itself
+		if path == task.OutputFile {
+			return nil
+		}
+
+		// Copy file to storage
+		relPath, _ := filepath.Rel(task.WorkingDir, path)
+		destPath := filepath.Join(taskArtifactsDir, relPath)
+		os.MkdirAll(filepath.Dir(destPath), 0755)
+
+		if err := copyFile(path, destPath); err != nil {
+			log.Printf("Failed to copy artifact %s: %v", path, err)
+			return nil
+		}
+
+		// Record in database
+		artifactID := fmt.Sprintf("qart-%d", time.Now().UnixNano())
+		d.db.Exec(`INSERT INTO quick_task_artifacts
+			(id, quick_task_id, filename, original_path, stored_path, size_bytes, content_type)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			artifactID, task.ID, filepath.Base(path), relPath, destPath, fileInfo.Size(), contentType)
+
+		artifactsCollected++
+		return nil
+	})
+
+	if artifactsCollected > 0 {
+		task.HasArtifacts = true
+		log.Printf("Collected %d artifacts for quick task %s", artifactsCollected, task.ID)
+	}
+}
+
+// QuickTaskArtifact represents an artifact from a quick task.
+type QuickTaskArtifact struct {
+	ID           string    `json:"id"`
+	QuickTaskID  string    `json:"quick_task_id"`
+	Filename     string    `json:"filename"`
+	OriginalPath string    `json:"original_path"`
+	SizeBytes    *int64    `json:"size_bytes,omitempty"`
+	ContentType  string    `json:"content_type,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// HandleQuickTaskArtifacts lists artifacts for a quick task.
+func (d *Dashboard) HandleQuickTaskArtifacts(w http.ResponseWriter, r *http.Request) {
+	taskID := r.URL.Query().Get("id")
+	if taskID == "" {
+		http.Error(w, "id parameter required", http.StatusBadRequest)
+		return
+	}
+
+	if d.db == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]QuickTaskArtifact{})
+		return
+	}
+
+	rows, err := d.db.Query(`
+		SELECT id, quick_task_id, filename, original_path, size_bytes, content_type, created_at
+		FROM quick_task_artifacts
+		WHERE quick_task_id = ?
+		ORDER BY created_at
+	`, taskID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var artifacts []QuickTaskArtifact
+	for rows.Next() {
+		var a QuickTaskArtifact
+		var sizeBytes sql.NullInt64
+		var contentType sql.NullString
+
+		err := rows.Scan(&a.ID, &a.QuickTaskID, &a.Filename, &a.OriginalPath,
+			&sizeBytes, &contentType, &a.CreatedAt)
+		if err != nil {
+			continue
+		}
+		if sizeBytes.Valid {
+			a.SizeBytes = &sizeBytes.Int64
+		}
+		if contentType.Valid {
+			a.ContentType = contentType.String
+		}
+		artifacts = append(artifacts, a)
+	}
+
+	if artifacts == nil {
+		artifacts = []QuickTaskArtifact{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(artifacts)
+}
+
+// HandleQuickTaskArtifactDownload serves an artifact file.
+func (d *Dashboard) HandleQuickTaskArtifactDownload(w http.ResponseWriter, r *http.Request) {
+	artifactID := r.URL.Query().Get("id")
+	if artifactID == "" {
+		http.Error(w, "id parameter required", http.StatusBadRequest)
+		return
+	}
+
+	if d.db == nil {
+		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var storedPath, filename, contentType string
+	err := d.db.QueryRow(`
+		SELECT stored_path, filename, content_type
+		FROM quick_task_artifacts
+		WHERE id = ?
+	`, artifactID).Scan(&storedPath, &filename, &contentType)
+
+	if err == sql.ErrNoRows {
+		http.Error(w, "Artifact not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Security: ensure path is within artifacts directory
+	absPath, _ := filepath.Abs(storedPath)
+	absArtifactsDir, _ := filepath.Abs(d.artifactsDir)
+	if !strings.HasPrefix(absPath, absArtifactsDir) {
+		http.Error(w, "Invalid artifact path", http.StatusForbidden)
+		return
+	}
+
+	data, err := os.ReadFile(storedPath)
+	if err != nil {
+		http.Error(w, "Failed to read artifact", http.StatusInternalServerError)
+		return
+	}
+
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+
+	// Support download parameter to force download instead of inline view
+	if r.URL.Query().Get("download") == "1" {
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	} else {
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
+	}
+	w.Write(data)
 }
 
 // HandleQuickTask handles individual quick task operations (get, kill).
@@ -1096,6 +1569,14 @@ func (d *Dashboard) HandleClearQuickTasks(w http.ResponseWriter, r *http.Request
 			// Clean up output file
 			if task.OutputFile != "" {
 				os.Remove(task.OutputFile)
+			}
+			// Clean up artifacts directory
+			taskArtifactsDir := filepath.Join(d.artifactsDir, task.ID)
+			os.RemoveAll(taskArtifactsDir)
+			// Delete from database
+			if d.db != nil {
+				d.db.Exec(`DELETE FROM quick_task_artifacts WHERE quick_task_id = ?`, id)
+				d.db.Exec(`DELETE FROM quick_tasks WHERE id = ?`, id)
 			}
 			delete(d.quickTasks, id)
 		}
@@ -1204,6 +1685,8 @@ func (d *Dashboard) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/quick-tasks", d.HandleQuickTasks)
 	mux.HandleFunc("/api/quick-task", d.HandleQuickTask)
 	mux.HandleFunc("/api/quick-task/output", d.HandleQuickTaskOutput)
+	mux.HandleFunc("/api/quick-task/artifacts", d.HandleQuickTaskArtifacts)
+	mux.HandleFunc("/api/quick-task/artifact", d.HandleQuickTaskArtifactDownload)
 	mux.HandleFunc("/api/quick-tasks/clear", d.HandleClearQuickTasks)
 	mux.HandleFunc("/api/list-dirs", d.HandleListDirs)
 	mux.HandleFunc("/api/", d.HandleAPIProxy)
@@ -1221,6 +1704,9 @@ func (d *Dashboard) Run() error {
 		}
 		return fmt.Errorf("port %d is not available: %w", d.config.Port, err)
 	}
+
+	// Load persisted quick tasks from database
+	d.loadQuickTasksFromDB()
 
 	mux := http.NewServeMux()
 	d.SetupRoutes(mux)

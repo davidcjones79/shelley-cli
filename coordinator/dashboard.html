@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>shelley-cli Coordinator</title>
     <style>
+        :root {
+            --border-color: #e0d5c7;
+            --border-color-light: #e5e5e5;
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
@@ -20,7 +24,7 @@
             justify-content: space-between;
             padding: 16px 24px;
             background: #fff;
-            border-bottom: 1px solid #e5e5e5;
+            border-bottom: 1px solid var(--border-color);
         }
         .header-left {
             display: flex;
@@ -56,7 +60,7 @@
             align-items: center;
             gap: 6px;
             padding: 8px 14px;
-            border: 1px solid #e5e5e5;
+            
             border-radius: 8px;
             background: #fff;
             color: #1a1a1a;
@@ -69,7 +73,7 @@
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-group {
             display: inline-flex;
-            border: 1px solid #e5e5e5;
+            
             border-radius: 8px;
             overflow: hidden;
         }
@@ -167,7 +171,7 @@
         .stat-card {
             padding: 20px;
             background: #fff;
-            border: 1px solid #e5e5e5;
+            border: 2px solid var(--border-color);
             border-radius: 12px;
             text-align: center;
         }
@@ -185,7 +189,7 @@
         /* Table/List */
         .list {
             background: #fff;
-            border: 1px solid #e5e5e5;
+            border: 2px solid var(--border-color);
             border-radius: 12px;
             overflow: hidden;
         }
@@ -247,7 +251,7 @@
             gap: 16px;
             padding: 16px 20px;
             background: #fff;
-            border: 1px solid #e5e5e5;
+            border: 2px solid var(--border-color);
             border-radius: 12px;
             margin-bottom: 24px;
         }
@@ -261,7 +265,7 @@
         /* Form elements */
         .input {
             padding: 8px 12px;
-            border: 1px solid #e5e5e5;
+            
             border-radius: 8px;
             font-size: 14px;
             outline: none;
@@ -299,13 +303,13 @@
             flex: 1;
             min-width: 200px;
             padding: 8px 12px;
-            border: 1px solid #e5e5e5;
+            
             border-radius: 8px;
             font-size: 14px;
         }
         .filter-btn {
             padding: 6px 12px;
-            border: 1px solid #e5e5e5;
+            
             border-radius: 6px;
             background: #fff;
             font-size: 12px;
@@ -335,7 +339,7 @@
         /* Log viewer */
         .log-viewer {
             background: #fff;
-            border: 1px solid #e5e5e5;
+            border: 2px solid var(--border-color);
             color: #374151;
             padding: 16px;
             border-radius: 12px;
@@ -858,6 +862,17 @@
                 <button onclick="closeQuickTaskModal()" class="btn">Cancel</button>
                 <button onclick="createQuickTask()" class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Locally</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Quick Task Artifacts Modal -->
+    <div class="modal" id="quickArtifactsModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <span class="modal-title">Quick Task Artifacts</span>
+                <button class="modal-close" onclick="closeQuickArtifacts()">&times;</button>
+            </div>
+            <div id="quickArtifactsList"></div>
         </div>
     </div>
 
@@ -1486,6 +1501,17 @@
             return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
+        // Get the Shelley web client URL (port 9999)
+        function getShelleyWebUrl() {
+            const host = window.location.hostname;
+            // For exe.dev VMs (*.exe.xyz), use HTTPS with port 9999
+            if (host.endsWith('.exe.xyz')) {
+                return `https://${host}:9999`;
+            }
+            // For localhost or other hosts, use HTTP
+            return `http://${host}:9999`;
+        }
+
         // Render task result - handles both structured JSON and plain text
         function renderResult(result) {
             if (!result) return '';
@@ -1698,7 +1724,9 @@
         }
 
         function closeModal() {
-            document.getElementById('taskModal').classList.remove('active');
+            const taskModal = document.getElementById('taskModal');
+            taskModal.classList.remove('active');
+            taskModal.style.display = '';
             document.getElementById('groupModal')?.classList.remove('active');
         }
 
@@ -2655,7 +2683,7 @@
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); closeStuckTasks(); closeAddRepo(); closeArtifacts(); closeTemplates(); closeAggregation(); } });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeHelp(); closeStuckTasks(); closeAddRepo(); closeArtifacts(); closeTemplates(); closeAggregation(); closeQuickArtifacts(); } });
 
         // WebSocket connection for real-time updates
         // coordPort is injected by the dashboard server
@@ -2904,9 +2932,20 @@
                 const dotClass = t.status === 'completed' ? 'running' : t.status === 'failed' || t.status === 'killed' ? 'stopped' : 'busy';
                 const prompt = escapeHtml(t.prompt.length > 100 ? t.prompt.slice(0, 100) + '...' : t.prompt);
                 const dir = t.working_dir ? `<span style="color:#737373;font-size:11px;margin-left:8px;">${escapeHtml(t.working_dir)}</span>` : '';
-                const actions = t.status === 'running' 
+
+                // Artifacts button (always show for completed/failed/killed tasks)
+                const artifactsBtn = t.status !== 'running'
+                    ? `<button onclick="event.stopPropagation();showQuickArtifacts('${t.id}')" class="btn" style="font-size:11px;padding:4px 8px;" title="View artifacts"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg></button>`
+                    : '';
+
+                // Continue button (show for tasks with conversation_id) - opens web client in new tab
+                const continueBtn = (t.status !== 'running' && t.conversation_id)
+                    ? `<a href="${getShelleyWebUrl()}/c/${t.conversation_id}" target="_blank" onclick="event.stopPropagation();" class="btn btn-primary" style="font-size:11px;padding:4px 8px;text-decoration:none;" title="Continue in web client"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>`
+                    : '';
+
+                const actions = t.status === 'running'
                     ? `<button onclick="event.stopPropagation();killQuickTask('${t.id}')" class="btn btn-danger" style="font-size:11px;padding:4px 8px;">Kill</button>`
-                    : `<button onclick="event.stopPropagation();viewQuickTaskOutput('${t.id}')" class="btn" style="font-size:11px;padding:4px 8px;">View</button>`;
+                    : `${continueBtn}${artifactsBtn}<button onclick="event.stopPropagation();viewQuickTaskOutput('${t.id}')" class="btn" style="font-size:11px;padding:4px 8px;">View</button>`;
                 return `
                 <div class="list-item" onclick="viewQuickTaskOutput('${t.id}')" style="cursor:pointer">
                     <div class="list-item-info">
@@ -2994,7 +3033,50 @@
                 alert('Failed to clear tasks: ' + err.message);
             }
         }
-        
+
+        // Quick Task Artifacts
+        async function showQuickArtifacts(taskId) {
+            try {
+                const resp = await fetch(`/api/quick-task/artifacts?id=${taskId}`);
+                if (!resp.ok) throw new Error('Failed to fetch artifacts');
+                const artifacts = await resp.json();
+
+                const el = document.getElementById('quickArtifactsList');
+                if (!artifacts || artifacts.length === 0) {
+                    el.innerHTML = '<div class="list-empty" style="padding:24px;">No artifacts for this task.<br><small style="color:#737373;">Tasks collect recently created/modified files from the working directory.</small></div>';
+                } else {
+                    el.innerHTML = `<div class="list">${artifacts.map(a => `
+                        <div class="list-item">
+                            <div class="list-item-info">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                                <span class="list-item-name">${escapeHtml(a.filename)}</span>
+                                <span class="list-item-meta" style="color:#737373;font-size:11px;margin-left:8px;">${escapeHtml(a.original_path)} ${a.size_bytes ? '(' + formatBytes(a.size_bytes) + ')' : ''}</span>
+                            </div>
+                            <div style="display:flex;gap:4px;">
+                                <a href="/api/quick-task/artifact?id=${a.id}" target="_blank" class="btn" style="font-size:11px;padding:4px 8px;">View</a>
+                                <a href="/api/quick-task/artifact?id=${a.id}&download=1" class="btn" style="font-size:11px;padding:4px 8px;" title="Download"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
+                            </div>
+                        </div>
+                    `).join('')}</div>`;
+                }
+                document.getElementById('quickArtifactsModal').classList.add('active');
+            } catch (e) {
+                alert('Failed to load artifacts: ' + e.message);
+            }
+        }
+
+        function closeQuickArtifacts() {
+            document.getElementById('quickArtifactsModal').classList.remove('active');
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
         // Poll quick tasks periodically
         setInterval(refreshQuickTasks, 5000);
         

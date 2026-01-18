@@ -94,6 +94,34 @@ CREATE TABLE IF NOT EXISTS task_artifacts (
     FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 
+-- Quick tasks (local tasks running on dashboard VM)
+CREATE TABLE IF NOT EXISTS quick_tasks (
+    id TEXT PRIMARY KEY,
+    prompt TEXT NOT NULL,
+    working_dir TEXT,
+    status TEXT NOT NULL DEFAULT 'running',  -- running, completed, failed, killed
+    pid INTEGER,
+    output_file TEXT,
+    error TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    finished_at DATETIME,
+    conversation_id TEXT,        -- shelley conversation ID for continuing
+    parent_task_id TEXT          -- if this is a continuation, link to parent
+);
+
+-- Quick task artifacts (files collected from local quick tasks)
+CREATE TABLE IF NOT EXISTS quick_task_artifacts (
+    id TEXT PRIMARY KEY,
+    quick_task_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    original_path TEXT NOT NULL,      -- relative path in artifacts folder
+    stored_path TEXT NOT NULL,        -- absolute path in dashboard artifacts dir
+    size_bytes INTEGER,
+    content_type TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (quick_task_id) REFERENCES quick_tasks(id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority DESC, created_at ASC);
@@ -102,6 +130,9 @@ CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id);
 CREATE INDEX IF NOT EXISTS idx_task_groups_status ON task_groups(status);
 CREATE INDEX IF NOT EXISTS idx_task_artifacts_task ON task_artifacts(task_id);
+CREATE INDEX IF NOT EXISTS idx_quick_tasks_status ON quick_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_quick_tasks_created ON quick_tasks(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quick_task_artifacts_task ON quick_task_artifacts(quick_task_id);
 
 -- Shared repositories (cloned once, used by all workers via worktrees)
 CREATE TABLE IF NOT EXISTS shared_repos (

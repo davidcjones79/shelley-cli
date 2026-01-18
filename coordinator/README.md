@@ -139,6 +139,31 @@ The worker's prompt is automatically augmented with the input directory location
 
 ## Features
 
+### Quick Tasks (Local Execution)
+
+Quick Tasks run Shelley directly on the dashboard VM without spawning workers. Useful for quick one-off tasks or testing prompts.
+
+**Features:**
+- **Persistent**: Quick tasks survive dashboard restarts (stored in SQLite)
+- **Conversation Continuation**: Click the external link button to continue a conversation in the Shelley web client
+- **Automatic Artifacts**: Files created/modified during task execution are automatically collected
+- **Download Support**: View or download collected artifacts directly from the dashboard
+
+**Collected Artifacts:**
+- Scans the working directory for files modified after the task started
+- Supports: `.md`, `.html`, `.js`, `.ts`, `.jsx`, `.tsx`, `.json`, `.py`, `.go`, `.sh`, `.yaml`, `.yml`, `.css`, `.svg`, `.txt`
+- Skips common directories: `.git`, `node_modules`, `vendor`, `dist`, `build`, etc.
+- Maximum file size: 10MB
+
+**API Endpoints:**
+- `GET /api/quick-tasks` - List all quick tasks
+- `POST /api/quick-tasks` - Create a new quick task
+- `GET /api/quick-task?id=<id>` - Get task details
+- `GET /api/quick-task/output?id=<id>` - Get task output
+- `POST /api/quick-tasks/clear` - Clear completed tasks
+- `GET /api/quick-task/artifacts?id=<id>` - List task artifacts
+- `GET /api/quick-task/artifact?id=<id>` - View/download artifact (add `&download=1` to force download)
+
 ### Task Groups / Batches
 
 Group related tasks together with shared settings:
