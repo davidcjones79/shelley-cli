@@ -2248,7 +2248,7 @@ while true; do
             if [ -n "$(git status --porcelain)" ]; then
                 echo "Committing changes..."
                 git add -A
-                git commit -m "Task $TASK_ID: $PROMPT" -m "Automated commit by Shelley Coordinator" || true
+                git commit -m "Task $TASK_ID: $PROMPT" -m "Automated commit by shelley-cli Coordinator" || true
                 COMMIT_SHA=$(git rev-parse HEAD)
                 
                 echo "Pushing branch $BRANCH_NAME..."
@@ -2730,7 +2730,7 @@ func (c *Coordinator) GetOrCreateSharedRepo(repoURL, baseBranch string) (*Shared
 	
 	// Configure git in the repo
 	exec.Command("git", "-C", repoPath, "config", "user.email", "shelley-coordinator@exe.dev").Run()
-	exec.Command("git", "-C", repoPath, "config", "user.name", "Shelley Coordinator").Run()
+	exec.Command("git", "-C", repoPath, "config", "user.name", "shelley-cli Coordinator").Run()
 	
 	// Store credentials for push
 	if c.config.GitToken != "" {

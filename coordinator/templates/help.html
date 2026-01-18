@@ -171,9 +171,14 @@
             <a href="#workers" class="sidebar-link">Workers</a>
             <a href="#groups" class="sidebar-link">Task Groups</a>
             <a href="#repos" class="sidebar-link">Shared Repositories</a>
+            <a href="#settings" class="sidebar-link">Settings</a>
         </div>
         <div class="sidebar-section">
             <div class="sidebar-title">Features</div>
+            <a href="#templates" class="sidebar-link">Task Templates</a>
+            <a href="#skills" class="sidebar-link">Skills Integration</a>
+            <a href="#file-ownership" class="sidebar-link">File Ownership</a>
+            <a href="#aggregated-results" class="sidebar-link">Aggregated Results</a>
             <a href="#git-integration" class="sidebar-link">Git Integration</a>
             <a href="#worktrees" class="sidebar-link">Git Worktrees</a>
             <a href="#artifacts" class="sidebar-link">Artifacts</a>
@@ -194,7 +199,7 @@
     </nav>
     
     <main class="help-content">
-        <h1 id="overview">Shelley Coordinator</h1>
+        <h1 id="overview">shelley-cli Coordinator</h1>
         <p class="subtitle">Distributed task execution across multiple VMs</p>
         
         <p>The Coordinator manages a pool of worker VMs that execute coding tasks in parallel. Each worker runs Shelley (the AI coding agent) to complete tasks like fixing bugs, adding features, or refactoring code.</p>
@@ -307,6 +312,89 @@
             <div class="tip-title">💡 Tip</div>
             <p style="margin:0;">Shared repos require Tailscale to be configured. Without Tailscale, each worker clones the repo independently.</p>
         </div>
+        
+        <h2 id="settings">Settings</h2>
+        <p>The Settings page (<a href="/settings">accessible via the nav bar</a>) lets you configure:</p>
+        <ul>
+            <li><strong>Tailscale Integration</strong> — Enter a reusable auth key to enable direct network access between coordinator and workers. This bypasses the exe.dev proxy and enables SSHFS shared filesystem.</li>
+            <li><strong>GitHub Integration</strong> — Set a Personal Access Token with <code>repo</code> scope to allow workers to push branches and create commits.</li>
+        </ul>
+        <p>The status section shows current configuration: Tailscale IP, whether keys are set, worker prefix, etc.</p>
+        
+        <h2 id="templates">Task Templates</h2>
+        <p>Templates provide pre-configured task setups for common workflows. Click the <strong>Templates</strong> button on the dashboard to access them.</p>
+        
+        <h3>Preset Templates</h3>
+        <p>Built-in templates for common tasks:</p>
+        <ul>
+            <li><strong>Code Review</strong> — Review files for bugs, security issues, and improvements</li>
+            <li><strong>Test Coverage</strong> — Add unit tests to improve coverage</li>
+            <li><strong>Documentation</strong> — Generate or update documentation</li>
+            <li><strong>Refactoring</strong> — Improve code structure without changing behavior</li>
+        </ul>
+        
+        <h3>File-Based Templates</h3>
+        <p>Create your own templates by adding <code>.md</code> files to <code>~/.config/shelley/templates/</code>. The file content becomes the task prompt, with support for variables like <code>{filename}</code> and <code>{branch}</code>.</p>
+        
+        <h2 id="skills">Skills Integration</h2>
+        <p>Skills are reusable context packages from the <a href="https://github.com/anthropics/skills" target="_blank">anthropics/skills</a> repository that enhance Shelley's capabilities for specific domains.</p>
+        
+        <h3>Using Skills</h3>
+        <ol>
+            <li>When creating a task group, select a skill from the dropdown</li>
+            <li>The skill's context is automatically loaded</li>
+            <li>Optionally check "Include refs" to include reference files</li>
+            <li>The skill context is sent to all workers as system-level guidance</li>
+        </ol>
+        
+        <h3>Local Skills</h3>
+        <p>Add custom skills to <code>~/.config/shelley/skills/</code>. Each skill is a folder containing:</p>
+        <ul>
+            <li><code>skill.md</code> — Main skill instructions</li>
+            <li><code>refs/</code> — Optional reference files</li>
+        </ul>
+        
+        <div class="tip-box warning">
+            <div class="tip-title">⚠️ Parallel Warning</div>
+            <p style="margin:0;">Some skills (like doc-coauthoring, canvas-design) are not optimized for parallel workers. The UI will warn you if you select one of these skills.</p>
+        </div>
+        
+        <h2 id="file-ownership">File Ownership</h2>
+        <p>When running multiple tasks in parallel on the same repo, file ownership prevents conflicts by assigning specific files to specific tasks.</p>
+        
+        <h3>How It Works</h3>
+        <ul>
+            <li>Expand "File Ownership" in the New Group form</li>
+            <li>Assign files/directories to each task (one path per line)</li>
+            <li>Workers are instructed to only modify their assigned files</li>
+            <li>The UI warns if there are overlapping file assignments</li>
+        </ul>
+        
+        <h3>Example</h3>
+        <pre><code>Task 1: "Refactor auth module"
+  Files: src/auth/, tests/auth/
+
+Task 2: "Refactor API routes"  
+  Files: src/api/, tests/api/</code></pre>
+        
+        <h2 id="aggregated-results">Aggregated Results</h2>
+        <p>After a task group completes, view all results together with the <strong>View Aggregated Results</strong> button in the group details modal.</p>
+        
+        <h3>Features</h3>
+        <ul>
+            <li><strong>Filter by status</strong> — Show all, completed, or failed tasks</li>
+            <li><strong>Structured output</strong> — Tasks produce DONE.md files with standardized sections</li>
+            <li><strong>Export</strong> — Download results as Markdown or JSON</li>
+        </ul>
+        
+        <h3>DONE.md Format</h3>
+        <p>Workers produce structured completion reports with:</p>
+        <ul>
+            <li>Summary of changes made</li>
+            <li>Files modified</li>
+            <li>Tests added/updated</li>
+            <li>Notes or warnings</li>
+        </ul>
         
         <h2 id="git-integration">Git Integration</h2>
         <p>Tasks can optionally work on a git repository:</p>
