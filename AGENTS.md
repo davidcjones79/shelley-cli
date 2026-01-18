@@ -120,6 +120,30 @@ Workers will automatically mount `~/shared` from the coordinator, enabling:
 - **Git worktrees**: Multiple workers can work on the same repo in parallel, each with their own branch/worktree
 - Instant visibility of all branches across workers
 
+### Worker Context & Structured Output
+
+Workers receive detailed context injected into their prompts:
+- Task identity (ID, worker ID, group info)
+- File ownership rules
+- Output format requirements
+- Exit protocol (success/partial/failed)
+
+Workers write `DONE.md` to `~/shared/results/{task-id}/` with YAML frontmatter:
+```yaml
+status: success  # or: partial, failed
+files_changed:
+  - path: auth/login.go
+    action: created
+    lines_added: 45
+tests:
+  passed: 5
+  failed: 0
+merge_ready: true
+blockers: []
+```
+
+The coordinator parses this and displays structured results in the dashboard.
+
 ---
 
 ## Saved Scripts

@@ -185,6 +185,64 @@ View worker conversations in the main Shelley UI:
 - "Live Chat" link for running tasks (connects to worker)
 - Navigate to `/conversation/{id}` on the dashboard
 
+### Worker Context Template
+
+Workers receive detailed context about their task, including:
+
+- **Task Identity**: Task ID, worker ID, group name (if applicable)
+- **File Ownership Rules**: What files the worker owns, what's forbidden, shared read-only paths
+- **Output Format**: Structured DONE.md specification (see below)
+- **Exit Protocol**: How to signal success, partial completion, or failure
+- **Constraints**: Task timeout, idempotency expectations, no long-running servers
+- **Git Workflow**: Branch naming, commit conventions, push instructions
+
+The context is automatically injected into each task's prompt by the coordinator.
+
+### Structured Output (DONE.md)
+
+Workers write a `DONE.md` file to `~/shared/results/{task-id}/` with YAML frontmatter:
+
+```markdown
+---
+status: success  # or: partial, failed
+files_changed:
+  - path: auth/login.go
+    action: created
+    lines_added: 45
+    lines_removed: 0
+  - path: auth/login_test.go
+    action: modified
+    lines_added: 80
+    lines_removed: 5
+tests:
+  passed: 5
+  failed: 0
+  skipped: 1
+merge_ready: true
+blockers: []  # list any issues preventing completion
+---
+
+## Summary
+Brief description of what was accomplished.
+
+## Changes Made
+Detailed explanation of changes.
+
+## Testing
+How the changes were tested.
+```
+
+**Status values:**
+- `success` - Task completed fully
+- `partial` - Task partially completed, blockers listed
+- `failed` - Task could not be completed
+
+The coordinator parses this file and stores structured JSON in the database. The dashboard displays:
+- Status badge (green/yellow/red)
+- Files changed with action icons (+/~/−) and line counts
+- Test results (passed/failed/skipped)
+- Blockers highlighted in red
+
 ## Authentication
 
 The coordinator has two authentication mechanisms:

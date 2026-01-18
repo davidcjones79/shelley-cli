@@ -657,3 +657,56 @@ Once all tasks complete, you have several options:
 2. **Merge locally**: Merge branches on the coordinator before pushing
 3. **Use GitHub merge queue**: Let GitHub handle merge order and conflicts
 4. **Cherry-pick**: Select specific commits from task branches
+
+## Structured Task Output (DONE.md)
+
+Workers automatically write structured output to `~/shared/results/{task-id}/DONE.md`:
+
+```markdown
+---
+status: success  # or: partial, failed
+files_changed:
+  - path: auth/login.go
+    action: created
+    lines_added: 45
+    lines_removed: 0
+tests:
+  passed: 5
+  failed: 0
+  skipped: 0
+merge_ready: true
+blockers: []
+---
+
+## Summary
+Added login endpoint with JWT authentication.
+
+## Changes Made
+- Created auth/login.go with POST /login handler
+- Added JWT token generation
+
+## Testing
+Ran go test ./auth/... - all tests pass.
+```
+
+The coordinator parses this file and:
+- Stores structured JSON in the task result
+- Updates task status based on DONE.md status field
+- Displays rich results in the dashboard (files, tests, blockers)
+
+### Status Values
+
+| Status | Description |
+|--------|-------------|
+| `success` | Task completed fully, ready to merge |
+| `partial` | Some work done but blockers remain |
+| `failed` | Task could not be completed |
+
+### Viewing Results
+
+In the dashboard, click on a completed task to see:
+- Status badge (green/yellow/red)
+- Files changed with +/- line counts
+- Test results (passed/failed/skipped)
+- Blockers highlighted in red
+- Full DONE.md content

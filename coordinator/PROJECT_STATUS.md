@@ -152,24 +152,55 @@ shelley coord-cli reset-task <id>
 
 ## What's Next (Planned)
 
-1. **Artifact Management**
-   - Automatic artifact collection from workers
-   - HTTP-based file transfer (workers serve files on port 8000)
-   - `shelley artifacts collect` command
+1. **Task Templates UI**
+   - Pre-built prompt templates (Security Review, Test Generation, Documentation)
+   - File picker to apply templates to multiple files
+   - Spawns N parallel tasks automatically
 
-2. **Multi-Step Workflows**
-   - Task dependencies (B waits for A)
-   - Fan-out / fan-in patterns
-   - Consolidation steps
+2. **Auto-Aggregation Dashboard**
+   - View all completed DONE.md summaries in one place
+   - Aggregated stats (total files changed, tests passed/failed)
+   - Export combined changelog
+   - Bulk PR creation
 
-3. **Auto-merge**
+3. **Task Dependencies (DAG)**
+   - `depends_on` field for tasks
+   - Workers only claim tasks with satisfied dependencies
+   - Visual dependency graph in dashboard
+
+4. **File Ownership / Conflict Detection**
+   - `owns_files` and `forbidden_files` fields on tasks
+   - Coordinator warns/blocks conflicting file patterns
+   - Prevents parallel tasks from stepping on each other
+
+5. **Auto-merge**
    - Combine completed task branches
    - Sequential merge strategy
    - Conflict detection/reporting
 
 ## Recent Changes
 
-### January 16, 2026 (Latest)
+### January 18, 2026 (Latest)
+
+- **Structured Output (DONE.md)**
+  - Workers write DONE.md with YAML frontmatter to `~/shared/results/{task-id}/`
+  - Parser extracts status, files_changed, tests, merge_ready, blockers
+  - Coordinator stores structured JSON in task result
+  - Dashboard renders rich result view (files, tests, blockers)
+  - New `partial` status for tasks that partially completed
+
+- **Worker Context Template**
+  - New `templates/worker_context.md` with detailed instructions
+  - Injected into every task prompt automatically
+  - Includes file ownership rules, output format, exit protocol
+  - Task-specific data: ID, group, timeout, git info
+
+- **Dashboard Token Fix**
+  - Fixed scaling from dashboard not working
+  - Token now included in `/dashboard/status` response
+  - JavaScript updates token dynamically when polling status
+
+### January 16, 2026
 
 - **Reliability Improvements**
   - Persistent worker prefix (survives coordinator restarts)
